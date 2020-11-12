@@ -1,10 +1,10 @@
 name: test-conda-env
 channels:
 - conda-forge
-- cantera
+- cantera/label/dev
 - nodefaults
 
 dependencies:
 - python=3
-- cantera/label/dev::cantera
+- cantera
 - pip
