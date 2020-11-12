@@ -126,6 +126,14 @@ def _(poly: ct.NasaPoly2, arg_name):
 # }}}
 
 
+# {{{ equilibrium constants
+
+def equilibrium_constants_expr(react: ct.Reaction):
+    return 0*p.Variable("T")
+
+# }}}
+
+
 # {{{ main code template
 
 code_tpl = Template("""
@@ -196,7 +204,7 @@ class Thermochemistry:
     def get_species_entropies_R(self, T):
         return np.array([
             % for sp in sol.species():
-            ${cgm(poly_to_entropy_expr(sp.thermo, "T"))},
+                ${cgm(poly_to_entropy_expr(sp.thermo, "T"))},
             % endfor
             ])
 
@@ -211,6 +219,13 @@ class Thermochemistry:
 
         g0_RT = self.get_species_gibbs_RT( T )
         return np.array([
+            %for react in sol.reactions():
+                %if react.reversible:
+                    ${cgm(equilibrium_constants_expr(react))},
+                %else:
+                    0*T,
+                %endif
+            %endfor
             ])
 
     def get_temperature(self, H_or_E, T_guess, Y, do_energy=False):
@@ -260,6 +275,7 @@ def gen_python_code(sol: ct.Solution):
         poly_to_expr=poly_to_expr,
         poly_to_integral_expr=poly_to_integral_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
+        equilibrium_constants_expr=equilibrium_constants_expr,
         )
     print(code)
     exec_dict = {}
