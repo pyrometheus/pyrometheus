@@ -32,11 +32,16 @@ import pyrometheus as pyro
 def test_sandiego():
     sol = ct.Solution("sanDiego.cti", "gas")    
     pyro_code = pyro.gen_python_code(sol)
-
-    T = 300.0
     ptk = pyro_code()
-    print(ptk.model_name)
-    print(ptk.get_species_entropies_R(T))
+    
+    T = 500.0
+    sol.TP = T,ct.one_atm
+    
+    keq_pm = ptk.get_equilibrium_constants(T)
+    keq_ct = sol.equilibrium_constants
+
+    print(1.0/np.exp(keq_pm))
+    print(keq_ct)
     return
 
 

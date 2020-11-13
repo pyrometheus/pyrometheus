@@ -71,7 +71,7 @@ def str_np(ary):
 def nasa7_conditional(t, poly, part_gen):
     # FIXME: Should check minTemp, maxTemp
     return p.If(
-            p.Comparison(t, "<", poly.coeffs[0]),
+            p.Comparison(t, ">", poly.coeffs[0]),
             part_gen(poly.coeffs[1:8], t),
             part_gen(poly.coeffs[8:15], t))
 
@@ -104,6 +104,17 @@ def _(poly: ct.NasaPoly2, arg_name):
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
+@singledispatch
+def poly_to_enthalpy_expr(poly, arg_name):
+    raise TypeError(
+            f"unexpected argument type in poly_to_integral_over_T_expr: {type(poly)}")
+
+@poly_to_enthalpy_expr.register
+def _(poly: ct.NasaPoly2, arg_name):
+    def gen(c, t):
+        assert len(c) == 7
+        return c[0] + c[1]/2*t + c[2]/3*t**2 + c[3]/4*t**3 + c[4]/5*t**4 + c[5]/t
+    return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 @singledispatch
 def poly_to_entropy_expr(poly, arg_name):
@@ -125,14 +136,54 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 # }}}
 
+# {{{ Sums processing
+
+def accumulate(indices, coeffs, arg_name):
+    def gen(i, c, arg_name):
+        return sum([coeffs[j]*arg_name[i[j]] for j in range(len(coeffs))])
+    return gen(indices, coeffs, p.Variable(arg_name))
+
+# }}}
 
 # {{{ equilibrium constants
 
-def equilibrium_constants_expr(react: ct.Reaction):
+def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction):
+
+    reactants = react.reactants
+    products  = react.products
+
+    indices_r = [sol.species_index(sp) for sp in reactants]
+    indices_p = [sol.species_index(sp) for sp in products]
+
+    coeffs_r = np.array([reactants[sp] for sp in reactants])
+    coeffs_p = np.array([products[sp] for sp in products])
+
+    n_r = coeffs_r.sum()
+    n_p = coeffs_p.sum()
+    dn  = n_p - n_r
+
+    def gen(i_r, i_p, c_r, c_p, dn, arg_name):
+        num_r = len(c_r)
+        num_p = len(c_p)
+        sum_r = sum([c_r[j]*arg_name[i_r[j]] for j in range(num_r)])
+        sum_p = sum([c_p[j]*arg_name[i_p[j]] for j in range(num_p)])
+        if dn < 0:
+            sum_p += p.Variable("C0")
+        elif dn > 0:
+            sum_r += p.Variable("C0")
+        return sum_p - sum_r
     
-    return 0*p.Variable("T")
+    return gen(indices_r,indices_p,coeffs_r,coeffs_p,dn,p.Variable("g0_RT"))
 
 # }}}
+
+# {{{ Rate coefficients
+
+def arrhenius_expr(rate_coeff: ct.Arrhenius):
+    
+    return
+
+# }}}    
 
 
 # {{{ main code template
@@ -198,7 +249,7 @@ class Thermochemistry:
     def get_species_enthalpies_RT(self, T):
         return np.array([
             % for sp in sol.species():
-            ${cgm(poly_to_integral_expr(sp.thermo, "T"))},
+            ${cgm(poly_to_enthalpy_expr(sp.thermo, "T"))},
             % endfor
             ])
 
@@ -222,7 +273,7 @@ class Thermochemistry:
         return np.array([
             %for react in sol.reactions():
                 %if react.reversible:
-                    ${cgm(equilibrium_constants_expr(react))},
+                    ${cgm(equilibrium_constants_expr(sol,react))},
                 %else:
                     0*T,
                 %endif
@@ -275,6 +326,7 @@ def gen_python_code(sol: ct.Solution):
 
         poly_to_expr=poly_to_expr,
         poly_to_integral_expr=poly_to_integral_expr,
+        poly_to_enthalpy_expr=poly_to_enthalpy_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
         equilibrium_constants_expr=equilibrium_constants_expr,
     )
