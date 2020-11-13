@@ -129,6 +129,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 # {{{ equilibrium constants
 
 def equilibrium_constants_expr(react: ct.Reaction):
+    
     return 0*p.Variable("T")
 
 # }}}
@@ -276,7 +277,7 @@ def gen_python_code(sol: ct.Solution):
         poly_to_integral_expr=poly_to_integral_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
         equilibrium_constants_expr=equilibrium_constants_expr,
-        )
+    )
     print(code)
     exec_dict = {}
     exec(compile(code, "<generated code>", "exec"), exec_dict)

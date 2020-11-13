@@ -30,8 +30,14 @@ import pyrometheus as pyro
 
 
 def test_sandiego():
-    sol = ct.Solution("sanDiego.cti", "gas")
-    print(pyro.gen_python_code(sol))
+    sol = ct.Solution("sanDiego.cti", "gas")    
+    pyro_code = pyro.gen_python_code(sol)
+
+    T = 300.0
+    ptk = pyro_code()
+    print(ptk.model_name)
+    print(ptk.get_species_entropies_R(T))
+    return
 
 
 # run single tests using
