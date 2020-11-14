@@ -232,8 +232,22 @@ class Thermochemistry:
     gas_constant = 8314.4621
     big_number = 1.0e300
 
+    species_names = ${sol.species_names}
+    species_indices = ${
+        dict([[sol.species_name(i), i]
+            for i in range(sol.n_species)])}
+
     wts = ${str_np(sol.molecular_weights)}
     iwts = 1/wts
+
+    def species_name(self, species_index):
+        return self.species_name[species_index]
+
+    def species_index(self, species_name):
+        return self.species_indices[species_name]
+
+    def get_specific_gas_constant(self, Y):
+        return self.gas_constant * np.dot( self.iwts, Y )
 
     def get_density(self, p, T, Y):
         mmw = self.get_mix_molecular_weight( Y )
