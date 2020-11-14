@@ -36,20 +36,24 @@ from mako.template import Template
 
 # {{{ code generation helpers
 
+
 class CodeGenerationMapper(StringifyMapper):
     def map_constant(self, expr, enclosing_prec):
         return repr(expr)
 
     def map_if(self, expr, enclosing_prec, *args, **kwargs):
         return "np.where(%s, %s, %s)" % (
-                    self.rec(expr.condition, PREC_NONE, *args, **kwargs),
-                    self.rec(expr.then, PREC_NONE, *args, **kwargs),
-                    self.rec(expr.else_, PREC_NONE, *args, **kwargs))
+            self.rec(expr.condition, PREC_NONE, *args, **kwargs),
+            self.rec(expr.then, PREC_NONE, *args, **kwargs),
+            self.rec(expr.else_, PREC_NONE, *args, **kwargs),
+        )
 
     def map_call(self, expr, enclosing_prec, *args, **kwargs):
-        return self.format("np.%s(%s)",
-                self.rec(expr.function, PREC_CALL, *args, **kwargs),
-                self.join_rec(", ", expr.parameters, PREC_NONE, *args, **kwargs))
+        return self.format(
+            "np.%s(%s)",
+            self.rec(expr.function, PREC_CALL, *args, **kwargs),
+            self.join_rec(", ", expr.parameters, PREC_NONE, *args, **kwargs),
+        )
 
 
 def str_np_inner(ary):
@@ -63,63 +67,84 @@ def str_np_inner(ary):
 def str_np(ary):
     return "np.array(%s)" % str_np_inner(ary)
 
+
 # }}}
 
 
 # {{{ polynomial processing
 
+
 def nasa7_conditional(t, poly, part_gen):
     # FIXME: Should check minTemp, maxTemp
     return p.If(
-            p.Comparison(t, ">", poly.coeffs[0]),
-            part_gen(poly.coeffs[1:8], t),
-            part_gen(poly.coeffs[8:15], t))
+        p.Comparison(t, ">", poly.coeffs[0]),
+        part_gen(poly.coeffs[1:8], t),
+        part_gen(poly.coeffs[8:15], t),
+    )
 
 
 @singledispatch
 def poly_to_expr(poly):
-    raise TypeError(f"unexpected argument type in poly_to_expr: {type(poly)}")
+    message = f"unexpected argument type in poly_to_expr: {type(poly)}"
+    raise TypeError(message)
 
 
 @poly_to_expr.register
 def _(poly: ct.NasaPoly2, arg_name):
     def gen(c, t):
         assert len(c) == 7
-        return c[0] + c[1]*t + c[2]*t**2 + c[3]*t**3 + c[4]*t**4
+        return c[0] + c[1] * t + c[2] * t ** 2 + c[3] * t ** 3 + c[4] * t ** 4
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 
 @singledispatch
 def poly_to_integral_expr(poly, arg_name):
-    raise TypeError(
-            f"unexpected argument type in poly_to_integral_expr: {type(poly)}")
+    message = f"unexpected argument type in poly_to_integral_expr: {type(poly)}"
+    raise TypeError(message)
 
 
 @poly_to_integral_expr.register
 def _(poly: ct.NasaPoly2, arg_name):
     def gen(c, t):
         assert len(c) == 7
-        return c[0]*t + c[1]/2*t**2 + c[2]/3*t**3 + c[3]/4*t**4 + c[4]/5*t**5
+        return (
+            c[0] * t
+            + c[1] / 2 * t ** 2
+            + c[2] / 3 * t ** 3
+            + c[3] / 4 * t ** 4
+            + c[4] / 5 * t ** 5
+        )
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
+
 @singledispatch
 def poly_to_enthalpy_expr(poly, arg_name):
-    raise TypeError(
-            f"unexpected argument type in poly_to_integral_over_T_expr: {type(poly)}")
+    message = f"unexpected argument type in poly_to_enthalpy_expr: {type(poly)}"
+    raise TypeError(message)
+
 
 @poly_to_enthalpy_expr.register
 def _(poly: ct.NasaPoly2, arg_name):
     def gen(c, t):
         assert len(c) == 7
-        return c[0] + c[1]/2*t + c[2]/3*t**2 + c[3]/4*t**3 + c[4]/5*t**4 + c[5]/t
+        return (
+            c[0]
+            + c[1] / 2 * t
+            + c[2] / 3 * t ** 2
+            + c[3] / 4 * t ** 3
+            + c[4] / 5 * t ** 4
+            + c[5] / t
+        )
+
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
+
 
 @singledispatch
 def poly_to_entropy_expr(poly, arg_name):
-    raise TypeError(
-            f"unexpected argument type in poly_to_entropy_expr: {type(poly)}")
+    message = f"unexpected argument type in poly_to_entropy_expr: {type(poly)}"
+    raise TypeError(message)
 
 
 @poly_to_entropy_expr.register
@@ -128,29 +153,27 @@ def _(poly: ct.NasaPoly2, arg_name):
 
     def gen(c, t):
         assert len(c) == 7
-        return (c[0]*log(t)
-                + c[1]*t + c[2]/2*t**2 + c[3]/3*t**3 + c[4]/4*t**4
-                + c[6])
+        return (
+            c[0] * log(t)
+            + c[1] * t
+            + c[2] / 2 * t ** 2
+            + c[3] / 3 * t ** 3
+            + c[4] / 4 * t ** 4
+            + c[6]
+        )
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
-# }}}
-
-# {{{ Sums processing
-
-def accumulate(indices, coeffs, arg_name):
-    def gen(i, c, arg_name):
-        return sum([coeffs[j]*arg_name[i[j]] for j in range(len(coeffs))])
-    return gen(indices, coeffs, p.Variable(arg_name))
 
 # }}}
 
 # {{{ equilibrium constants
 
+
 def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction):
 
     reactants = react.reactants
-    products  = react.products
+    products = react.products
 
     indices_r = [sol.species_index(sp) for sp in reactants]
     indices_p = [sol.species_index(sp) for sp in products]
@@ -160,35 +183,40 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction):
 
     n_r = coeffs_r.sum()
     n_p = coeffs_p.sum()
-    dn  = n_p - n_r
+    dn = n_p - n_r
 
     def gen(i_r, i_p, c_r, c_p, dn, arg_name):
         num_r = len(c_r)
         num_p = len(c_p)
-        sum_r = sum([c_r[j]*arg_name[i_r[j]] for j in range(num_r)])
-        sum_p = sum([c_p[j]*arg_name[i_p[j]] for j in range(num_p)])
+        sum_r = sum([c_r[j] * arg_name[i_r[j]] for j in range(num_r)])
+        sum_p = sum([c_p[j] * arg_name[i_p[j]] for j in range(num_p)])
         if dn < 0:
             sum_p += p.Variable("C0")
         elif dn > 0:
             sum_r += p.Variable("C0")
         return sum_p - sum_r
-    
-    return gen(indices_r,indices_p,coeffs_r,coeffs_p,dn,p.Variable("g0_RT"))
+
+    return gen(indices_r, indices_p, coeffs_r, coeffs_p, dn, p.Variable("g0_RT"))
+
 
 # }}}
 
 # {{{ Rate coefficients
 
+
 def arrhenius_expr(rate_coeff: ct.Arrhenius):
-    
+
+    print("Not implemented yet")
     return
 
-# }}}    
+
+# }}}
 
 
 # {{{ main code template
 
-code_tpl = Template("""
+code_tpl = Template(
+    """
 import numpy as np
 
 class Thermochemistry:
@@ -311,7 +339,9 @@ class Thermochemistry:
 
         return T
 
-""", strict_undefined=True)
+""",
+    strict_undefined=True,
+)
 
 # }}}
 
@@ -320,10 +350,8 @@ def gen_python_code(sol: ct.Solution):
     code = code_tpl.render(
         ct=ct,
         sol=sol,
-
         str_np=str_np,
         cgm=CodeGenerationMapper(),
-
         poly_to_expr=poly_to_expr,
         poly_to_integral_expr=poly_to_integral_expr,
         poly_to_enthalpy_expr=poly_to_enthalpy_expr,
@@ -334,5 +362,6 @@ def gen_python_code(sol: ct.Solution):
     exec_dict = {}
     exec(compile(code, "<generated code>", "exec"), exec_dict)
     return exec_dict["Thermochemistry"]
+
 
 # vim: foldmethod=marker
