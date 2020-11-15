@@ -206,8 +206,7 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction):
 
 def arrhenius_expr(rate_coeff: ct.Arrhenius):
 
-    print("Not implemented yet")
-    return
+    raise NotImplementedError()
 
 
 # }}}
