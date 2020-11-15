@@ -99,27 +99,6 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 
 @singledispatch
-def poly_to_integral_expr(poly, arg_name):
-    message = f"unexpected argument type in poly_to_integral_expr: {type(poly)}"
-    raise TypeError(message)
-
-
-@poly_to_integral_expr.register
-def _(poly: ct.NasaPoly2, arg_name):
-    def gen(c, t):
-        assert len(c) == 7
-        return (
-            c[0] * t
-            + c[1] / 2 * t ** 2
-            + c[2] / 3 * t ** 3
-            + c[3] / 4 * t ** 4
-            + c[4] / 5 * t ** 5
-        )
-
-    return nasa7_conditional(p.Variable(arg_name), poly, gen)
-
-
-@singledispatch
 def poly_to_enthalpy_expr(poly, arg_name):
     message = f"unexpected argument type in poly_to_enthalpy_expr: {type(poly)}"
     raise TypeError(message)
@@ -178,25 +157,26 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction):
     indices_r = [sol.species_index(sp) for sp in reactants]
     indices_p = [sol.species_index(sp) for sp in products]
 
-    coeffs_r = np.array([reactants[sp] for sp in reactants])
-    coeffs_p = np.array([products[sp] for sp in products])
+    # Stoichiometric coefficients
+    nu_r = np.array([reactants[sp] for sp in reactants])
+    nu_p = np.array([products[sp] for sp in products])
 
-    n_r = coeffs_r.sum()
-    n_p = coeffs_p.sum()
-    dn = n_p - n_r
-
-    def gen(i_r, i_p, c_r, c_p, dn, arg_name):
-        num_r = len(c_r)
-        num_p = len(c_p)
-        sum_r = sum([c_r[j] * arg_name[i_r[j]] for j in range(num_r)])
-        sum_p = sum([c_p[j] * arg_name[i_p[j]] for j in range(num_p)])
-        if dn < 0:
+    def gen(i_r, i_p, nu_r, nu_p, arg_name):
+        num_r = len(nu_r)
+        num_p = len(nu_p)
+        sum_r = sum(nu_r[j] * arg_name[i_r[j]] for j in range(num_r))
+        sum_p = sum(nu_p[j] * arg_name[i_p[j]] for j in range(num_p))
+        # Check if reaction is thermolecular
+        sum_nu_net = nu_p.sum() - nu_r.sum()
+        if sum_nu_net < 0:
+            # Three species on reactants side
             sum_p += p.Variable("C0")
-        elif dn > 0:
+        elif sum_nu_net > 0:
+            # Three species on products side
             sum_r += p.Variable("C0")
         return sum_p - sum_r
 
-    return gen(indices_r, indices_p, coeffs_r, coeffs_p, dn, p.Variable("g0_RT"))
+    return gen(indices_r, indices_p, nu_r, nu_p, p.Variable("g0_RT"))
 
 
 # }}}
@@ -207,7 +187,7 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction):
 def arrhenius_expr(rate_coeff: ct.Arrhenius):
 
     print("Not implemented yet")
-    return
+    raise NotImplementedError()
 
 
 # }}}
@@ -367,7 +347,6 @@ def gen_python_code(sol: ct.Solution):
         str_np=str_np,
         cgm=CodeGenerationMapper(),
         poly_to_expr=poly_to_expr,
-        poly_to_integral_expr=poly_to_integral_expr,
         poly_to_enthalpy_expr=poly_to_enthalpy_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
         equilibrium_constants_expr=equilibrium_constants_expr,

@@ -128,17 +128,6 @@ def test_get_thermo_properties():
     return
 
 
-# def test_sandiego():
-
-#     sol = ct.Solution("sanDiego.cti", "gas")
-#     print(pyro.gen_python_code(sol))
-#     #pyro_code = pyro.gen_python_code(sol)
-#     #ptk = pyro_code()
-#     #test_thermo(ptk, sol)
-
-#     return
-
-
 # run single tests using
 # $ python test_codegen.py 'test_sandiego()'
 if __name__ == "__main__":
