@@ -145,6 +145,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 # }}}
 
+
 # {{{ equilibrium constants
 
 
@@ -162,13 +163,15 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
             for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod))
 
     # Check if reaction is termolecular
-    sum_nu_net = nu_prod.sum() - nu_reac.sum()
+    sum_nu_net = sum(nu_prod) - sum(nu_reac)
     if sum_nu_net < 0:
         # Three species on reactants side
         return sum_p + p.Variable("C0") - sum_r
     elif sum_nu_net > 0:
         # Three species on products side
         return sum_p - (sum_r + p.Variable("C0"))
+    else:
+        return sum_p - sum_r
 
 # }}}
 
@@ -330,8 +333,11 @@ def gen_python_code(sol: ct.Solution):
     code = code_tpl.render(
         ct=ct,
         sol=sol,
+
         str_np=str_np,
         cgm=CodeGenerationMapper(),
+        Variable=p.Variable,
+
         poly_to_expr=poly_to_expr,
         poly_to_enthalpy_expr=poly_to_enthalpy_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
