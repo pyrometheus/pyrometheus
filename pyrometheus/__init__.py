@@ -148,45 +148,35 @@ def _(poly: ct.NasaPoly2, arg_name):
 # {{{ equilibrium constants
 
 
-def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction):
-
-    reactants = react.reactants
-    products = react.products
-
-    indices_r = [sol.species_index(sp) for sp in reactants]
-    indices_p = [sol.species_index(sp) for sp in products]
+def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
+    indices_reac = [sol.species_index(sp) for sp in react.reactants]
+    indices_prod = [sol.species_index(sp) for sp in react.products]
 
     # Stoichiometric coefficients
-    nu_r = np.array([reactants[sp] for sp in reactants])
-    nu_p = np.array([products[sp] for sp in products])
+    nu_reac = [react.reactants[sp] for sp in react.reactants]
+    nu_prod = [react.products[sp] for sp in react.products]
 
-    def gen(i_r, i_p, nu_r, nu_p, arg_name):
-        num_r = len(nu_r)
-        num_p = len(nu_p)
-        sum_r = sum(nu_r[j] * arg_name[i_r[j]] for j in range(num_r))
-        sum_p = sum(nu_p[j] * arg_name[i_p[j]] for j in range(num_p))
-        # Check if reaction is thermolecular
-        sum_nu_net = nu_p.sum() - nu_r.sum()
-        if sum_nu_net < 0:
-            # Three species on reactants side
-            sum_p += p.Variable("C0")
-        elif sum_nu_net > 0:
-            # Three species on products side
-            sum_r += p.Variable("C0")
-        return sum_p - sum_r
+    sum_r = sum(nu_reac_i * gibbs_rt[indices_reac_i]
+            for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
+    sum_p = sum(nu_prod_i * gibbs_rt[indices_prod_i]
+            for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod)
 
-    return gen(indices_r, indices_p, nu_r, nu_p, p.Variable("g0_RT"))
-
+    # Check if reaction is termolecular
+    sum_nu_net = nu_p.sum() - nu_r.sum()
+    if sum_nu_net < 0:
+        # Three species on reactants side
+        return sum_p + p.Variable("C0") - sum_r
+    elif sum_nu_net > 0:
+        # Three species on products side
+        return sum_p  - (sum_r + p.Variable("C0"))
 
 # }}}
 
+
 # {{{ Rate coefficients
 
-
 def arrhenius_expr(rate_coeff: ct.Arrhenius):
-
     raise NotImplementedError()
-
 
 # }}}
 
@@ -293,7 +283,8 @@ class Thermochemistry:
         return np.array([
             %for react in sol.reactions():
                 %if react.reversible:
-                    ${cgm(equilibrium_constants_expr(sol,react))},
+                    ${cgm(equilibrium_constants_expr(
+                        sol, react, Variable("g0_RT")))},
                 %else:
                     0*T,
                 %endif
@@ -301,7 +292,6 @@ class Thermochemistry:
             ])
 
     def get_temperature(self, H_or_E, T_guess, Y, do_energy=False):
-
         if do_energy == False:
             pv_fun = self.get_mixture_specific_heat_cp_mass
             he_fun = self.get_mixture_enthalpy_mass
@@ -331,9 +321,7 @@ class Thermochemistry:
 
         return T
 
-""",
-    strict_undefined=True,
-)
+""", strict_undefined=True)
 
 # }}}
 
