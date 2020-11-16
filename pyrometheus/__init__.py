@@ -159,16 +159,16 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
     sum_r = sum(nu_reac_i * gibbs_rt[indices_reac_i]
             for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
     sum_p = sum(nu_prod_i * gibbs_rt[indices_prod_i]
-            for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod)
+            for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod))
 
     # Check if reaction is termolecular
-    sum_nu_net = nu_p.sum() - nu_r.sum()
+    sum_nu_net = nu_prod.sum() - nu_reac.sum()
     if sum_nu_net < 0:
         # Three species on reactants side
         return sum_p + p.Variable("C0") - sum_r
     elif sum_nu_net > 0:
         # Three species on products side
-        return sum_p  - (sum_r + p.Variable("C0"))
+        return sum_p - (sum_r + p.Variable("C0"))
 
 # }}}
 
