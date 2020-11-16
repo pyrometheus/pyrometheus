@@ -85,8 +85,7 @@ def nasa7_conditional(t, poly, part_gen):
 
 @singledispatch
 def poly_to_expr(poly):
-    message = f"unexpected argument type in poly_to_expr: {type(poly)}"
-    raise TypeError(message)
+    raise TypeError(f"unexpected argument type in poly_to_expr: {type(poly)}")
 
 
 @poly_to_expr.register
@@ -100,8 +99,8 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 @singledispatch
 def poly_to_enthalpy_expr(poly, arg_name):
-    message = f"unexpected argument type in poly_to_enthalpy_expr: {type(poly)}"
-    raise TypeError(message)
+    raise TypeError("unexpected argument type in poly_to_enthalpy_expr: "
+            f"{type(poly)}")
 
 
 @poly_to_enthalpy_expr.register
@@ -122,8 +121,8 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 @singledispatch
 def poly_to_entropy_expr(poly, arg_name):
-    message = f"unexpected argument type in poly_to_entropy_expr: {type(poly)}"
-    raise TypeError(message)
+    raise TypeError("unexpected argument type in poly_to_entropy_expr: "
+            f"{type(poly)}")
 
 
 @poly_to_entropy_expr.register
