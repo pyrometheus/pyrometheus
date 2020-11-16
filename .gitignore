@@ -16,3 +16,4 @@ distribute*tar.gz
 .mypy_cache
 
 *.dat
+notebooks

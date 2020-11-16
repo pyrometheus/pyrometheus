@@ -36,20 +36,24 @@ from mako.template import Template
 
 # {{{ code generation helpers
 
+
 class CodeGenerationMapper(StringifyMapper):
     def map_constant(self, expr, enclosing_prec):
         return repr(expr)
 
     def map_if(self, expr, enclosing_prec, *args, **kwargs):
         return "np.where(%s, %s, %s)" % (
-                    self.rec(expr.condition, PREC_NONE, *args, **kwargs),
-                    self.rec(expr.then, PREC_NONE, *args, **kwargs),
-                    self.rec(expr.else_, PREC_NONE, *args, **kwargs))
+            self.rec(expr.condition, PREC_NONE, *args, **kwargs),
+            self.rec(expr.then, PREC_NONE, *args, **kwargs),
+            self.rec(expr.else_, PREC_NONE, *args, **kwargs),
+        )
 
     def map_call(self, expr, enclosing_prec, *args, **kwargs):
-        return self.format("np.%s(%s)",
-                self.rec(expr.function, PREC_CALL, *args, **kwargs),
-                self.join_rec(", ", expr.parameters, PREC_NONE, *args, **kwargs))
+        return self.format(
+            "np.%s(%s)",
+            self.rec(expr.function, PREC_CALL, *args, **kwargs),
+            self.join_rec(", ", expr.parameters, PREC_NONE, *args, **kwargs),
+        )
 
 
 def str_np_inner(ary):
@@ -63,17 +67,20 @@ def str_np_inner(ary):
 def str_np(ary):
     return "np.array(%s)" % str_np_inner(ary)
 
+
 # }}}
 
 
 # {{{ polynomial processing
 
+
 def nasa7_conditional(t, poly, part_gen):
     # FIXME: Should check minTemp, maxTemp
     return p.If(
-            p.Comparison(t, "<", poly.coeffs[0]),
-            part_gen(poly.coeffs[1:8], t),
-            part_gen(poly.coeffs[8:15], t))
+        p.Comparison(t, ">", poly.coeffs[0]),
+        part_gen(poly.coeffs[1:8], t),
+        part_gen(poly.coeffs[8:15], t),
+    )
 
 
 @singledispatch
@@ -85,30 +92,37 @@ def poly_to_expr(poly):
 def _(poly: ct.NasaPoly2, arg_name):
     def gen(c, t):
         assert len(c) == 7
-        return c[0] + c[1]*t + c[2]*t**2 + c[3]*t**3 + c[4]*t**4
+        return c[0] + c[1] * t + c[2] * t ** 2 + c[3] * t ** 3 + c[4] * t ** 4
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 
 @singledispatch
-def poly_to_integral_expr(poly, arg_name):
-    raise TypeError(
-            f"unexpected argument type in poly_to_integral_expr: {type(poly)}")
+def poly_to_enthalpy_expr(poly, arg_name):
+    raise TypeError("unexpected argument type in poly_to_enthalpy_expr: "
+            f"{type(poly)}")
 
 
-@poly_to_integral_expr.register
+@poly_to_enthalpy_expr.register
 def _(poly: ct.NasaPoly2, arg_name):
     def gen(c, t):
         assert len(c) == 7
-        return c[0]*t + c[1]/2*t**2 + c[2]/3*t**3 + c[3]/4*t**4 + c[4]/5*t**5
+        return (
+            c[0]
+            + c[1] / 2 * t
+            + c[2] / 3 * t ** 2
+            + c[3] / 4 * t ** 3
+            + c[4] / 5 * t ** 4
+            + c[5] / t
+        )
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 
 @singledispatch
 def poly_to_entropy_expr(poly, arg_name):
-    raise TypeError(
-            f"unexpected argument type in poly_to_entropy_expr: {type(poly)}")
+    raise TypeError("unexpected argument type in poly_to_entropy_expr: "
+            f"{type(poly)}")
 
 
 @poly_to_entropy_expr.register
@@ -117,26 +131,63 @@ def _(poly: ct.NasaPoly2, arg_name):
 
     def gen(c, t):
         assert len(c) == 7
-        return (c[0]*log(t)
-                + c[1]*t + c[2]/2*t**2 + c[3]/3*t**3 + c[4]/4*t**4
-                + c[6])
+        return (
+            c[0] * log(t)
+            + c[1] * t
+            + c[2] / 2 * t ** 2
+            + c[3] / 3 * t ** 3
+            + c[4] / 4 * t ** 4
+            + c[6]
+        )
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
+
 
 # }}}
 
 
 # {{{ equilibrium constants
 
-def equilibrium_constants_expr(react: ct.Reaction):
-    return 0*p.Variable("T")
+
+def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
+    indices_reac = [sol.species_index(sp) for sp in react.reactants]
+    indices_prod = [sol.species_index(sp) for sp in react.products]
+
+    # Stoichiometric coefficients
+    nu_reac = [react.reactants[sp] for sp in react.reactants]
+    nu_prod = [react.products[sp] for sp in react.products]
+
+    sum_r = sum(nu_reac_i * gibbs_rt[indices_reac_i]
+            for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
+    sum_p = sum(nu_prod_i * gibbs_rt[indices_prod_i]
+            for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod))
+
+    # Check if reaction is termolecular
+    sum_nu_net = sum(nu_prod) - sum(nu_reac)
+    if sum_nu_net < 0:
+        # Three species on reactants side
+        return sum_p + p.Variable("C0") - sum_r
+    elif sum_nu_net > 0:
+        # Three species on products side
+        return sum_p - (sum_r + p.Variable("C0"))
+    else:
+        return sum_p - sum_r
+
+# }}}
+
+
+# {{{ Rate coefficients
+
+def arrhenius_expr(rate_coeff: ct.Arrhenius):
+    raise NotImplementedError()
 
 # }}}
 
 
 # {{{ main code template
 
-code_tpl = Template("""
+code_tpl = Template(
+    """
 import numpy as np
 
 class Thermochemistry:
@@ -152,8 +203,22 @@ class Thermochemistry:
     gas_constant = 8314.4621
     big_number = 1.0e300
 
+    species_names = ${sol.species_names}
+    species_indices = ${
+        dict([[sol.species_name(i), i]
+            for i in range(sol.n_species)])}
+
     wts = ${str_np(sol.molecular_weights)}
     iwts = 1/wts
+
+    def species_name(self, species_index):
+        return self.species_name[species_index]
+
+    def species_index(self, species_name):
+        return self.species_indices[species_name]
+
+    def get_specific_gas_constant(self, Y):
+        return self.gas_constant * np.dot( self.iwts, Y )
 
     def get_density(self, p, T, Y):
         mmw = self.get_mix_molecular_weight( Y )
@@ -197,7 +262,7 @@ class Thermochemistry:
     def get_species_enthalpies_RT(self, T):
         return np.array([
             % for sp in sol.species():
-            ${cgm(poly_to_integral_expr(sp.thermo, "T"))},
+            ${cgm(poly_to_enthalpy_expr(sp.thermo, "T"))},
             % endfor
             ])
 
@@ -221,7 +286,8 @@ class Thermochemistry:
         return np.array([
             %for react in sol.reactions():
                 %if react.reversible:
-                    ${cgm(equilibrium_constants_expr(react))},
+                    ${cgm(equilibrium_constants_expr(
+                        sol, react, Variable("g0_RT")))},
                 %else:
                     0*T,
                 %endif
@@ -229,7 +295,6 @@ class Thermochemistry:
             ])
 
     def get_temperature(self, H_or_E, T_guess, Y, do_energy=False):
-
         if do_energy == False:
             pv_fun = self.get_mixture_specific_heat_cp_mass
             he_fun = self.get_mixture_enthalpy_mass
@@ -271,15 +336,17 @@ def gen_python_code(sol: ct.Solution):
 
         str_np=str_np,
         cgm=CodeGenerationMapper(),
+        Variable=p.Variable,
 
         poly_to_expr=poly_to_expr,
-        poly_to_integral_expr=poly_to_integral_expr,
+        poly_to_enthalpy_expr=poly_to_enthalpy_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
         equilibrium_constants_expr=equilibrium_constants_expr,
-        )
+    )
     print(code)
     exec_dict = {}
     exec(compile(code, "<generated code>", "exec"), exec_dict)
     return exec_dict["Thermochemistry"]
+
 
 # vim: foldmethod=marker
