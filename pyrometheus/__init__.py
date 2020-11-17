@@ -146,7 +146,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 # }}}
 
 
-# {{{ equilibrium constants
+# {{{ Equilibrium constants
 
 
 def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
@@ -178,8 +178,23 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
 
 # {{{ Rate coefficients
 
-def arrhenius_expr(rate_coeff: ct.Arrhenius):
-    raise NotImplementedError()
+def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
+    """This function returns rate-coefficient expressions"""
+    a = rate_coeff.pre_exponential_factor
+    b = rate_coeff.temperature_exponent
+    t_a = rate_coeff.activation_energy/ct.gas_constant
+    if b == 0.0 and t_a == 0.0:
+        # Constant rate
+        return a
+    elif b != 0.0 and t_a == 0.0:
+        # Weakly temperature-dependent rate
+        return a * t**b
+    elif b == 0.0:
+        # Classic Arrhenius rate
+        return np.exp(np.log(a)-t_a/t)
+    else:
+        # Modified Arrhenius
+        return np.exp(np.log(a)+b*t-t_a/t)
 
 # }}}
 
@@ -324,6 +339,16 @@ class Thermochemistry:
 
         return T
 
+    def get_rate_coefficients(self, T, C):
+        return np.array([
+            %for react in sol.reactions():
+                %if react.reaction_type != 4:
+                    ${cgm(rate_coefficient_expr(
+                        react.rate, Variable("T")))},
+                %endif
+            %endfor
+        ])
+
 """, strict_undefined=True)
 
 # }}}
@@ -342,6 +367,7 @@ def gen_python_code(sol: ct.Solution):
         poly_to_enthalpy_expr=poly_to_enthalpy_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
         equilibrium_constants_expr=equilibrium_constants_expr,
+        rate_coefficient_expr=rate_coefficient_expr,
     )
     print(code)
     exec_dict = {}

@@ -29,15 +29,31 @@ import numpy as np  # noqa: F401
 import pyrometheus as pyro
 
 
+def test_get_rate_coefficients():
+    """This function tests that pyrometheus-generated code
+    computes the right rate coefficients for given temeprature"""
+    sol = ct.Solution("sanDiego.cti", "gas")
+    ptk = pyro.gen_python_code(sol)()
+    # Test temperatures
+    temp = np.linspace(500.0, 3000.0, 10)
+    C = np.zeros(ptk.num_species)
+    for t in temp:
+        sol.TP = t, ct.one_atm
+        #k_ct = ptk.forward_rate_constants
+        k_pm = ptk.get_rate_coefficients(t, C)
+        #print(k_ct)
+        print(k_pm)
+    return
+
+
 def test_get_pressure():
-    """This function tests that pyrometheus-generate code
+    """This function tests that pyrometheus-generated code
     computes the right pressure for given density, temperature,
     and mass fractions
     """
     # Create Cantera and pyrometheus objects
     sol = ct.Solution("sanDiego.cti", "gas")
     ptk = pyro.gen_python_code(sol)()
-    print(ptk.species_indices)
     # Temperature, equivalence ratio, oxidizer ratio, stoichiometry ratio
     t = 300.0
     phi = 2.0
