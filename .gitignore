@@ -18,3 +18,4 @@ distribute*tar.gz
 *.dat
 notebooks
 examples
+test/install.sh

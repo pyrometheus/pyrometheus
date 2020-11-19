@@ -36,13 +36,20 @@ def test_get_rate_coefficients():
     ptk = pyro.gen_python_code(sol)()
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
-    C = np.zeros(ptk.num_species)
     for t in temp:
+        # Set new temperature in Cantera
         sol.TP = t, ct.one_atm
-        #k_ct = ptk.forward_rate_constants
-        k_pm = ptk.get_rate_coefficients(t, C)
-        #print(k_ct)
+        # Concentrations
+        y = sol.Y
+        rho = sol.density
+        c = ptk.get_concentrations(rho, y)
+        # Get rate coefficients and compare
+        k_ct = sol.forward_rate_constants
+        k_pm = ptk.get_fwd_rate_coefficients(t, c)
         print(k_pm)
+        print(k_ct)
+        print(t, np.abs(1.0-k_pm/k_ct))
+        print()
     return
 
 
