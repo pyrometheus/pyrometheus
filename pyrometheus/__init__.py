@@ -239,6 +239,21 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_rev)
 # }}}
 
 
+# {{{ Species production rates
+
+def production_rate_expr(sol: ct.Solution, species, r_net):
+    """This function returns an expression for a species production rate"""
+    indices_fwd = [int(react.ID)-1 for react in sol.reactions()
+                   if species in react.reactants]
+    indices_rev = [int(react.ID)-1 for react in sol.reactions()
+                   if species in react.products]
+    sum_fwd = sum(r_net[index] for index in indices_fwd)
+    sum_rev = sum(r_net[index] for index in indices_rev)
+    return sum_rev - sum_fwd
+
+# }}}
+
+
 # {{{ main code template
 
 code_tpl = Template(
@@ -380,6 +395,9 @@ class Thermochemistry:
         return T
 
     def get_falloff_rates(self, T, C, k_fwd):
+        %for i_falloff, react in zip(range(num_falloff), falloff_reactions):
+            k_fwd[${str(react.ID)}-1] = k_hi[i_falloff]*falloff_function[i_falloff]
+        %endfor
         return
 
     def get_fwd_rate_coefficients(self, T, C):
@@ -409,6 +427,15 @@ class Thermochemistry:
             %endfor
             ])
 
+    def get_net_production_rates(self, rho, T, Y):
+        C = self.get_concentrations(rho, Y)
+        r_net = self.get_net_rates_of_progress(T, C)
+        return np.array([
+            %for sp in sol.species():
+                ${cgm(production_rate_expr(sol, sp.name, Variable("r_net")))},
+            %endfor
+            ])
+
 """, strict_undefined=True)
 
 # }}}
@@ -430,6 +457,7 @@ def gen_python_code(sol: ct.Solution):
         rate_coefficient_expr=rate_coefficient_expr,
         third_body_efficiencies_expr=third_body_efficiencies_expr,
         rate_of_progress_expr=rate_of_progress_expr,
+        production_rate_expr=production_rate_expr,
 
         compress=compress,
         falloff_flags=[isinstance(r, ct.FalloffReaction)
