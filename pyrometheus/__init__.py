@@ -210,6 +210,18 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
     sum_default = react.default_efficiency * sum(c[i] for i in indices_default)
     return sum_nondef + sum_default
 
+
+def troe_falloff_expr(react: ct.Reaction, t):
+    """This function returns Troe-falloff expression"""
+    troe_params = react.falloff.parameters
+    troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[2])
+    troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[1])
+    if troe_params[3] > 1.0e-16:
+        troe_3 = p.Variable("exp")(-troe_params[3]/t)
+        return troe_1 + troe_2 + troe_3
+    else:
+        return troe_1 + troe_2
+
 # }}}
 
 
@@ -395,22 +407,48 @@ class Thermochemistry:
         return T
 
     def get_falloff_rates(self, T, C, k_fwd):
-        %for i_falloff, react in zip(range(num_falloff), falloff_reactions):
-            k_fwd[${str(react.ID)}-1] = k_hi[i_falloff]*falloff_function[i_falloff]
+        k_high = np.zeros(self.num_falloff)
+        k_low = np.zeros(self.num_falloff)
+        reduced_pressure = np.zeros(self.num_falloff)
+        falloff_function = np.zeros(self.num_falloff)
+
+         %for i, react in zip(range(len(falloff_reactions)), falloff_reactions):
+        k_high[${i}] = ${cgm(rate_coefficient_expr(react.high_rate, Variable("T")))}
+        k_low[${i}] = ${cgm(rate_coefficient_expr(react.low_rate, Variable("T")))}
+        reduced_pressure[${i}] = (${cgm(third_body_efficiencies_expr(
+            sol, react, Variable("C")))})*k_low[${i}]/k_high[${i}]
+        %if react.falloff.falloff_type == "Troe":
+        falloff_center = np.log10(
+            ${cgm(troe_falloff_expr(react, Variable("T")))})
+        log_rp = np.log10(reduced_pressure[${i}])
+        c = -0.4-0.67*falloff_center
+        n = 0.75-1.27*falloff_center
+        f = (log_rp+c)/(n-0.14*(log_rp+c))
+        falloff_function[${i}] = 10.0**(falloff_center/(1.0+f**2))
+        %else:
+        falloff_function[${i}] = 1.0
+        %endif
+
+        %endfor
+
+        falloff_function *= reduced_pressure/(reduced_pressure+1.0)
+
+        %for i, react in zip(range(len(falloff_reactions)), falloff_reactions):
+        k_fwd[${int(react.ID)-1}] = k_high[${i}]*falloff_function[${i}]
         %endfor
         return
 
     def get_fwd_rate_coefficients(self, T, C):
         k_fwd = np.zeros(self.num_reactions)
-        %if len(falloff_flags) > 0:
+        %if len(falloff_reactions) > 0:
         self.get_falloff_rates(T, C, k_fwd)
         %endif
-        %for react in list(compress(sol.reactions(), non_falloff_flags)):
+        %for react in non_falloff_reactions:
         k_fwd[${int(react.ID)-1}] = ${cgm(rate_coefficient_expr(
             react.rate, Variable("T")))}
         %endfor
 
-        %for react in list(compress(sol.reactions(), third_body_flags)):
+        %for react in three_body_reactions:
         k_fwd[${int(react.ID)-1}] *= (${cgm(third_body_efficiencies_expr(
             sol, react, Variable("C")))})
         %endfor
@@ -456,16 +494,26 @@ def gen_python_code(sol: ct.Solution):
         equilibrium_constants_expr=equilibrium_constants_expr,
         rate_coefficient_expr=rate_coefficient_expr,
         third_body_efficiencies_expr=third_body_efficiencies_expr,
+        troe_falloff_expr=troe_falloff_expr,
         rate_of_progress_expr=rate_of_progress_expr,
         production_rate_expr=production_rate_expr,
 
-        compress=compress,
-        falloff_flags=[isinstance(r, ct.FalloffReaction)
-                       for r in sol.reactions()],
-        non_falloff_flags=[not isinstance(r, ct.FalloffReaction)
-                           for r in sol.reactions()],
-        third_body_flags=[isinstance(r, ct.ThreeBodyReaction)
-                          for r in sol.reactions()],
+        # falloff_flags=[isinstance(r, ct.FalloffReaction)
+        #                for r in sol.reactions()],
+        # non_falloff_flags=[not isinstance(r, ct.FalloffReaction)
+        #                    for r in sol.reactions()],
+        # third_body_flags=[isinstance(r, ct.ThreeBodyReaction)
+        #                   for r in sol.reactions()],
+
+        falloff_reactions=list(compress(sol.reactions(),
+                                        [isinstance(r, ct.FalloffReaction)
+                                         for r in sol.reactions()])),
+        non_falloff_reactions=list(compress(sol.reactions(),
+                                            [not isinstance(r, ct.FalloffReaction)
+                                             for r in sol.reactions()])),
+        three_body_reactions=list(compress(sol.reactions(),
+                                           [isinstance(r, ct.ThreeBodyReaction)
+                                            for r in sol.reactions()])),
     )
     print(code)
     exec_dict = {}

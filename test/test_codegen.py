@@ -29,9 +29,16 @@ import numpy as np  # noqa: F401
 import pyrometheus as pyro
 
 
+def test_get_rates_of_progress():
+    """This function tests that pyrometheus-generated code
+    computes the right rates of progress for given temperature
+    and composition"""
+
+
 def test_get_rate_coefficients():
     """This function tests that pyrometheus-generated code
-    computes the right rate coefficients for given temeprature"""
+    computes the right rate coefficients for given temeprature
+    and composition"""
     sol = ct.Solution("sanDiego.cti", "gas")
     ptk = pyro.gen_python_code(sol)()
     # Test temperatures
@@ -46,10 +53,7 @@ def test_get_rate_coefficients():
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
-        print(k_pm)
-        print(k_ct)
-        print(t, np.abs(1.0-k_pm/k_ct))
-        print()
+        assert ((k_ct-k_pm) / k_ct).max() < 1.0e-14
     return
 
 
