@@ -227,7 +227,7 @@ def troe_falloff_expr(react: ct.Reaction, t):
 
 # {{{ Rates of progress
 
-def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq): #k_rev):
+def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
     """This function returns an expression for the reaction rate of progress"""
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
@@ -245,7 +245,6 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
         r_rev = reduce(lambda x, y: x*y, [c[index]**nu for index, nu
                                           in zip(indices_prod, nu_prod)])
         return k_fwd[int(react.ID)-1] * (r_fwd - k_eq[int(react.ID)-1] * r_rev)
-        #return k_fwd[int(react.ID)-1] * r_fwd - k_rev[int(react.ID)-1] * r_rev
     else:
         return k_fwd[int(react.ID)-1] * r_fwd
 
@@ -286,8 +285,8 @@ class Thermochemistry:
         sum(1 if isinstance(r, ct.FalloffReaction) else 0
             for r in sol.reactions())}
 
-    one_atm = 1.01325e5
-    gas_constant = 8314.4621
+    one_atm = ${ct.one_atm}
+    gas_constant = ${ct.gas_constant}
     big_number = 1.0e300
 
     species_names = ${sol.species_names}
@@ -462,8 +461,9 @@ class Thermochemistry:
 
     def get_net_rates_of_progress(self, T, C):
         k_fwd = self.get_fwd_rate_coefficients(T, C)
-        k_eq = np.exp(self.get_equilibrium_constants(T))
-        #k_rev = k_fwd * np.exp(self.get_equilibrium_constants(T))
+        log_k_eq = self.get_equilibrium_constants(T)
+        k_eq = np.where(np.exp(log_k_eq) < self.big_number,
+            np.exp(log_k_eq), self.big_number)
         return np.array([
             %for react in sol.reactions():
                 ${cgm(rate_of_progress_expr(sol, react, Variable("C"),

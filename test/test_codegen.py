@@ -51,11 +51,10 @@ def test_kinetics():
     reactor = ct.IdealGasConstPressureReactor(sol)
     sim = ct.ReactorNet([reactor])
     time = 0.0
-    for step in range(15):
-        time += 1.0e-5
+    for step in range(50):
+        time += 1.0e-6
         sim.advance(time)
         # Cantera kinetics
-        k_ct = reactor.kinetics.forward_rate_constants
         r_ct = reactor.kinetics.net_rates_of_progress
         omega_ct = reactor.kinetics.net_production_rates
         # Get state from Cantera
@@ -64,30 +63,15 @@ def test_kinetics():
         y = reactor.Y
         # Prometheus kinetics
         c = ptk.get_concentrations(rho, y)
-        k_pm = ptk.get_fwd_rate_coefficients(temp, c)
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
         # Print
-        err_k = np.abs((k_ct-k_pm)/k_ct).max()
         err_r = np.abs((r_ct-r_pm)/r_ct).max()
         err_omega = np.abs((omega_ct[0:-1]-omega_pm[0:-1])/omega_ct[0:-1]).max()
-
-        keq_ct = reactor.kinetics.equilibrium_constants
-        keq_pm = 1.0/np.exp(ptk.get_equilibrium_constants(temp))
-        err_equil = np.abs((keq_ct-keq_pm)/keq_ct)
-        print(temp)
-        print(err_equil)
-        print(reactor.kinetics.reverse_rate_constants)
-        print(np.abs((r_ct-r_pm)/r_ct))
-        print(err_k)
-        print(err_r)
-        print(err_omega)
-        print()
         # Compare
-        #assert ((k_ct-k_pm)/k_ct).max() < 1.0e-14
-        #assert ((r_ct-r_pm)/r_ct).max() < 1.0e-14
-        #assert ((omega_ct-omega_pm)/omega_ct).max() < 1.0e-14
-        
+        assert err_r < 1.0e-10
+        assert err_omega < 1.0e-8
+
     return
 
 
@@ -199,13 +183,13 @@ def test_get_thermo_properties():
         sol.TP = t, ct.one_atm
         keq_ct = sol.equilibrium_constants
         # Compare properties
-        cp_err = (cp_pm - sol.standard_cp_R).max()
-        s_err = (s_pm - sol.standard_entropies_R).max()
-        h_err = (h_pm - sol.standard_enthalpies_RT).max()
-        keq_err = ((keq_pm - keq_ct) / keq_ct).max()
-        assert cp_err < 1.0e-14
-        assert s_err < 1.0e-14
-        assert h_err < 1.0e-14
+        cp_err = np.abs(cp_pm - sol.standard_cp_R).max()
+        s_err = np.abs(s_pm - sol.standard_entropies_R).max()
+        h_err = np.abs(h_pm - sol.standard_enthalpies_RT).max()
+        keq_err = np.abs((keq_pm - keq_ct) / keq_ct).max()
+        assert cp_err < 1.0e-13
+        assert s_err < 1.0e-13
+        assert h_err < 1.0e-13
         assert keq_err < 1.0e-13
 
     return
