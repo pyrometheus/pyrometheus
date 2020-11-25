@@ -223,7 +223,7 @@ falloff_reaction('OH + OH (+ M) <=> H2O2 (+ M)',
                  kf=[9.550000e+13, -0.27, 0.0],
                  kf0=[2.760000e+25, -3.2, 0.0],
                  efficiencies='H2:2.5 H2O:6.0',
-                 falloff=Troe(A=0.57, T3=1e+30, T1=1e-30))
+                 falloff=Troe(A=0.57, T1=1e-30, T3=1e+30))
 
 # Reaction 18
 reaction('HO2 + HO2 <=> H2O2 + O2', [1.940000e+11, 0.0, -5.895],

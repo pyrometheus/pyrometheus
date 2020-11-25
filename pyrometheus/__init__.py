@@ -214,8 +214,8 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
 def troe_falloff_expr(react: ct.Reaction, t):
     """This function returns Troe-falloff expression"""
     troe_params = react.falloff.parameters
-    troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[2])
-    troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[1])
+    troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
+    troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
     if troe_params[3] > 1.0e-16:
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
         return troe_1 + troe_2 + troe_3
@@ -227,7 +227,7 @@ def troe_falloff_expr(react: ct.Reaction, t):
 
 # {{{ Rates of progress
 
-def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_rev):
+def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq): #k_rev):
     """This function returns an expression for the reaction rate of progress"""
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
@@ -244,7 +244,8 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_rev)
         nu_prod = [react.products[sp] for sp in react.products]
         r_rev = reduce(lambda x, y: x*y, [c[index]**nu for index, nu
                                           in zip(indices_prod, nu_prod)])
-        return k_fwd[int(react.ID)-1] * r_fwd - k_rev[int(react.ID)-1] * r_rev
+        return k_fwd[int(react.ID)-1] * (r_fwd - k_eq[int(react.ID)-1] * r_rev)
+        #return k_fwd[int(react.ID)-1] * r_fwd - k_rev[int(react.ID)-1] * r_rev
     else:
         return k_fwd[int(react.ID)-1] * r_fwd
 
@@ -259,8 +260,12 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
                    if species in react.reactants]
     indices_rev = [int(react.ID)-1 for react in sol.reactions()
                    if species in react.products]
-    sum_fwd = sum(r_net[index] for index in indices_fwd)
-    sum_rev = sum(r_net[index] for index in indices_rev)
+    nu_fwd = [sol.reactant_stoich_coeff(sol.species_index(species), react_index)
+              for react_index in indices_fwd]
+    nu_rev = [sol.product_stoich_coeff(sol.species_index(species), prod_index)
+              for prod_index in indices_rev]
+    sum_fwd = sum(nu*r_net[index] for nu, index in zip(nu_fwd, indices_fwd))
+    sum_rev = sum(nu*r_net[index] for nu, index in zip(nu_rev, indices_rev))
     return sum_rev - sum_fwd
 
 # }}}
@@ -456,12 +461,13 @@ class Thermochemistry:
         return k_fwd
 
     def get_net_rates_of_progress(self, T, C):
-        k_fwd = self.get_rate_coefficients(T, C)
-        k_rev = k_fwd * np.exp(self.get_equilibrium_constants(T))
+        k_fwd = self.get_fwd_rate_coefficients(T, C)
+        k_eq = np.exp(self.get_equilibrium_constants(T))
+        #k_rev = k_fwd * np.exp(self.get_equilibrium_constants(T))
         return np.array([
             %for react in sol.reactions():
                 ${cgm(rate_of_progress_expr(sol, react, Variable("C"),
-                    Variable("k_fwd"), Variable("k_rev")))},
+                    Variable("k_fwd"), Variable("k_eq")))},
             %endfor
             ])
 

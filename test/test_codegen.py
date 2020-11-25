@@ -29,10 +29,66 @@ import numpy as np  # noqa: F401
 import pyrometheus as pyro
 
 
-def test_get_rates_of_progress():
+def test_kinetics():
     """This function tests that pyrometheus-generated code
     computes the right rates of progress for given temperature
     and composition"""
+    sol = ct.Solution("sanDiego.cti", "gas")
+    ptk = pyro.gen_python_code(sol)()
+    # Homogeneous reactor to get test data
+    init_temperature = 1500.0
+    equiv_ratio = 1.0
+    ox_di_ratio = 0.21
+    stoich_ratio = 0.5
+    i_fu = sol.species_index("H2")
+    i_ox = sol.species_index("O2")
+    i_di = sol.species_index("N2")
+    x = np.zeros(ptk.num_species)
+    x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
+    x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
+    x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
+    sol.TPX = init_temperature, ct.one_atm, x
+    reactor = ct.IdealGasConstPressureReactor(sol)
+    sim = ct.ReactorNet([reactor])
+    time = 0.0
+    for step in range(15):
+        time += 1.0e-5
+        sim.advance(time)
+        # Cantera kinetics
+        k_ct = reactor.kinetics.forward_rate_constants
+        r_ct = reactor.kinetics.net_rates_of_progress
+        omega_ct = reactor.kinetics.net_production_rates
+        # Get state from Cantera
+        temp = reactor.T
+        rho = reactor.density
+        y = reactor.Y
+        # Prometheus kinetics
+        c = ptk.get_concentrations(rho, y)
+        k_pm = ptk.get_fwd_rate_coefficients(temp, c)
+        r_pm = ptk.get_net_rates_of_progress(temp, c)
+        omega_pm = ptk.get_net_production_rates(rho, temp, y)
+        # Print
+        err_k = np.abs((k_ct-k_pm)/k_ct).max()
+        err_r = np.abs((r_ct-r_pm)/r_ct).max()
+        err_omega = np.abs((omega_ct[0:-1]-omega_pm[0:-1])/omega_ct[0:-1]).max()
+
+        keq_ct = reactor.kinetics.equilibrium_constants
+        keq_pm = 1.0/np.exp(ptk.get_equilibrium_constants(temp))
+        err_equil = np.abs((keq_ct-keq_pm)/keq_ct)
+        print(temp)
+        print(err_equil)
+        print(reactor.kinetics.reverse_rate_constants)
+        print(np.abs((r_ct-r_pm)/r_ct))
+        print(err_k)
+        print(err_r)
+        print(err_omega)
+        print()
+        # Compare
+        #assert ((k_ct-k_pm)/k_ct).max() < 1.0e-14
+        #assert ((r_ct-r_pm)/r_ct).max() < 1.0e-14
+        #assert ((omega_ct-omega_pm)/omega_ct).max() < 1.0e-14
+        
+    return
 
 
 def test_get_rate_coefficients():
@@ -53,7 +109,7 @@ def test_get_rate_coefficients():
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
-        assert ((k_ct-k_pm) / k_ct).max() < 1.0e-14
+        assert np.abs((k_ct-k_pm) / k_ct).max() < 1.0e-14
     return
 
 
