@@ -185,13 +185,13 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
     a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
     t_a = rate_coeff.activation_energy/ct.gas_constant
-    if b == 0.0 and t_a == 0.0:
+    if b == 0 and t_a == 0:
         # Constant rate
         return a
-    elif b != 0.0 and t_a == 0.0:
+    elif b != 0 and t_a == 0:
         # Weakly temperature-dependent rate
         return a * t**b
-    elif b == 0.0 and a != 0.0 and t_a != 0.0:
+    elif b == 0 and a != 0 and t_a != 0:
         # Classic Arrhenius rate
         return p.Variable("exp")(np.log(a)-t_a/t)
     else:
@@ -203,11 +203,9 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
     """This function returns an expression for the third-body rate factor"""
     efficiencies = [react.efficiencies[sp] for sp in react.efficiencies]
     indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
-    indices_default = np.delete(np.linspace(0, sol.n_species-1, sol.n_species,
-                                            dtype=int), indices_nondef)
-    sum_nondef = sum(eff_i * c[index_i] for eff_i, index_i
-                     in zip(efficiencies, indices_nondef))
-    sum_default = react.default_efficiency * sum(c[i] for i in indices_default)
+    indices_default = [i for i in range(sol.n_species if i not in indices_nondef]
+    sum_nondef = efficiencies @ c[indices_nondef]
+    sum_default = react.default_efficiency * c[i.indices_default].sum()
     return sum_nondef + sum_default
 
 
@@ -232,7 +230,7 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
 
-    if len(react.orders) > 0:
+    if react.orders:
         nu_reac = [react.orders[sp] for sp in react.orders]
     else:
         nu_reac = [react.reactants[sp] for sp in react.reactants]
@@ -416,7 +414,7 @@ class Thermochemistry:
         reduced_pressure = np.zeros(self.num_falloff)
         falloff_function = np.zeros(self.num_falloff)
 
-         %for i, react in zip(range(len(falloff_reactions)), falloff_reactions):
+        %for i, react in enumerate(falloff_reactions):
         k_high[${i}] = ${cgm(rate_coefficient_expr(react.high_rate, Variable("T")))}
         k_low[${i}] = ${cgm(rate_coefficient_expr(react.low_rate, Variable("T")))}
         reduced_pressure[${i}] = (${cgm(third_body_efficiencies_expr(
@@ -437,7 +435,7 @@ class Thermochemistry:
 
         falloff_function *= reduced_pressure/(reduced_pressure+1.0)
 
-        %for i, react in zip(range(len(falloff_reactions)), falloff_reactions):
+        %for i, react in enumerate(falloff_reactions):
         k_fwd[${int(react.ID)-1}] = k_high[${i}]*falloff_function[${i}]
         %endfor
         return
