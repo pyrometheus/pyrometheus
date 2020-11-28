@@ -93,6 +93,8 @@ def test_get_rate_coefficients():
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
+        print(k_ct[9], k_ct[16])
+        print(k_pm[9], k_pm[16])
         assert np.abs((k_ct-k_pm) / k_ct).max() < 1.0e-14
     return
 

@@ -24,7 +24,7 @@ THE SOFTWARE.
 """
 
 from numbers import Number
-from functools import singledispatch, reduce
+from functools import singledispatch
 
 import pymbolic.primitives as p
 from pymbolic.mapper.stringifier import StringifyMapper, PREC_NONE, PREC_CALL
@@ -151,6 +151,9 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 
 def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
+    """:returns: Equilibrium constant expression for reaction *react* in terms of
+    the species Gibbs functions *gibbs_rt* as a
+    :class:`pymbolic.primitives.Expression`"""
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
 
@@ -180,7 +183,8 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
 # {{{ Rate coefficients
 
 def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
-    """This function returns rate-coefficient expressions"""
+    """:returns: The rate coefficient expression for *rate_coeff* in terms
+    of the temperature *t* as a :class:`pymbolic.primitives.Expression`"""
     # Rate parameters
     a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
@@ -200,17 +204,20 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
-    """This function returns an expression for the third-body rate factor"""
+    """:returns: The third-body concentration expression for reaction *react* in terms
+    of the species concentraions *c* as a :class:`pymbolic.primitives.Expression`"""
     efficiencies = [react.efficiencies[sp] for sp in react.efficiencies]
     indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
-    indices_default = [i for i in range(sol.n_species if i not in indices_nondef]
-    sum_nondef = efficiencies @ c[indices_nondef]
-    sum_default = react.default_efficiency * c[i.indices_default].sum()
+    indices_default = [i for i in range(sol.n_species) if i not in indices_nondef]
+    sum_nondef = sum(eff_i * c[index_i] for eff_i, index_i
+                     in zip(efficiencies, indices_nondef))
+    sum_default = react.default_efficiency * sum(c[i] for i in indices_default)
     return sum_nondef + sum_default
 
 
 def troe_falloff_expr(react: ct.Reaction, t):
-    """This function returns Troe-falloff expression"""
+    """:returns: The Troe falloff center expression for reaction *react* in terms of the
+    temperature *t* as a :class:`pymbolic.primitives.Expression`"""
     troe_params = react.falloff.parameters
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
@@ -220,13 +227,29 @@ def troe_falloff_expr(react: ct.Reaction, t):
     else:
         return troe_1 + troe_2
 
+
+def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center):
+    """:returns: Falloff function expression for reaction *react* in terms
+    of the temperature *t*, reduced pressure *red_pressure*, and falloff center
+    *falloff_center* as a :class:`pymbolic.primitives.Expression`"""
+    if react.falloff.falloff_type == "Troe":
+        log_rp = p.Variable("log10")(red_pressure[i])
+        c = -0.4-0.67*falloff_center[i]
+        n = 0.75-1.27*falloff_center[i]
+        f = (log_rp+c)/(n-0.14*(log_rp+c))
+        return 10**((falloff_center[i])/(1+f**2))
+    else:
+        return 1
+
 # }}}
 
 
 # {{{ Rates of progress
 
 def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
-    """This function returns an expression for the reaction rate of progress"""
+    """:returns: Rate of progress expression for reaction *react* in terms of
+    species concentrations *c* with rate coefficients *k_fwd* and equilbrium
+    constants *k_eq* as a :class:`pymbolic.primitives.Expression`"""
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
 
@@ -235,13 +258,11 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
     else:
         nu_reac = [react.reactants[sp] for sp in react.reactants]
 
-    r_fwd = reduce(lambda x, y: x*y, [c[index]**nu for index, nu
-                                      in zip(indices_reac, nu_reac)])
+    r_fwd = np.prod([c[index]**nu for index, nu in zip(indices_reac, nu_reac)])
 
     if react.reversible:
         nu_prod = [react.products[sp] for sp in react.products]
-        r_rev = reduce(lambda x, y: x*y, [c[index]**nu for index, nu
-                                          in zip(indices_prod, nu_prod)])
+        r_rev = np.prod([c[index]**nu for index, nu in zip(indices_prod, nu_prod)])
         return k_fwd[int(react.ID)-1] * (r_fwd - k_eq[int(react.ID)-1] * r_rev)
     else:
         return k_fwd[int(react.ID)-1] * r_fwd
@@ -252,7 +273,9 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
 # {{{ Species production rates
 
 def production_rate_expr(sol: ct.Solution, species, r_net):
-    """This function returns an expression for a species production rate"""
+    """:returns: Species production rate for species *species* in terms of
+    the net reaction rates of progress *r_net* as a
+    :class:`pymbolic>primitives.Expression`"""
     indices_fwd = [int(react.ID)-1 for react in sol.reactions()
                    if species in react.reactants]
     indices_rev = [int(react.ID)-1 for react in sol.reactions()
@@ -409,31 +432,42 @@ class Thermochemistry:
         return T
 
     def get_falloff_rates(self, T, C, k_fwd):
-        k_high = np.zeros(self.num_falloff)
-        k_low = np.zeros(self.num_falloff)
-        reduced_pressure = np.zeros(self.num_falloff)
-        falloff_function = np.zeros(self.num_falloff)
-
-        %for i, react in enumerate(falloff_reactions):
-        k_high[${i}] = ${cgm(rate_coefficient_expr(react.high_rate, Variable("T")))}
-        k_low[${i}] = ${cgm(rate_coefficient_expr(react.low_rate, Variable("T")))}
-        reduced_pressure[${i}] = (${cgm(third_body_efficiencies_expr(
-            sol, react, Variable("C")))})*k_low[${i}]/k_high[${i}]
-        %if react.falloff.falloff_type == "Troe":
-        falloff_center = np.log10(
-            ${cgm(troe_falloff_expr(react, Variable("T")))})
-        log_rp = np.log10(reduced_pressure[${i}])
-        c = -0.4-0.67*falloff_center
-        n = 0.75-1.27*falloff_center
-        f = (log_rp+c)/(n-0.14*(log_rp+c))
-        falloff_function[${i}] = 10.0**(falloff_center/(1.0+f**2))
-        %else:
-        falloff_function[${i}] = 1.0
-        %endif
-
+        k_high = np.array([
+        %for react in falloff_reactions:
+            ${cgm(rate_coefficient_expr(react.high_rate, Variable("T")))},
         %endfor
+        ])
 
-        falloff_function *= reduced_pressure/(reduced_pressure+1.0)
+        k_low = np.array([
+        %for react in falloff_reactions:
+            ${cgm(rate_coefficient_expr(react.low_rate, Variable("T")))},
+        %endfor
+        ])
+
+        reduced_pressure = np.array([
+        %for i, react in enumerate(falloff_reactions):
+            (${cgm(third_body_efficiencies_expr(
+                sol, react, Variable("C")))})*k_low[${i}]/k_high[${i}],
+        %endfor
+        ])
+
+        falloff_center = np.array([
+        %for react in falloff_reactions:
+            %if react.falloff.falloff_type == "Troe":
+            np.log10(${cgm(troe_falloff_expr(react, Variable("T")))}),
+            %else:
+            1,
+            %endif
+        %endfor
+        ])
+
+        falloff_function = np.array([
+        %for i, react in enumerate(falloff_reactions):
+            ${cgm(falloff_function_expr(
+                react, i, Variable("T"), Variable("reduced_pressure"),
+                Variable("falloff_center")))},
+        %endfor
+        ])*reduced_pressure/(1+reduced_pressure)
 
         %for i, react in enumerate(falloff_reactions):
         k_fwd[${int(react.ID)-1}] = k_high[${i}]*falloff_function[${i}]
@@ -441,14 +475,18 @@ class Thermochemistry:
         return
 
     def get_fwd_rate_coefficients(self, T, C):
-        k_fwd = np.zeros(self.num_reactions)
-        %if len(falloff_reactions) > 0:
+        k_fwd = np.array([
+        %for react in sol.reactions():
+        %if isinstance(react, ct.FalloffReaction):
+            0,
+        %else:
+            ${cgm(rate_coefficient_expr(react.rate, Variable("T")))},
+        %endif
+        %endfor
+        ])
+        %if falloff_reactions:
         self.get_falloff_rates(T, C, k_fwd)
         %endif
-        %for react in non_falloff_reactions:
-        k_fwd[${int(react.ID)-1}] = ${cgm(rate_coefficient_expr(
-            react.rate, Variable("T")))}
-        %endfor
 
         %for react in three_body_reactions:
         k_fwd[${int(react.ID)-1}] *= (${cgm(third_body_efficiencies_expr(
@@ -499,15 +537,9 @@ def gen_python_code(sol: ct.Solution):
         rate_coefficient_expr=rate_coefficient_expr,
         third_body_efficiencies_expr=third_body_efficiencies_expr,
         troe_falloff_expr=troe_falloff_expr,
+        falloff_function_expr=falloff_function_expr,
         rate_of_progress_expr=rate_of_progress_expr,
         production_rate_expr=production_rate_expr,
-
-        # falloff_flags=[isinstance(r, ct.FalloffReaction)
-        #                for r in sol.reactions()],
-        # non_falloff_flags=[not isinstance(r, ct.FalloffReaction)
-        #                    for r in sol.reactions()],
-        # third_body_flags=[isinstance(r, ct.ThreeBodyReaction)
-        #                   for r in sol.reactions()],
 
         falloff_reactions=list(compress(sol.reactions(),
                                         [isinstance(r, ct.FalloffReaction)
