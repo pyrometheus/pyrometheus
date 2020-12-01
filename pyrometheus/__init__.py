@@ -158,8 +158,12 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
     indices_prod = [sol.species_index(sp) for sp in react.products]
 
     # Stoichiometric coefficients
-    nu_reac = [react.reactants[sp] for sp in react.reactants]
-    nu_prod = [react.products[sp] for sp in react.products]
+    #nu_reac = [react.reactants[sp] for sp in react.reactants]
+    #nu_prod = [react.products[sp] for sp in react.products]
+    nu_reac = [sol.reactant_stoich_coeff(sol.species_index(sp), int(react.ID)-1)
+               for sp in react.reactants]
+    nu_prod = [sol.product_stoich_coeff(sol.species_index(sp), int(react.ID)-1)
+               for sp in react.products]
 
     sum_r = sum(nu_reac_i * gibbs_rt[indices_reac_i]
             for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
@@ -170,10 +174,10 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
     sum_nu_net = sum(nu_prod) - sum(nu_reac)
     if sum_nu_net < 0:
         # Three species on reactants side
-        return sum_p + p.Variable("C0") - sum_r
+        return sum_p - sum_nu_net*p.Variable("C0") - sum_r
     elif sum_nu_net > 0:
         # Three species on products side
-        return sum_p - (sum_r + p.Variable("C0"))
+        return sum_p - (sum_r - sum_nu_net*p.Variable("C0"))
     else:
         return sum_p - sum_r
 
@@ -396,7 +400,7 @@ class Thermochemistry:
                     ${cgm(equilibrium_constants_expr(
                         sol, react, Variable("g0_RT")))},
                 %else:
-                    0*T,
+                    -86*T,
                 %endif
             %endfor
             ])
