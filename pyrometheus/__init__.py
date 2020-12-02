@@ -525,7 +525,7 @@ class Thermochemistry:
 # }}}
 
 
-def gen_python_code(sol: ct.Solution):
+def gen_python_code(sol: ct.Solution, file=None):
     code = code_tpl.render(
         ct=ct,
         sol=sol,
@@ -555,7 +555,10 @@ def gen_python_code(sol: ct.Solution):
                                            [isinstance(r, ct.ThreeBodyReaction)
                                             for r in sol.reactions()])),
     )
-    print(code)
+    if file is not None:
+        print(code, file=file)
+    else:
+        print(code)
     exec_dict = {}
     exec(compile(code, "<generated code>", "exec"), exec_dict)
     return exec_dict["Thermochemistry"]
