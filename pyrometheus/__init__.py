@@ -561,6 +561,7 @@ def gen_python_code(sol: ct.Solution, file=None):
         print(code)
     exec_dict = {}
     exec(compile(code, "<generated code>", "exec"), exec_dict)
+    exec_dict["_MODULE_SOURCE_CODE"] = code
     return exec_dict["Thermochemistry"]
 
 
