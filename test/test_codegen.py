@@ -27,20 +27,24 @@ import sys
 import cantera as ct
 import numpy as np  # noqa: F401
 import pyrometheus as pyro
+import pytest
 
 
-def test_kinetics():
+@pytest.mark.parametrize("mechname,fuel", [("uiuc", "C2H4"),
+                                       ("sanDiego", "H2")])
+def test_kinetics(mechname, fuel):
     """This function tests that pyrometheus-generated code
     computes the right rates of progress for given temperature
     and composition"""
-    sol = ct.Solution("uiuc.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    sol = ct.Solution(f"{mechname}.cti", "gas")
+    ptk = pyro.get_thermochem_class(sol)()
+
     # Homogeneous reactor to get test data
     init_temperature = 1500.0
     equiv_ratio = 1.0
     ox_di_ratio = 0.21
     stoich_ratio = 3.0  # 0.5
-    i_fu = sol.species_index("C2H4")
+    i_fu = sol.species_index(f"{fuel}")
     i_ox = sol.species_index("O2")
     i_di = sol.species_index("N2")
     x = np.zeros(ptk.num_species)
@@ -50,6 +54,7 @@ def test_kinetics():
     sol.TPX = init_temperature, ct.one_atm, x
     reactor = ct.IdealGasConstPressureReactor(sol)
     sim = ct.ReactorNet([reactor])
+
     time = 0.0
     for step in range(50):
         time += 1.0e-7  # 1.0e-6 for H2
@@ -83,12 +88,13 @@ def test_kinetics():
     return
 
 
-def test_get_rate_coefficients():
+@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
+def test_get_rate_coefficients(mechname):
     """This function tests that pyrometheus-generated code
     computes the right rate coefficients for given temeprature
     and composition"""
-    sol = ct.Solution("uiuc.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    sol = ct.Solution(f"{mechname}.cti", "gas")
+    ptk = pyro.get_thermochem_class(sol)()
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
@@ -106,14 +112,15 @@ def test_get_rate_coefficients():
     return
 
 
-def test_get_pressure():
+@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
+def test_get_pressure(mechname):
     """This function tests that pyrometheus-generated code
     computes the right pressure for given density, temperature,
     and mass fractions
     """
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution("sanDiego.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    sol = ct.Solution(f"{mechname}.cti", "gas")
+    ptk = pyro.get_thermochem_class(sol)()
     # Temperature, equivalence ratio, oxidizer ratio, stoichiometry ratio
     t = 300.0
     phi = 2.0
@@ -137,13 +144,14 @@ def test_get_pressure():
     assert abs(p_ct - p_pm) / p_ct < 1.0e-2
 
 
-def test_get_temperature():
+@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
+def test_get_temperature(mechname):
     """This function tests that pyrometheus-generated code
     computes the right temperature for given internal energy
     and mass fractions"""
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution("sanDiego.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    sol = ct.Solution(f"{mechname}.cti", "gas")
+    ptk = pyro.get_thermochem_class(sol)()
     # Tolerance- chosen value keeps error in rate under 1%
     tol = 1.0e-2
     # Test temperatures
@@ -172,13 +180,14 @@ def test_get_temperature():
         assert np.abs(t - t_pm) < tol
 
 
-def test_get_thermo_properties():
+@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
+def test_get_thermo_properties(mechname):
     """This function tests that pyrometheus-generated code
     computes thermodynamic properties c_p, s_R, h_RT, and k_eq
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution("uiuc.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    sol = ct.Solution(f"{mechname}.cti", "gas")
+    ptk = pyro.get_thermochem_class(sol)()
     # Loop over temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
