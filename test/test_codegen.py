@@ -37,11 +37,7 @@ def test_kinetics(mechname, fuel):
     computes the right rates of progress for given temperature
     and composition"""
     sol = ct.Solution(f"{mechname}.cti", "gas")
-
-    mechfile = None
-    #    mechfile = open(f"{mechname}.py", "w")
-    ptk = pyro.gen_python_code(sol, mechfile)()
-    #    mechfile.close()
+    ptk = pyro.gen_python_code(sol)()
 
     # Homogeneous reactor to get test data
     init_temperature = 1500.0

@@ -525,7 +525,7 @@ class Thermochemistry:
 # }}}
 
 
-def gen_python_code(sol: ct.Solution, file=None):
+def gen_mechanism_python(sol: ct.Solution):
     code = code_tpl.render(
         ct=ct,
         sol=sol,
@@ -555,14 +555,17 @@ def gen_python_code(sol: ct.Solution, file=None):
                                            [isinstance(r, ct.ThreeBodyReaction)
                                             for r in sol.reactions()])),
     )
-    if file is not None:
-        print(code, file=file)
-    else:
-        print(code)
+    return code
+
+
+def gen_python_code(sol: ct.Solution):
+    code = gen_mechanism_python(sol)
+    print(code)
+
     exec_dict = {}
     exec(compile(code, "<generated code>", "exec"), exec_dict)
     exec_dict["_MODULE_SOURCE_CODE"] = code
-    exec_dict["_MODULE_SOURCE_CODE"] = code
+
     return exec_dict["Thermochemistry"]
 
 
