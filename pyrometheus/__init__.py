@@ -525,8 +525,8 @@ class Thermochemistry:
 # }}}
 
 
-def gen_mechanism_python(sol: ct.Solution):
-    code = code_tpl.render(
+def gen_thermochem_code(sol: ct.Solution) -> str:
+    return code_tpl.render(
         ct=ct,
         sol=sol,
 
@@ -555,18 +555,18 @@ def gen_mechanism_python(sol: ct.Solution):
                                            [isinstance(r, ct.ThreeBodyReaction)
                                             for r in sol.reactions()])),
     )
-    return code
 
 
-def gen_python_code(sol: ct.Solution):
-    code = gen_mechanism_python(sol)
-    print(code)
-
+def compile_class(code_str, class_name="Thermochemistry"):
     exec_dict = {}
-    exec(compile(code, "<generated code>", "exec"), exec_dict)
-    exec_dict["_MODULE_SOURCE_CODE"] = code
+    exec(compile(code_str, "<generated code>", "exec"), exec_dict)
+    exec_dict["_MODULE_SOURCE_CODE"] = code_str
 
-    return exec_dict["Thermochemistry"]
+    return exec_dict[class_name]
+
+
+def get_thermochem_class(sol: ct.Solution):
+    return compile_class(gen_thermochem_code(sol))
 
 
 # vim: foldmethod=marker

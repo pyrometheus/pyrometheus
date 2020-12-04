@@ -37,7 +37,7 @@ def test_kinetics(mechname, fuel):
     computes the right rates of progress for given temperature
     and composition"""
     sol = ct.Solution(f"{mechname}.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    ptk = pyro.get_thermochem_class(sol)()
 
     # Homogeneous reactor to get test data
     init_temperature = 1500.0
@@ -94,7 +94,7 @@ def test_get_rate_coefficients(mechname):
     computes the right rate coefficients for given temeprature
     and composition"""
     sol = ct.Solution(f"{mechname}.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    ptk = pyro.get_thermochem_class(sol)()
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
@@ -120,7 +120,7 @@ def test_get_pressure(mechname):
     """
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"{mechname}.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    ptk = pyro.get_thermochem_class(sol)()
     # Temperature, equivalence ratio, oxidizer ratio, stoichiometry ratio
     t = 300.0
     phi = 2.0
@@ -151,7 +151,7 @@ def test_get_temperature(mechname):
     and mass fractions"""
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"{mechname}.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    ptk = pyro.get_thermochem_class(sol)()
     # Tolerance- chosen value keeps error in rate under 1%
     tol = 1.0e-2
     # Test temperatures
@@ -187,7 +187,7 @@ def test_get_thermo_properties(mechname):
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"{mechname}.cti", "gas")
-    ptk = pyro.gen_python_code(sol)()
+    ptk = pyro.get_thermochem_class(sol)()
     # Loop over temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
