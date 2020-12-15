@@ -304,6 +304,23 @@ import numpy as np
 from pytools.obj_array import make_obj_array
 
 
+def _my_make_array(res_list):
+    # https://github.com/numpy/numpy/issues/18004
+
+    from numbers import Number
+    all_numbers = all(isinstance(e, Number) for e in res_list)
+
+    dtype = np.float64 if all_numbers else np.object
+    result = np.empty((len(res_list),), dtype=dtype)
+
+    # 'result[:] = res_list' may look tempting, however:
+    # https://github.com/numpy/numpy/issues/16564
+    for idx in range(len(res_list)):
+        result[idx] = res_list[idx]
+
+    return result
+
+
 class Thermochemistry:
     def __init__(self, npctx=np):
         self.npctx = npctx
@@ -783,7 +800,7 @@ class Thermochemistry:
         C0 = self.npctx.log( self.one_atm / RT )
 
         g0_RT = self.get_species_gibbs_RT( T )
-        return make_obj_array([
+        return _my_make_array([
             %for react in sol.reactions():
                 %if react.reversible:
                     ${cgm(equilibrium_constants_expr(
