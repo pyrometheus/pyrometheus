@@ -783,7 +783,7 @@ class Thermochemistry:
         C0 = self.npctx.log( self.one_atm / RT )
 
         g0_RT = self.get_species_gibbs_RT( T )
-        return np.array([
+        return make_obj_array([
             %for react in sol.reactions():
                 %if react.reversible:
                     ${cgm(equilibrium_constants_expr(
@@ -792,7 +792,7 @@ class Thermochemistry:
                     -86*T,
                 %endif
             %endfor
-            ], dtype=np.float64)
+            ])
 
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
         if do_energy == False:
