@@ -304,7 +304,7 @@ import numpy as np
 from pytools.obj_array import make_obj_array
 
 
-def _my_make_array(res_list):
+def _pyro_make_array(res_list):
     # https://github.com/numpy/numpy/issues/18004
 
     from numbers import Number
@@ -320,6 +320,26 @@ def _my_make_array(res_list):
 
     return result
 
+def _pyro_norm(npctx, argument, normord):
+    # Wrap norm for scalars
+    from numbers import Number
+    if isinstance(argument, Number):
+        return np.abs(argument)
+    return npctx.linalg.norm(argument, normord)
+
+
+    from numbers import Number
+    all_numbers = all(isinstance(e, Number) for e in res_list)
+
+    dtype = np.float64 if all_numbers else np.object
+    result = np.empty((len(res_list),), dtype=dtype)
+
+    # 'result[:] = res_list' may look tempting, however:
+    # https://github.com/numpy/numpy/issues/16564
+    for idx in range(len(res_list)):
+        result[idx] = res_list[idx]
+
+    return result
 
 class Thermochemistry:
     def __init__(self, npctx=np):
@@ -398,397 +418,26 @@ class Thermochemistry:
                     for i in range(self.num_species)])
         return self.gas_constant * temperature * esum
 
-    def get_species_specific_heats_R(self, temperature):
-        tt0 = temperature
-        tt1 = temperature * tt0
-        tt2 = temperature * tt1
-        tt3 = temperature * tt2
+    def get_species_specific_heats_R(self, T):
+        return _pyro_make_array([
+            % for sp in sol.species():
+            ${cgm(poly_to_expr(sp.thermo, "T"))},
+            % endfor
+            ])
 
-        cp_high = (
-            2.036111e00
-            + 1.464542e-02 * tt0
-            - 6.710779e-06 * tt1
-            + 1.472229e-09 * tt2
-            - 1.257061e-13 * tt3
-        )
-        cp_low = (
-            3.959201e00
-            - 7.570522e-03 * tt0
-            + 5.709903e-05 * tt1
-            - 6.915888e-08 * tt2
-            + 2.698844e-11 * tt3
-        )
-        cpr0 = self.npctx.where(tt0 < 1.000000e03, cp_low, cp_high)
+    def get_species_enthalpies_RT(self, T):
+        return _pyro_make_array([
+            % for sp in sol.species():
+            ${cgm(poly_to_enthalpy_expr(sp.thermo, "T"))},
+            % endfor
+            ])
 
-        cp_high = (
-            3.282538e00
-            + 1.483088e-03 * tt0
-            - 7.579667e-07 * tt1
-            + 2.094706e-10 * tt2
-            - 2.167178e-14 * tt3
-        )
-        cp_low = (
-            3.782456e00
-            - 2.996734e-03 * tt0
-            + 9.847302e-06 * tt1
-            - 9.681295e-09 * tt2
-            + 3.243728e-12 * tt3
-        )
-        cpr1 = self.npctx.where(tt0 < 1.000000e03, cp_low, cp_high)
-
-        cp_high = (
-            3.857460e00
-            + 4.414370e-03 * tt0
-            - 2.214814e-06 * tt1
-            + 5.234902e-10 * tt2
-            - 4.720842e-14 * tt3
-        )
-        cp_low = (
-            2.356774e00
-            + 8.984597e-03 * tt0
-            - 7.123563e-06 * tt1
-            + 2.459190e-09 * tt2
-            - 1.436995e-13 * tt3
-        )
-        cpr2 = self.npctx.where(tt0 < 1.000000e03, cp_low, cp_high)
-
-        cp_high = (
-            2.715186e00
-            + 2.062527e-03 * tt0
-            - 9.988258e-07 * tt1
-            + 2.300530e-10 * tt2
-            - 2.036477e-14 * tt3
-        )
-        cp_low = (
-            3.579533e00
-            - 6.103537e-04 * tt0
-            + 1.016814e-06 * tt1
-            + 9.070059e-10 * tt2
-            - 9.044245e-13 * tt3
-        )
-        cpr3 = self.npctx.where(tt0 < 1.000000e03, cp_low, cp_high)
-
-        cp_high = (
-            3.033992e00
-            + 2.176918e-03 * tt0
-            - 1.640725e-07 * tt1
-            - 9.704199e-11 * tt2
-            + 1.682010e-14 * tt3
-        )
-        cp_low = (
-            4.198641e00
-            - 2.036434e-03 * tt0
-            + 6.520402e-06 * tt1
-            - 5.487971e-09 * tt2
-            + 1.771978e-12 * tt3
-        )
-        cpr4 = self.npctx.where(tt0 < 1.000000e03, cp_low, cp_high)
-
-        cp_high = (
-            3.337279e00
-            - 4.940247e-05 * tt0
-            + 4.994568e-07 * tt1
-            - 1.795664e-10 * tt2
-            + 2.002554e-14 * tt3
-        )
-        cp_low = (
-            2.344331e00
-            + 7.980521e-03 * tt0
-            - 1.947815e-05 * tt1
-            + 2.015721e-08 * tt2
-            - 7.376118e-12 * tt3
-        )
-        cpr5 = self.npctx.where(tt0 < 1.000000e03, cp_low, cp_high)
-
-        cp_high = (
-            2.926640e00
-            + 1.487977e-03 * tt0
-            - 5.684760e-07 * tt1
-            + 1.009704e-10 * tt2
-            - 6.753351e-15 * tt3
-        )
-        cp_low = (
-            3.298677e00
-            + 1.408240e-03 * tt0
-            - 3.963222e-06 * tt1
-            + 5.641515e-09 * tt2
-            - 2.444854e-12 * tt3
-        )
-        cpr6 = self.npctx.where(tt0 < 1.000000e03, cp_low, cp_high)
-
-        return make_obj_array([cpr0, cpr1, cpr2, cpr3, cpr4, cpr5, cpr6])
-
-    def get_species_enthalpies_RT(self, temperature):
-
-        tt0 = temperature
-        tt1 = temperature * tt0
-        tt2 = temperature * tt1
-        tt3 = temperature * tt2
-        tt4 = 1.0 / temperature
-
-        h_high = (
-            2.036111e00
-            + 1.464542e-02 * 0.50 * tt0
-            - 6.710779e-06 * tt1 / 3.0
-            + 1.472229e-09 * 0.25 * tt2
-            - 1.257061e-13 * 0.20 * tt3
-            + 4.939886e03 * tt4
-        )
-        h_low = (
-            3.959201e00
-            - 7.570522e-03 * 0.50 * tt0
-            + 5.709903e-05 * tt1 / 3.0
-            - 6.915888e-08 * 0.25 * tt2
-            + 2.698844e-11 * 0.20 * tt3
-            + 5.089776e03 * tt4
-        )
-        hrt0 = self.npctx.where(tt0 < 1.000000e03, h_low, h_high)
-
-        h_high = (
-            3.282538e00
-            + 1.483088e-03 * 0.50 * tt0
-            - 7.579667e-07 * tt1 / 3.0
-            + 2.094706e-10 * 0.25 * tt2
-            - 2.167178e-14 * 0.20 * tt3
-            - 1.088458e03 * tt4
-        )
-        h_low = (
-            3.782456e00
-            - 2.996734e-03 * 0.50 * tt0
-            + 9.847302e-06 * tt1 / 3.0
-            - 9.681295e-09 * 0.25 * tt2
-            + 3.243728e-12 * 0.20 * tt3
-            - 1.063944e03 * tt4
-        )
-        hrt1 = self.npctx.where(tt0 < 1.000000e03, h_low, h_high)
-
-        h_high = (
-            3.857460e00
-            + 4.414370e-03 * 0.50 * tt0
-            - 2.214814e-06 * tt1 / 3.0
-            + 5.234902e-10 * 0.25 * tt2
-            - 4.720842e-14 * 0.20 * tt3
-            - 4.875917e04 * tt4
-        )
-        h_low = (
-            2.356774e00
-            + 8.984597e-03 * 0.50 * tt0
-            - 7.123563e-06 * tt1 / 3.0
-            + 2.459190e-09 * 0.25 * tt2
-            - 1.436995e-13 * 0.20 * tt3
-            - 4.837197e04 * tt4
-        )
-        hrt2 = self.npctx.where(tt0 < 1.000000e03, h_low, h_high)
-
-        h_high = (
-            2.715186e00
-            + 2.062527e-03 * 0.50 * tt0
-            - 9.988258e-07 * tt1 / 3.0
-            + 2.300530e-10 * 0.25 * tt2
-            - 2.036477e-14 * 0.20 * tt3
-            - 1.415187e04 * tt4
-        )
-        h_low = (
-            3.579533e00
-            - 6.103537e-04 * 0.50 * tt0
-            + 1.016814e-06 * tt1 / 3.0
-            + 9.070059e-10 * 0.25 * tt2
-            - 9.044245e-13 * 0.20 * tt3
-            - 1.434409e04 * tt4
-        )
-        hrt3 = self.npctx.where(tt0 < 1.000000e03, h_low, h_high)
-
-        h_high = (
-            3.033992e00
-            + 2.176918e-03 * 0.50 * tt0
-            - 1.640725e-07 * tt1 / 3.0
-            - 9.704199e-11 * 0.25 * tt2
-            + 1.682010e-14 * 0.20 * tt3
-            - 3.000430e04 * tt4
-        )
-        h_low = (
-            4.198641e00
-            - 2.036434e-03 * 0.50 * tt0
-            + 6.520402e-06 * tt1 / 3.0
-            - 5.487971e-09 * 0.25 * tt2
-            + 1.771978e-12 * 0.20 * tt3
-            - 3.029373e04 * tt4
-        )
-        hrt4 = self.npctx.where(tt0 < 1.000000e03, h_low, h_high)
-
-        h_high = (
-            3.337279e00
-            - 4.940247e-05 * 0.50 * tt0
-            + 4.994568e-07 * tt1 / 3.0
-            - 1.795664e-10 * 0.25 * tt2
-            + 2.002554e-14 * 0.20 * tt3
-            - 9.501589e02 * tt4
-        )
-        h_low = (
-            2.344331e00
-            + 7.980521e-03 * 0.50 * tt0
-            - 1.947815e-05 * tt1 / 3.0
-            + 2.015721e-08 * 0.25 * tt2
-            - 7.376118e-12 * 0.20 * tt3
-            - 9.179352e02 * tt4
-        )
-        hrt5 = self.npctx.where(tt0 < 1.000000e03, h_low, h_high)
-
-        h_high = (
-            2.926640e00
-            + 1.487977e-03 * 0.50 * tt0
-            - 5.684760e-07 * tt1 / 3.0
-            + 1.009704e-10 * 0.25 * tt2
-            - 6.753351e-15 * 0.20 * tt3
-            - 9.227977e02 * tt4
-        )
-        h_low = (
-            3.298677e00
-            + 1.408240e-03 * 0.50 * tt0
-            - 3.963222e-06 * tt1 / 3.0
-            + 5.641515e-09 * 0.25 * tt2
-            - 2.444854e-12 * 0.20 * tt3
-            - 1.020900e03 * tt4
-        )
-        hrt6 = self.npctx.where(tt0 < 1.000000e03, h_low, h_high)
-
-        return make_obj_array([hrt0, hrt1, hrt2, hrt3, hrt4, hrt5, hrt6])
-
-    def get_species_entropies_R(self, temperature):
-
-        tt0 = temperature
-        tt1 = temperature * tt0
-        tt2 = temperature * tt1
-        tt3 = temperature * tt2
-        tt6 = self.npctx.log(tt0)
-
-        s_high = (
-            2.036111e00 * tt6
-            + 1.464542e-02 * tt0
-            - 6.710779e-06 * 0.50 * tt1
-            + 1.472229e-09 * tt2 / 3.0
-            - 1.257061e-13 * 0.25 * tt3
-            + 1.030537e01
-        )
-        s_low = (
-            3.959201e00 * tt6
-            - 7.570522e-03 * tt0
-            + 5.709903e-05 * 0.50 * tt1
-            - 6.915888e-08 * tt2 / 3.0
-            + 2.698844e-11 * 0.25 * tt3
-            + 4.097331e00
-        )
-        sr0 = self.npctx.where(tt0 < 1.000000e03, s_low, s_high)
-
-        s_high = (
-            3.282538e00 * tt6
-            + 1.483088e-03 * tt0
-            - 7.579667e-07 * 0.50 * tt1
-            + 2.094706e-10 * tt2 / 3.0
-            - 2.167178e-14 * 0.25 * tt3
-            + 5.453231e00
-        )
-        s_low = (
-            3.782456e00 * tt6
-            - 2.996734e-03 * tt0
-            + 9.847302e-06 * 0.50 * tt1
-            - 9.681295e-09 * tt2 / 3.0
-            + 3.243728e-12 * 0.25 * tt3
-            + 3.657676e00
-        )
-        sr1 = self.npctx.where(tt0 < 1.000000e03, s_low, s_high)
-
-        s_high = (
-            3.857460e00 * tt6
-            + 4.414370e-03 * tt0
-            - 2.214814e-06 * 0.50 * tt1
-            + 5.234902e-10 * tt2 / 3.0
-            - 4.720842e-14 * 0.25 * tt3
-            + 2.271638e00
-        )
-        s_low = (
-            2.356774e00 * tt6
-            + 8.984597e-03 * tt0
-            - 7.123563e-06 * 0.50 * tt1
-            + 2.459190e-09 * tt2 / 3.0
-            - 1.436995e-13 * 0.25 * tt3
-            + 9.901052e00
-        )
-        sr2 = self.npctx.where(tt0 < 1.000000e03, s_low, s_high)
-
-        s_high = (
-            2.715186e00 * tt6
-            + 2.062527e-03 * tt0
-            - 9.988258e-07 * 0.50 * tt1
-            + 2.300530e-10 * tt2 / 3.0
-            - 2.036477e-14 * 0.25 * tt3
-            + 7.818688e00
-        )
-        s_low = (
-            3.579533e00 * tt6
-            - 6.103537e-04 * tt0
-            + 1.016814e-06 * 0.50 * tt1
-            + 9.070059e-10 * tt2 / 3.0
-            - 9.044245e-13 * 0.25 * tt3
-            + 3.508409e00
-        )
-        sr3 = self.npctx.where(tt0 < 1.000000e03, s_low, s_high)
-
-        s_high = (
-            3.033992e00 * tt6
-            + 2.176918e-03 * tt0
-            - 1.640725e-07 * 0.50 * tt1
-            - 9.704199e-11 * tt2 / 3.0
-            + 1.682010e-14 * 0.25 * tt3
-            + 4.966770e00
-        )
-        s_low = (
-            4.198641e00 * tt6
-            - 2.036434e-03 * tt0
-            + 6.520402e-06 * 0.50 * tt1
-            - 5.487971e-09 * tt2 / 3.0
-            + 1.771978e-12 * 0.25 * tt3
-            - 8.490322e-01
-        )
-        sr4 = self.npctx.where(tt0 < 1.000000e03, s_low, s_high)
-
-        s_high = (
-            3.337279e00 * tt6
-            - 4.940247e-05 * tt0
-            + 4.994568e-07 * 0.50 * tt1
-            - 1.795664e-10 * tt2 / 3.0
-            + 2.002554e-14 * 0.25 * tt3
-            - 3.205023e00
-        )
-        s_low = (
-            2.344331e00 * tt6
-            + 7.980521e-03 * tt0
-            - 1.947815e-05 * 0.50 * tt1
-            + 2.015721e-08 * tt2 / 3.0
-            - 7.376118e-12 * 0.25 * tt3
-            + 6.830102e-01
-        )
-        sr5 = self.npctx.where(tt0 < 1.000000e03, s_low, s_high)
-
-        s_high = (
-            2.926640e00 * tt6
-            + 1.487977e-03 * tt0
-            - 5.684760e-07 * 0.50 * tt1
-            + 1.009704e-10 * tt2 / 3.0
-            - 6.753351e-15 * 0.25 * tt3
-            + 5.980528e00
-        )
-        s_low = (
-            3.298677e00 * tt6
-            + 1.408240e-03 * tt0
-            - 3.963222e-06 * 0.50 * tt1
-            + 5.641515e-09 * tt2 / 3.0
-            - 2.444854e-12 * 0.25 * tt3
-            + 3.950372e00
-        )
-        sr6 = self.npctx.where(tt0 < 1.000000e03, s_low, s_high)
-
-        return make_obj_array([sr0, sr1, sr2, sr3, sr4, sr5, sr6])
+    def get_species_entropies_R(self, T):
+        return _pyro_make_array([
+            % for sp in sol.species():
+                ${cgm(poly_to_entropy_expr(sp.thermo, "T"))},
+            % endfor
+            ])
 
     def get_species_gibbs_RT(self, T):
         h0_RT = self.get_species_enthalpies_RT(T)
@@ -800,13 +449,13 @@ class Thermochemistry:
         C0 = self.npctx.log( self.one_atm / RT )
 
         g0_RT = self.get_species_gibbs_RT( T )
-        return _my_make_array([
+        return _pyro_make_array([
             %for react in sol.reactions():
                 %if react.reversible:
                     ${cgm(equilibrium_constants_expr(
                         sol, react, Variable("g0_RT")))},
                 %else:
-                    -86*T,
+                    -86.8234750136705,
                 %endif
             %endfor
             ])
@@ -822,6 +471,7 @@ class Thermochemistry:
         num_iter = 500
         tol = 1.0e-6
         ones = (1 + enthalpy_or_energy) - enthalpy_or_energy
+        zeros = 0 * ones
         t_i = t_guess * ones
 
         for iter in range(num_iter):
@@ -829,7 +479,7 @@ class Thermochemistry:
             j = -pv_fun(t_i, y)
             dt = -f / j
             t_i += dt
-            if self.npctx.linalg.norm(dt, np.inf) < tol:
+            if _pyro_norm(self.npctx, dt, np.inf) < tol:
                 break
 
         return t_i
