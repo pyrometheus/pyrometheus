@@ -328,19 +328,6 @@ def _pyro_norm(npctx, argument, normord):
     return npctx.linalg.norm(argument, normord)
 
 
-    from numbers import Number
-    all_numbers = all(isinstance(e, Number) for e in res_list)
-
-    dtype = np.float64 if all_numbers else np.object
-    result = np.empty((len(res_list),), dtype=dtype)
-
-    # 'result[:] = res_list' may look tempting, however:
-    # https://github.com/numpy/numpy/issues/16564
-    for idx in range(len(res_list)):
-        result[idx] = res_list[idx]
-
-    return result
-
 class Thermochemistry:
     def __init__(self, npctx=np):
         self.npctx = npctx
