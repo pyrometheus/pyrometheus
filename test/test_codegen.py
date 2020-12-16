@@ -106,22 +106,19 @@ def test_get_thermo_properties(mechname):
         cp_err = np.abs(cp_pm - sol.standard_cp_R).max()
         print(f"cp_pm = {cp_pm}")
         print(f"cnt_cp = {sol.standard_cp_R}")
-        #        assert cp_err < 1.0e-13
-        assert cp_err < 1.0e-6
+        assert cp_err < 1.0e-13
 
         s_pm = ptk.get_species_entropies_R(t)
         s_err = np.abs(s_pm - sol.standard_entropies_R).max()
         print(f"s_pm = {s_pm}")
         print(f"cnt_s = {sol.standard_entropies_R}")
-        #        assert s_err < 1.0e-13
-        assert s_err < 1.0e-5
+        assert s_err < 1.0e-13
 
         h_pm = ptk.get_species_enthalpies_RT(t)
         h_err = np.abs(h_pm - sol.standard_enthalpies_RT).max()
         print(f"h_pm = {h_pm}")
         print(f"cnt_h = {sol.standard_enthalpies_RT}")
-        #        assert h_err < 1.0e-13
-        assert h_err < 1.0e-5
+        assert h_err < 1.0e-13
 
         keq_pm1 = ptk.get_equilibrium_constants(t)
         print(f"keq1 = {keq_pm1}")
