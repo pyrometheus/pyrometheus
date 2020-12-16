@@ -280,7 +280,7 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
     """:returns: Species production rate for species *species* in terms of
     the net reaction rates of progress *r_net* as a
     :class:`pymbolic>primitives.Expression`"""
-    ones = r_net[0] / r_net[0]
+    ones = (1.0 + r_net[0]) - r_net[0]
     indices_fwd = [int(react.ID)-1 for react in sol.reactions()
                    if species in react.reactants]
     indices_rev = [int(react.ID)-1 for react in sol.reactions()
@@ -299,8 +299,7 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
 # {{{ main code template
 
 code_tpl = Template(
-    """
-import numpy as np
+    """import numpy as np
 from pytools.obj_array import make_obj_array
 
 
@@ -319,6 +318,7 @@ def _pyro_make_array(res_list):
         result[idx] = res_list[idx]
 
     return result
+
 
 def _pyro_norm(npctx, argument, normord):
     # Wrap norm for scalars
@@ -458,7 +458,6 @@ class Thermochemistry:
         num_iter = 500
         tol = 1.0e-6
         ones = (1 + enthalpy_or_energy) - enthalpy_or_energy
-        zeros = 0 * ones
         t_i = t_guess * ones
 
         for iter in range(num_iter):
