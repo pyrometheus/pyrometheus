@@ -25,7 +25,7 @@ Table of Contents
     codegen
     misc
     🚀 Github <https://github.com/ecisneros8/pyrometheus>
-    💾 Download Releases <https://pypi.pythonorg/project/pyrometheus>
+    💾 Download Releases <https://pypi.org/project/pyrometheus>
 
 Indices and tables
 ==================
