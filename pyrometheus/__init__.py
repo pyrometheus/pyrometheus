@@ -1,3 +1,41 @@
+"""
+.. autofunction:: gen_python_code
+
+Interface of the Generated Per-Mechanism Code
+---------------------------------------------
+
+.. class:: Thermochemistry
+
+    .. attribute:: model_name
+    .. attribute:: num_elements
+    .. attribute:: num_species
+    .. attribute:: num_reactions
+    .. attribute:: num_falloff
+    .. attribute:: one_atm
+
+        What is this? In what units?
+
+    .. attribute:: gas_constant
+    .. attribute:: species_names
+    .. attribute:: species_indices
+
+    .. method:: get_specific_gas_constant(self, Y)
+    .. method:: get_density(self, p, T, Y)
+    .. method:: get_pressure(self, rho, T, Y)
+    .. method:: get_mix_molecular_weight(self, Y)
+    .. method:: get_concentrations(self, rho, Y)
+    .. method:: get_mixture_specific_heat_cp_mass(self, T, Y)
+    .. method:: get_mixture_specific_heat_cv_mass(self, T, Y)
+    .. method:: get_mixture_enthalpy_mass(self, T, Y)
+    .. method:: get_mixture_internal_energy_mass(self, T, Y)
+    .. method:: get_species_specific_heats_R(self, T)
+    .. method:: get_species_enthalpies_RT(self, T)
+    .. method:: get_species_entropies_R(self, T)
+    .. method:: get_species_gibbs_RT(self, T)
+    .. method:: get_equilibrium_constants(self, T)
+    .. method:: get_temperature(self, H_or_E, T_guess, Y, do_energy=False)
+"""
+
 __copyright__ = """
 Copyright (C) 2020 Esteban Cisneros
 Copyright (C) 2020 Andreas Kloeckner
@@ -330,6 +368,10 @@ class Thermochemistry:
 
 
 def gen_python_code(sol: ct.Solution):
+    """For the mechanism given by *sol*, return a class conforming to the
+    :class:`Thermochemistry` interface.
+    """
+
     code = code_tpl.render(
         ct=ct,
         sol=sol,

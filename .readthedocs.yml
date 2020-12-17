@@ -1,0 +1,9 @@
+version: 2
+
+conda:
+  environment: .rtd-env-py3.yml
+
+python:
+  install:
+    - method: pip
+      path: .

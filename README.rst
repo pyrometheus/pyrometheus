@@ -8,8 +8,13 @@ Pyrometheus: Code Generation for Combustion Mechanisms
     :alt: Python Package Index Release Page
     :target: https://pypi.org/project/pyrometheus/
 
+.. When you update this description, consider also updating the one in doc/index.rst.
+
+Pyrometheus is a code generator for chemical mechanisms, based on `Cantera
+<https://cantera.org>`__.
+
 Links:
 
-* `Documentation <https://example.com>`__ (Not yet!)
+* `Documentation <https://pyrometheus.readthedocs.io/en/latest/>`__
 
-* `Github <https://github.com/inducer/pyrometheus>`__
+* `Github <https://github.com/ecisneros/pyrometheus>`__
