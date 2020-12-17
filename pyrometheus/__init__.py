@@ -66,7 +66,7 @@ def str_np_inner(ary):
 
 
 def str_np(ary):
-    return "self.npctx.array(%s)" % str_np_inner(ary)
+    return "np.array(%s)" % str_np_inner(ary)
 
 
 # }}}
@@ -442,13 +442,13 @@ class Thermochemistry:
                     ${cgm(equilibrium_constants_expr(
                         sol, react, Variable("g0_RT")))},
                 %else:
-                    -86.8234750136705,
+                    -0.17364695002734*T,
                 %endif
             %endfor
             ])
 
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
-        if do_energy == False:
+        if do_energy is False:
             pv_fun = self.get_mixture_specific_heat_cp_mass
             he_fun = self.get_mixture_enthalpy_mass
         else:
@@ -471,26 +471,26 @@ class Thermochemistry:
         return t_i
 
     def get_falloff_rates(self, T, C, k_fwd):
-        k_high = make_obj_array([
+        k_high = _pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(rate_coefficient_expr(react.high_rate, Variable("T")))},
         %endfor
         ])
 
-        k_low = make_obj_array([
+        k_low = _pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(rate_coefficient_expr(react.low_rate, Variable("T")))},
         %endfor
         ])
 
-        reduced_pressure = make_obj_array([
+        reduced_pressure = _pyro_make_array([
         %for i, react in enumerate(falloff_reactions):
             (${cgm(third_body_efficiencies_expr(
                 sol, react, Variable("C")))})*k_low[${i}]/k_high[${i}],
         %endfor
         ])
 
-        falloff_center = make_obj_array([
+        falloff_center = _pyro_make_array([
         %for react in falloff_reactions:
             %if react.falloff.falloff_type == "Troe":
             self.npctx.log10(${cgm(troe_falloff_expr(react, Variable("T")))}),
@@ -500,7 +500,7 @@ class Thermochemistry:
         %endfor
         ])
 
-        falloff_function = make_obj_array([
+        falloff_function = _pyro_make_array([
         %for i, react in enumerate(falloff_reactions):
             ${cgm(falloff_function_expr(
                 react, i, Variable("T"), Variable("reduced_pressure"),
@@ -515,7 +515,7 @@ class Thermochemistry:
 
 
     def get_fwd_rate_coefficients(self, T, C):
-        k_fwd = make_obj_array([
+        k_fwd = _pyro_make_array([
         %for react in sol.reactions():
         %if isinstance(react, ct.FalloffReaction):
             0*T,
@@ -539,7 +539,7 @@ class Thermochemistry:
         k_fwd = self.get_fwd_rate_coefficients(T, C)
         log_k_eq = self.get_equilibrium_constants(T)
         k_eq = self.npctx.exp(log_k_eq)
-        return make_obj_array([
+        return _pyro_make_array([
                 %for react in sol.reactions():
                     ${cgm(rate_of_progress_expr(sol, react, Variable("C"),
                         Variable("k_fwd"), Variable("k_eq")))},
@@ -550,7 +550,7 @@ class Thermochemistry:
         C = self.get_concentrations(rho, Y)
         r_net = self.get_net_rates_of_progress(T, C)
         ones = r_net[0] + 1.0 - r_net[0]
-        return make_obj_array([
+        return _pyro_make_array([
             %for sp in sol.species():
                 ${cgm(production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
             %endfor
@@ -606,24 +606,3 @@ def get_thermochem_class(sol: ct.Solution):
 
 
 # vim: foldmethod=marker
-
-#    def get_concentrations(self, rho, Y):
-#        return self.iwts * rho * Y
-#
-#    def get_mixture_specific_heat_cp_mass(self, T, Y):
-#        return self.gas_constant * sum(
-#            self.get_species_specific_heats_R(T)* Y * self.iwts)
-#
-#    def get_mixture_specific_heat_cv_mass(self, T, Y):
-#        cp0_R = self.get_species_specific_heats_R( T ) - 1.0
-#        return self.gas_constant * sum(Y * cp0_R * self.iwts)
-#
-#    def get_mixture_enthalpy_mass(self, T, Y):
-#        h0_RT = self.get_species_enthalpies_RT( T )
-#        return self.gas_constant * T * sum(Y * h0_RT * self.iwts)
-#
-#    def get_mixture_internal_energy_mass(self, T, Y):
-#        e0_rt = self.get_species_enthalpies_RT( T ) - 1.0
-#        esum = sum([Y[i] * e0_rt[i] * self.iwts[i]
-#                    for i in range(self.num_species)])
-#        return self.gas_constant * T * esum

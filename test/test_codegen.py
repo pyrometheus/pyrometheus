@@ -74,11 +74,13 @@ def test_get_pressure(mechname):
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"{mechname}.cti", "gas")
     ptk = pyro.get_thermochem_class(sol)()
+
     # Temperature, equivalence ratio, oxidizer ratio, stoichiometry ratio
     t = 300.0
     phi = 2.0
     alpha = 0.21
     nu = 0.5
+
     # Species mass fractions
     i_fu = ptk.species_index("H2")
     i_ox = ptk.species_index("O2")
@@ -87,11 +89,13 @@ def test_get_pressure(mechname):
     x[i_fu] = (alpha * phi) / (nu + alpha * phi)
     x[i_ox] = nu * x[i_fu] / phi
     x[i_di] = (1.0 - alpha) * x[i_ox] / alpha
+
     # Get equilibrium composition
     sol.TPX = t, ct.one_atm, x
     sol.equilibrate("UV")
     t, rho, y = sol.TDY
     p_ct = sol.P
+
     # Compute pressure with pyrometheus and compare to Cantera
     p_pm = ptk.get_pressure(rho, t, y)
     assert abs(p_ct - p_pm) / p_ct < 1.0e-12
@@ -105,6 +109,7 @@ def test_get_thermo_properties(mechname):
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"{mechname}.cti", "gas")
     ptk = pyro.get_thermochem_class(sol)()
+
     # Loop over temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
@@ -141,6 +146,7 @@ def test_get_thermo_properties(mechname):
         print(f"temperature = {t}")
         print(f"keq_err = {keq_err}")
         #        assert keq_err < 1.0e-12
+
     return
 
 
