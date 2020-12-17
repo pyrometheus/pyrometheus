@@ -41,6 +41,21 @@ by the United States Government or any agency thereof.  The views and opinions
 of authors expressed herein  do  not  necessarily  state  or  reflect  those  of
 the  United  States  Government  or any  agency thereof.
 
+Building the Documentation
+==========================
+
+You need to install Sphinx (a Python documentation tool) and two third-party
+packages to build the docs::
+
+    pip install furo sphinx sphinx_copybutton
+
+Then simply run::
+
+    cd doc
+    make html
+
+and browse the docs starting from ``doc/_build/html/index.html``.
+
 References
 ==========
 
