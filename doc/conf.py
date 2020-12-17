@@ -43,7 +43,6 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.napoleon",
-    "sphinx_math_dollar",
     "sphinx_copybutton",
 ]
 
