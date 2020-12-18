@@ -611,7 +611,7 @@ def compile_class(code_str, class_name="Thermochemistry"):
 def get_thermochem_class(sol: ct.Solution):
     """For the mechanism given by *sol*, return a class conforming to the
     :class:`Thermochemistry` interface.
-    """      
+    """
     return compile_class(gen_thermochem_code(sol))
 
 
