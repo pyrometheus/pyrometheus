@@ -280,7 +280,7 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
     """:returns: Species production rate for species *species* in terms of
     the net reaction rates of progress *r_net* as a
     :class:`pymbolic>primitives.Expression`"""
-    ones = (1.0 + r_net[0]) - r_net[0]
+    ones = (r_net[0] + 1.0) - r_net[0]
     indices_fwd = [int(react.ID)-1 for react in sol.reactions()
                    if species in react.reactants]
     indices_rev = [int(react.ID)-1 for react in sol.reactions()
@@ -300,7 +300,6 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
 
 code_tpl = Template(
     """import numpy as np
-from pytools.obj_array import make_obj_array
 
 
 def _pyro_make_array(res_list):
@@ -471,6 +470,7 @@ class Thermochemistry:
         return t_i
 
     def get_falloff_rates(self, T, C, k_fwd):
+        ones = (1.0 + T) - T
         k_high = _pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(rate_coefficient_expr(react.high_rate, Variable("T")))},
@@ -509,18 +509,19 @@ class Thermochemistry:
         ])*reduced_pressure/(1+reduced_pressure)
 
         %for i, react in enumerate(falloff_reactions):
-        k_fwd[${int(react.ID)-1}] = k_high[${i}]*falloff_function[${i}]
+        k_fwd[${int(react.ID)-1}] = k_high[${i}]*falloff_function[${i}]*ones
         %endfor
         return
 
 
     def get_fwd_rate_coefficients(self, T, C):
+        ones = (1.0 + T) - T
         k_fwd = _pyro_make_array([
         %for react in sol.reactions():
         %if isinstance(react, ct.FalloffReaction):
             0*T,
         %else:
-            ${cgm(rate_coefficient_expr(react.rate, Variable("T")))},
+            ${cgm(rate_coefficient_expr(react.rate, Variable("T")))} * ones,
         %endif
         %endfor
         ])
@@ -549,7 +550,7 @@ class Thermochemistry:
     def get_net_production_rates(self, rho, T, Y):
         C = self.get_concentrations(rho, Y)
         r_net = self.get_net_rates_of_progress(T, C)
-        ones = r_net[0] + 1.0 - r_net[0]
+        ones = (1.0 + r_net[0]) - r_net[0]
         return _pyro_make_array([
             %for sp in sol.species():
                 ${cgm(production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
