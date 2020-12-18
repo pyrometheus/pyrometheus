@@ -1,7 +1,6 @@
 name: test-conda-env
 channels:
 - conda-forge
-- cantera/label/dev
 - nodefaults
 
 dependencies:

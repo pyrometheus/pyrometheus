@@ -1,0 +1,12 @@
+name: rtd-env-py3
+channels:
+- conda-forge
+- nodefaults
+dependencies:
+- python=3.8
+- cantera
+- pip:
+  - "sphinx-math-dollar"
+  - "sphinx-copybutton"
+  - "furo"
+
