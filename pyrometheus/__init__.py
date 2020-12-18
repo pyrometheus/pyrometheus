@@ -82,7 +82,7 @@ class CodeGenerationMapper(StringifyMapper):
         return repr(expr)
 
     def map_if(self, expr, enclosing_prec, *args, **kwargs):
-        return "self.npctx.where(%s, %s, %s)" % (
+        return "self.actx_np.where(%s, %s, %s)" % (
             self.rec(expr.condition, PREC_NONE, *args, **kwargs),
             self.rec(expr.then, PREC_NONE, *args, **kwargs),
             self.rec(expr.else_, PREC_NONE, *args, **kwargs),
@@ -90,7 +90,7 @@ class CodeGenerationMapper(StringifyMapper):
 
     def map_call(self, expr, enclosing_prec, *args, **kwargs):
         return self.format(
-            "self.npctx.%s(%s)",
+            "self.actx_np.%s(%s)",
             self.rec(expr.function, PREC_CALL, *args, **kwargs),
             self.join_rec(", ", expr.parameters, PREC_NONE, *args, **kwargs),
         )
@@ -358,17 +358,37 @@ def _pyro_make_array(res_list):
     return result
 
 
-def _pyro_norm(npctx, argument, normord):
+def _pyro_norm(actx_np, argument, normord):
     # Wrap norm for scalars
     from numbers import Number
     if isinstance(argument, Number):
         return np.abs(argument)
-    return npctx.linalg.norm(argument, normord)
+    return actx_np.linalg.norm(argument, normord)
 
 
 class Thermochemistry:
-    def __init__(self, npctx=np):
-        self.npctx = npctx
+    def __init__(self, actx_np=np):
+        \"""Initialize the mechanism object.
+
+        Parameters
+        ----------
+        actx_np
+            numpy-like namespace providing at least the following functions:
+            actx_np.log(T)
+            actx_np.log10(T)
+            actx_np.exp(T)
+            actx_np.where(T > 0, T_yes, T_no)
+            actx_np.linalg.norm(T, np.inf)
+            where T is model user data having the same size, shape, and nature
+            of the user's temperature data, for example. This parameter allows
+            the user to provide a numpy work-alike that is capable of processing
+            the user's data structures, or even invoking custom kernels for the
+            associated operations. This parameter defaults to *actual numpy*, so
+            unless it is needed by the user (e.g. for GPU processing).
+
+        \"""
+
+        self.actx_np = actx_np
         self.model_name = ${repr(sol.source)}
         self.num_elements = ${sol.n_elements}
         self.num_species = ${sol.n_species}
@@ -415,7 +435,7 @@ class Thermochemistry:
         conctest = self.iwts * rho * Y
         zero = 0 * conctest[0]
         for i, conc in enumerate(conctest):
-            conctest[i] = self.npctx.where(conctest[i] > 0, conctest[i], zero)
+            conctest[i] = self.actx_np.where(conctest[i] > 0, conctest[i], zero)
         return conctest
 
     def get_mixture_specific_heat_cp_mass(self, temperature, massfractions):
@@ -471,7 +491,7 @@ class Thermochemistry:
 
     def get_equilibrium_constants(self, T):
         RT = self.gas_constant * T
-        C0 = self.npctx.log( self.one_atm / RT )
+        C0 = self.actx_np.log( self.one_atm / RT )
 
         g0_RT = self.get_species_gibbs_RT( T )
         return _pyro_make_array([
@@ -503,7 +523,7 @@ class Thermochemistry:
             j = -pv_fun(t_i, y)
             dt = -f / j
             t_i += dt
-            if _pyro_norm(self.npctx, dt, np.inf) < tol:
+            if _pyro_norm(self.actx_np, dt, np.inf) < tol:
                 break
 
         return t_i
@@ -532,7 +552,7 @@ class Thermochemistry:
         falloff_center = _pyro_make_array([
         %for react in falloff_reactions:
             %if react.falloff.falloff_type == "Troe":
-            self.npctx.log10(${cgm(troe_falloff_expr(react, Variable("T")))}),
+            self.actx_np.log10(${cgm(troe_falloff_expr(react, Variable("T")))}),
             %else:
             1,
             %endif
@@ -578,7 +598,7 @@ class Thermochemistry:
     def get_net_rates_of_progress(self, T, C):
         k_fwd = self.get_fwd_rate_coefficients(T, C)
         log_k_eq = self.get_equilibrium_constants(T)
-        k_eq = self.npctx.exp(log_k_eq)
+        k_eq = self.actx_np.exp(log_k_eq)
         return _pyro_make_array([
                 %for react in sol.reactions():
                     ${cgm(rate_of_progress_expr(sol, react, Variable("C"),
