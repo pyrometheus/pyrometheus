@@ -43,7 +43,12 @@ def test_kinetics(mechname, fuel):
     init_temperature = 1500.0
     equiv_ratio = 1.0
     ox_di_ratio = 0.21
-    stoich_ratio = 3.0  # 0.5
+    if f"{fuel}" == "H2":
+        stoich_ratio = 0.5
+    elif f"{fuel}" == "C2H4":
+        stoich_ratio = 3
+    else:
+        return
     i_fu = sol.species_index(f"{fuel}")
     i_ox = sol.species_index("O2")
     i_di = sol.species_index("N2")
@@ -71,8 +76,8 @@ def test_kinetics(mechname, fuel):
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
         # Compare
-        assert np.linalg.norm(r_ct-r_pm, np.inf) < 1.0e-12
-        assert np.linalg.norm(omega_ct-omega_pm, np.inf) < 1.0e-12
+        assert np.linalg.norm(r_ct-r_pm, np.inf) < 1e-10
+        assert np.linalg.norm(omega_ct-omega_pm, np.inf) < 1e-10
 
     return
 
@@ -97,7 +102,7 @@ def test_get_rate_coefficients(mechname):
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
         print(np.abs((k_ct-k_pm)/k_ct))
-        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1.0e-14
+        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-14
     return
 
 
