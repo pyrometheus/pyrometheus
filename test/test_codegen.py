@@ -56,8 +56,8 @@ def test_kinetics(mechname, fuel):
     sim = ct.ReactorNet([reactor])
 
     time = 0.0
-    for step in range(50):
-        time += 1.0e-7  # 1.0e-6 for H2
+    for step in range(100):
+        time += 1.0e-6  # 1.0e-6 for H2
         sim.advance(time)
         # Cantera kinetics
         r_ct = reactor.kinetics.net_rates_of_progress
@@ -70,20 +70,9 @@ def test_kinetics(mechname, fuel):
         c = ptk.get_concentrations(rho, y)
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
-        # Print
-        err_r = np.abs((r_ct-r_pm))
-        err_omega = np.abs((omega_ct[0:-1]-omega_pm[0:-1]))
-        print("T = ", reactor.T)
-        print("y_ct", reactor.Y)
-        print("y = ", y)
-        print("omega_ct = ", omega_ct[0:-1])
-        print("omega_pm = ", omega_pm[0:-1])
-        print("err_omega = ", err_omega)
-        print("err_r = ", err_r)
-        print()
         # Compare
-        #assert err_r < 1.0e-10
-        #assert err_omega < 1.0e-8
+        assert np.linalg.norm(r_ct-r_pm, np.inf) < 1.0e-12
+        assert np.linalg.norm(omega_ct-omega_pm, np.inf) < 1.0e-12
 
     return
 
@@ -108,7 +97,7 @@ def test_get_rate_coefficients(mechname):
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
         print(np.abs((k_ct-k_pm)/k_ct))
-        assert np.abs((k_ct-k_pm) / k_ct).max() < 1.0e-14
+        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1.0e-14
     return
 
 
@@ -196,7 +185,7 @@ def test_get_thermo_properties(mechname):
         cp_pm = ptk.get_species_specific_heats_R(t)
         s_pm = ptk.get_species_entropies_R(t)
         h_pm = ptk.get_species_enthalpies_RT(t)
-        keq_pm = 1.0 / np.exp(ptk.get_equilibrium_constants(t))
+        keq_pm = 1 / np.exp(ptk.get_equilibrium_constants(t))
         # Set state in cantera for comparison
         sol.TP = t, ct.one_atm
         keq_ct = sol.equilibrium_constants
@@ -204,15 +193,13 @@ def test_get_thermo_properties(mechname):
         cp_err = np.abs(cp_pm - sol.standard_cp_R).max()
         s_err = np.abs(s_pm - sol.standard_entropies_R).max()
         h_err = np.abs(h_pm - sol.standard_enthalpies_RT).max()
-        keq_err = np.abs((keq_pm - keq_ct) / keq_ct).max()
-        print(keq_ct)
-        print(keq_pm)
-        print(np.abs((keq_pm - keq_ct) / keq_ct))
-        print(keq_err)
+        keq_err = np.abs((keq_pm - keq_ct) / keq_ct)
         assert cp_err < 1.0e-13
         assert s_err < 1.0e-13
         assert h_err < 1.0e-13
-        #assert keq_err < 1.0e-13
+        for i, r in enumerate(sol.reactions()):
+            if r.reversible:
+                assert keq_err[i] < 1.0e-13
 
     return
 
