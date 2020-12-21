@@ -35,10 +35,10 @@ import pytest
 def test_generate_mechfile(mechname):
     """This function tests that pyrometheus-generated code."""
     sol = ct.Solution(f"{mechname}.cti", "gas")
-    mfile = open(f"{mechname}.py", "w")
+    mech_file = open(f"{mechname}.py", "w")
     code = pyro.gen_thermochem_code(sol)
-    print(code, file=mfile)
-    mfile.close()
+    print(code, file=mech_file)
+    mech_file.close()
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
@@ -61,7 +61,7 @@ def test_get_rate_coefficients(mechname):
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
         print(np.abs((k_ct-k_pm)/k_ct))
-        assert np.abs((k_ct-k_pm) / k_ct).max() < 1.0e-14
+        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-14
     return
 
 
@@ -231,8 +231,8 @@ def test_kinetics(mechname, fuel):
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
         # Print
-        err_r = np.abs((r_ct-r_pm))
-        err_omega = np.abs((omega_ct[0:-1]-omega_pm[0:-1]))
+        err_r = np.abs((r_ct-r_pm)).max()
+        err_omega = np.abs((omega_ct[0:-1]-omega_pm[0:-1])).max()
         print("T = ", reactor.T)
         print("y_ct", reactor.Y)
         print("y = ", y)
@@ -242,8 +242,8 @@ def test_kinetics(mechname, fuel):
         print("err_r = ", err_r)
         print()
         # Compare
-        #assert err_r < 1.0e-10
-        #assert err_omega < 1.0e-8
+        assert err_r < 1.0e-10
+        assert err_omega < 1.0e-8
 
     return
 
