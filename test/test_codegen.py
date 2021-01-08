@@ -119,19 +119,19 @@ def test_get_thermo_properties(mechname):
 
         # Get properties from pyrometheus and compare to Cantera
         cp_pm = ptk.get_species_specific_heats_R(t)
-        cp_err = np.abs(cp_pm - sol.standard_cp_R).max()
+        cp_err = np.linalg.norm(cp_pm - sol.standard_cp_R, np.inf)
         print(f"cp_pm = {cp_pm}")
         print(f"cnt_cp = {sol.standard_cp_R}")
         assert cp_err < 1.0e-13
 
         s_pm = ptk.get_species_entropies_R(t)
-        s_err = np.abs(s_pm - sol.standard_entropies_R).max()
+        s_err = np.linalg.norm(s_pm - sol.standard_entropies_R, np.inf)
         print(f"s_pm = {s_pm}")
         print(f"cnt_s = {sol.standard_entropies_R}")
         assert s_err < 1.0e-13
 
         h_pm = ptk.get_species_enthalpies_RT(t)
-        h_err = np.abs(h_pm - sol.standard_enthalpies_RT).max()
+        h_err = np.linalg.norm(h_pm - sol.standard_enthalpies_RT, np.inf)
         print(f"h_pm = {h_pm}")
         print(f"cnt_h = {sol.standard_enthalpies_RT}")
         assert h_err < 1.0e-13
@@ -140,12 +140,15 @@ def test_get_thermo_properties(mechname):
         print(f"keq1 = {keq_pm1}")
         keq_pm = 1.0 / np.exp(ptk.get_equilibrium_constants(t))
         keq_ct = sol.equilibrium_constants
-        keq_err = np.abs((keq_pm - keq_ct) / keq_ct).max()
+        # Exclude check on irreversible reaction
+        keq_pm_test = keq_pm[1:]
+        keq_ct_test = keq_ct[1:]
+        keq_err = np.linalg.norm((keq_pm_test - keq_ct_test) / keq_ct_test, np.inf)
         print(f"keq_pm = {keq_pm}")
         print(f"keq_cnt = {keq_ct}")
         print(f"temperature = {t}")
         print(f"keq_err = {keq_err}")
-        #        assert keq_err < 1.0e-12
+        assert keq_err < 1.0e-13
 
     return
 
@@ -231,8 +234,8 @@ def test_kinetics(mechname, fuel):
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
         # Print
-        err_r = np.abs((r_ct-r_pm)).max()
-        err_omega = np.abs((omega_ct[0:-1]-omega_pm[0:-1])).max()
+        err_r = np.linalg.norm((r_ct-r_pm), np.inf)
+        err_omega = np.linalg.norm((omega_ct[0:-1]-omega_pm[0:-1]), np.inf)
         print("T = ", reactor.T)
         print("y_ct", reactor.Y)
         print("y = ", y)
@@ -243,7 +246,7 @@ def test_kinetics(mechname, fuel):
         print()
         # Compare
         assert err_r < 1.0e-10
-        assert err_omega < 1.0e-8
+        assert err_omega < 1.0e-10
 
     return
 

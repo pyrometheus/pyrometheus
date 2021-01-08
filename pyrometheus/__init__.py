@@ -14,7 +14,7 @@ Interface of the Generated Per-Mechanism Code
     .. attribute:: num_falloff
     .. attribute:: one_atm
 
-        What is this? In what units?
+        Returns 1 atm in SI units of pressure (Pa).
 
     .. attribute:: gas_constant
     .. attribute:: species_names
@@ -35,6 +35,25 @@ Interface of the Generated Per-Mechanism Code
     .. method:: get_species_gibbs_RT(self, T)
     .. method:: get_equilibrium_constants(self, T)
     .. method:: get_temperature(self, H_or_E, T_guess, Y, do_energy=False)
+    .. method:: __init__(self, usr_np=numpy)
+
+        Specify a user-defined NUMPY namespace as (*usr_np*) to the constructor
+        of a given mechanism thermochemistry class.
+
+        usr_np
+            numpy-like namespace providing at least the following functions, for
+            any user's array, X:
+            usr_np.log(X)
+            usr_np.log10(X)
+            usr_np.exp(X)
+            usr_np.where(X > 0, X_yes, X_no)
+            usr_np.linalg.norm(X, np.inf)
+            where X is model user data having the same size, shape, and nature
+            of the user's temperature data, for example. This parameter allows
+            the user to provide a numpy work-alike that is capable of processing
+            the user's data structures, or even invoking custom kernels for the
+            associated operations. This parameter defaults to *actual numpy*, so
+            unless it is needed by the user (e.g. for GPU processing).
 """
 
 __copyright__ = """
@@ -368,26 +387,6 @@ def _pyro_norm(usr_np, argument, normord):
 
 class Thermochemistry:
     def __init__(self, usr_np=np):
-        \"""Initialize the mechanism object.
-
-        Parameters
-        ----------
-        usr_np
-            numpy-like namespace providing at least the following functions:
-            usr_np.log(T)
-            usr_np.log10(T)
-            usr_np.exp(T)
-            usr_np.where(T > 0, T_yes, T_no)
-            usr_np.linalg.norm(T, np.inf)
-            where T is model user data having the same size, shape, and nature
-            of the user's temperature data, for example. This parameter allows
-            the user to provide a numpy work-alike that is capable of processing
-            the user's data structures, or even invoking custom kernels for the
-            associated operations. This parameter defaults to *actual numpy*, so
-            unless it is needed by the user (e.g. for GPU processing).
-
-        \"""
-
         self.usr_np = usr_np
         self.model_name = ${repr(sol.source)}
         self.num_elements = ${sol.n_elements}
@@ -432,11 +431,11 @@ class Thermochemistry:
         return 1/np.dot( self.iwts, Y )
 
     def get_concentrations(self, rho, Y):
-        conctest = self.iwts * rho * Y
-        zero = 0 * conctest[0]
-        for i, conc in enumerate(conctest):
-            conctest[i] = self.usr_np.where(conctest[i] > 0, conctest[i], zero)
-        return conctest
+        concs = self.iwts * rho * Y
+        zero = 0 * concs[0]
+        for i, conc in enumerate(concs):
+            concs[i] = self.usr_np.where(concs[i] > 0, concs[i], zero)
+        return concs
 
     def get_mixture_specific_heat_cp_mass(self, temperature, massfractions):
         cp0_r = self.get_species_specific_heats_R(temperature)
