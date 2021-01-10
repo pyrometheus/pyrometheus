@@ -2,39 +2,16 @@
 .. autofunction:: gen_thermochem_code
 .. autofunction:: get_thermochem_class
 
-Interface of the Generated Per-Mechanism Code
----------------------------------------------
+Internal Functionality
+^^^^^^^^^^^^^^^^^^^^^^
 
-.. class:: Thermochemistry
-
-    .. attribute:: model_name
-    .. attribute:: num_elements
-    .. attribute:: num_species
-    .. attribute:: num_reactions
-    .. attribute:: num_falloff
-    .. attribute:: one_atm
-
-        What is this? In what units?
-
-    .. attribute:: gas_constant
-    .. attribute:: species_names
-    .. attribute:: species_indices
-
-    .. method:: get_specific_gas_constant(self, Y)
-    .. method:: get_density(self, p, T, Y)
-    .. method:: get_pressure(self, rho, T, Y)
-    .. method:: get_mix_molecular_weight(self, Y)
-    .. method:: get_concentrations(self, rho, Y)
-    .. method:: get_mixture_specific_heat_cp_mass(self, T, Y)
-    .. method:: get_mixture_specific_heat_cv_mass(self, T, Y)
-    .. method:: get_mixture_enthalpy_mass(self, T, Y)
-    .. method:: get_mixture_internal_energy_mass(self, T, Y)
-    .. method:: get_species_specific_heats_R(self, T)
-    .. method:: get_species_enthalpies_RT(self, T)
-    .. method:: get_species_entropies_R(self, T)
-    .. method:: get_species_gibbs_RT(self, T)
-    .. method:: get_equilibrium_constants(self, T)
-    .. method:: get_temperature(self, H_or_E, T_guess, Y, do_energy=False)
+.. autofunction:: equilibrium_constants_expr
+.. autofunction:: rate_coefficient_expr
+.. autofunction:: third_body_efficiencies_expr
+.. autofunction:: troe_falloff_expr
+.. autofunction:: falloff_function_expr
+.. autofunction:: rate_of_progress_expr
+.. autofunction:: production_rate_expr
 """
 
 __copyright__ = """
@@ -352,9 +329,46 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
 
 code_tpl = Template(
     """
+'''
+.. autoclass:: Thermochemistry
+'''
+
+
 import numpy as np
 
+
 class Thermochemistry:
+    '''
+    .. attribute:: model_name
+    .. attribute:: num_elements
+    .. attribute:: num_species
+    .. attribute:: num_reactions
+    .. attribute:: num_falloff
+    .. attribute:: one_atm
+
+        What is this? In what units?
+
+    .. attribute:: gas_constant
+    .. attribute:: species_names
+    .. attribute:: species_indices
+
+    .. automethod:: get_specific_gas_constant
+    .. automethod:: get_density
+    .. automethod:: get_pressure
+    .. automethod:: get_mix_molecular_weight
+    .. automethod:: get_concentrations
+    .. automethod:: get_mixture_specific_heat_cp_mass
+    .. automethod:: get_mixture_specific_heat_cv_mass
+    .. automethod:: get_mixture_enthalpy_mass
+    .. automethod:: get_mixture_internal_energy_mass
+    .. automethod:: get_species_specific_heats_R
+    .. automethod:: get_species_enthalpies_RT
+    .. automethod:: get_species_entropies_R
+    .. automethod:: get_species_gibbs_RT
+    .. automethod:: get_equilibrium_constants
+    .. automethod:: get_temperature
+    '''
+
     model_name    = ${repr(sol.source)}
     num_elements  = ${sol.n_elements}
     num_species   = ${sol.n_species}
@@ -581,7 +595,7 @@ class Thermochemistry:
 def gen_thermochem_code(sol: ct.Solution) -> str:
     """For the mechanism given by *sol*, return Python source code for a class conforming
     to a module containing a class called ``Thermochemistry`` adhering to the
-    :class:`Thermochemistry` interface.
+    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
     """
     return code_tpl.render(
         ct=ct,
@@ -624,7 +638,7 @@ def compile_class(code_str, class_name="Thermochemistry"):
 
 def get_thermochem_class(sol: ct.Solution):
     """For the mechanism given by *sol*, return a class conforming to the
-    :class:`Thermochemistry` interface.
+    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
     """
     return compile_class(gen_thermochem_code(sol))
 
