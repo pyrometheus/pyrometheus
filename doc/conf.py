@@ -19,7 +19,9 @@
 
 project = "pyrometheus"
 copyright = "2020, University of Illinois Board of Trustees"
-author = "Esteban Cisneros, Andreas Kloeckner, Center for Exascale-Enabled Scramjet Design"
+author = (
+    "Esteban Cisneros, Andreas Kloeckner, Center for Exascale-Enabled Scramjet Design"
+)
 
 _ver_file = "../pyrometheus/version.py"
 with open(_ver_file) as ver_file:
@@ -71,7 +73,7 @@ intersphinx_mapping = {
     "https://numpy.org/doc/stable/": None,
     "https://mirgecom.readthedocs.io/en/latest/": None,
     "cantera": ("https://cantera.org/documentation/docs-2.4/sphinx/html/", None),
-    }
+}
 
 autoclass_content = "class"
 
