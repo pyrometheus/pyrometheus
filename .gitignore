@@ -19,3 +19,4 @@ distribute*tar.gz
 notebooks
 examples
 test/install.sh
+pyrometheus/thermochem_example.py
