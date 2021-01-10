@@ -190,9 +190,11 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 
 def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
-    """:returns: Equilibrium constant expression for reaction *react* in terms of
-    the species Gibbs functions *gibbs_rt* as a
-    :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: Equilibrium constant expression for reaction *react* in terms of
+        the species Gibbs functions *gibbs_rt* as a
+        :class:`pymbolic.primitives.Expression`
+    """
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
 
@@ -226,8 +228,10 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
 # {{{ Rate coefficients
 
 def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
-    """:returns: The rate coefficient expression for *rate_coeff* in terms
-    of the temperature *t* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: The rate coefficient expression for *rate_coeff* in terms
+        of the temperature *t* as a :class:`pymbolic.primitives.Expression`
+    """
     # Rate parameters
     a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
@@ -247,8 +251,10 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
-    """:returns: The third-body concentration expression for reaction *react* in terms
-    of the species concentraions *c* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: The third-body concentration expression for reaction *react* in terms
+        of the species concentraions *c* as a :class:`pymbolic.primitives.Expression`
+    """
     efficiencies = [react.efficiencies[sp] for sp in react.efficiencies]
     indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
     indices_default = [i for i in range(sol.n_species) if i not in indices_nondef]
@@ -259,8 +265,10 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
 
 
 def troe_falloff_expr(react: ct.Reaction, t):
-    """:returns: The Troe falloff center expression for reaction *react* in terms of the
-    temperature *t* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: The Troe falloff center expression for reaction *react* in terms of the
+        temperature *t* as a :class:`pymbolic.primitives.Expression`
+    """
     troe_params = react.falloff.parameters
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
@@ -272,9 +280,11 @@ def troe_falloff_expr(react: ct.Reaction, t):
 
 
 def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center):
-    """:returns: Falloff function expression for reaction *react* in terms
-    of the temperature *t*, reduced pressure *red_pressure*, and falloff center
-    *falloff_center* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: Falloff function expression for reaction *react* in terms
+        of the temperature *t*, reduced pressure *red_pressure*, and falloff center
+        *falloff_center* as a :class:`pymbolic.primitives.Expression`
+    """
     if react.falloff.falloff_type == "Troe":
         log_rp = p.Variable("log10")(red_pressure[i])
         c = -0.4-0.67*falloff_center[i]
@@ -290,9 +300,11 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
 # {{{ Rates of progress
 
 def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
-    """:returns: Rate of progress expression for reaction *react* in terms of
-    species concentrations *c* with rate coefficients *k_fwd* and equilbrium
-    constants *k_eq* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: Rate of progress expression for reaction *react* in terms of
+        species concentrations *c* with rate coefficients *k_fwd* and equilbrium
+        constants *k_eq* as a :class:`pymbolic.primitives.Expression`
+    """
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
 
@@ -316,9 +328,11 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
 # {{{ Species production rates
 
 def production_rate_expr(sol: ct.Solution, species, r_net):
-    """:returns: Species production rate for species *species* in terms of
-    the net reaction rates of progress *r_net* as a
-    :class:`pymbolic>primitives.Expression`"""
+    """
+    :returns: Species production rate for species *species* in terms of
+        the net reaction rates of progress *r_net* as a
+        :class:`pymbolic.primitives.Expression`
+    """
     indices_fwd = [int(react.ID)-1 for react in sol.reactions()
                    if species in react.reactants]
     indices_rev = [int(react.ID)-1 for react in sol.reactions()
