@@ -13,7 +13,8 @@ Here’s an example, to give you an impression:
    import numpy as np
    import pyrometheus as pyro
 
-   # FIXME: Complete this example
+   sol = ct.Solution("mech.cti")
+   ptk = pyro.get_thermochem_class(sol)()
 
 Table of Contents
 -----------------
