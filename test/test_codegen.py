@@ -234,7 +234,7 @@ def test_kinetics(mechname, fuel):
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
         # Print
-        err_r = np.linalg.norm((r_ct-r_pm), np.inf)
+        err_r = np.linalg.norm(r_ct-r_pm, np.inf)
         err_omega = np.linalg.norm((omega_ct[0:-1]-omega_pm[0:-1]), np.inf)
         print("T = ", reactor.T)
         print("y_ct", reactor.Y)
