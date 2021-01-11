@@ -44,11 +44,11 @@ Interface of the Generated Per-Mechanism Code
             :mod:`numpy`-like namespace providing at least the following functions,
             for any array ``X`` of the bulk array type:
 
-            - ``usr_np.log(X)`` (like :func:`numpy.log`)
-            - ``usr_np.log10(X)`` (like :func:`numpy.log10`)
-            - ``usr_np.exp(X)`` (like :func:`numpy.`)
-            - ``usr_np.where(X > 0, X_yes, X_no)`` (like :func:`numpy.where`)
-            - ``usr_np.linalg.norm(X, np.inf)`` (like :func:`numpy.linalg.norm`)
+            - ``usr_np.log(X)`` (like :func:`~numpy.log`)
+            - ``usr_np.log10(X)`` (like :func:`~numpy.log10`)
+            - ``usr_np.exp(X)`` (like :func:`~numpy.exp`)
+            - ``usr_np.where(X > 0, X_yes, X_no)`` (like :func:`~numpy.where`)
+            - ``usr_np.linalg.norm(X, np.inf)`` (like :func:`~numpy.linalg.norm`)
 
             where the "bulk array type" is a type that offers arithmetic analogous
             to :class:`numpy.ndarray` and is used to hold all types of (potentialy
