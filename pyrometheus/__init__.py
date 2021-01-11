@@ -48,12 +48,11 @@ Interface of the Generated Per-Mechanism Code
             usr_np.exp(X)
             usr_np.where(X > 0, X_yes, X_no)
             usr_np.linalg.norm(X, np.inf)
-            where X is model user data having the same size, shape, and nature
-            of the user's temperature data, for example. This parameter allows
-            the user to provide a numpy work-alike that is capable of processing
-            the user's data structures, or even invoking custom kernels for the
-            associated operations. This parameter defaults to *actual numpy*, so
-            unless it is needed by the user (e.g. for GPU processing).
+            where the "bulk array type" is a type that offers arithmetic analogous
+            to :class:`numpy.ndarray` and is used to hold all types of (potentialy
+            volumetric) "bulk data", such as temperature, pressure, mass fractions,
+            etc. This parameter defaults to *actual numpy*, so it can be ignore unless
+            it is needed by the user (e.g. for GPU processing).
 """
 
 __copyright__ = """
