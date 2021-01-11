@@ -361,7 +361,13 @@ code_tpl = Template(
 
 
 def _pyro_make_array(res_list):
-    # https://github.com/numpy/numpy/issues/18004
+    """This works around (e.g.) numpy.exp not working with object arrays of numpy
+    scalars. It defaults to making object arrays, however if an array consists of all
+    scalars, it makes a "plain old" :class:`numpy.ndarray`.
+    
+    See ``this numpy bug <https://github.com/numpy/numpy/issues/18004>`__
+    for more context.
+    """
 
     from numbers import Number
     all_numbers = all(isinstance(e, Number) for e in res_list)
