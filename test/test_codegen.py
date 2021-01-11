@@ -35,10 +35,9 @@ import pytest
 def test_generate_mechfile(mechname):
     """This function tests that pyrometheus-generated code."""
     sol = ct.Solution(f"{mechname}.cti", "gas")
-    mech_file = open(f"{mechname}.py", "w")
-    code = pyro.gen_thermochem_code(sol)
-    print(code, file=mech_file)
-    mech_file.close()
+    with open(f"{mechname}.py", "w") as mech_file:
+        code = pyro.gen_thermochem_code(sol)
+        print(code, file=mech_file)
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
