@@ -41,7 +41,7 @@ Interface of the Generated Per-Mechanism Code
         of a given mechanism thermochemistry class.
 
         usr_np
-            numpy-like namespace providing at least the following functions, for
+            :mod:`numpy`-like namespace providing at least the following functions, for
             any array ``X`` of the bulk array type:
 
             - ``usr_np.log(X)`` (like :func:`numpy.log`)
