@@ -41,8 +41,8 @@ Interface of the Generated Per-Mechanism Code
         of a given mechanism thermochemistry class.
 
         usr_np
-            :mod:`numpy`-like namespace providing at least the following functions, for
-            any array ``X`` of the bulk array type:
+            :mod:`numpy`-like namespace providing at least the following functions,
+            for any array ``X`` of the bulk array type:
 
             - ``usr_np.log(X)`` (like :func:`numpy.log`)
             - ``usr_np.log10(X)`` (like :func:`numpy.log10`)
@@ -53,8 +53,8 @@ Interface of the Generated Per-Mechanism Code
             where the "bulk array type" is a type that offers arithmetic analogous
             to :class:`numpy.ndarray` and is used to hold all types of (potentialy
             volumetric) "bulk data", such as temperature, pressure, mass fractions,
-            etc. This parameter defaults to *actual numpy*, so it can be ignore unless
-            it is needed by the user (e.g. for GPU processing).
+            etc. This parameter defaults to *actual numpy*, so it can be ignored
+            unless it is needed by the user (e.g. for GPU processing).
 """
 
 __copyright__ = """
@@ -362,13 +362,13 @@ code_tpl = Template(
 
 
 def _pyro_make_array(res_list):
-    """This works around (e.g.) numpy.exp not working with object arrays of numpy
+    \"""This works around (e.g.) numpy.exp not working with object arrays of numpy
     scalars. It defaults to making object arrays, however if an array consists of all
     scalars, it makes a "plain old" :class:`numpy.ndarray`.
-    
+
     See ``this numpy bug <https://github.com/numpy/numpy/issues/18004>`__
     for more context.
-    """
+    \"""
 
     from numbers import Number
     all_numbers = all(isinstance(e, Number) for e in res_list)
