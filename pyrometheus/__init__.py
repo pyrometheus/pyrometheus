@@ -42,7 +42,7 @@ Interface of the Generated Per-Mechanism Code
 
         usr_np
             numpy-like namespace providing at least the following functions, for
-            any user's array, X:
+            any array ``X`` of the bulk array type:
 
             - ``usr_np.log(X)`` (like :func:`numpy.log`)
             - ``usr_np.log10(X)`` (like :func:`numpy.log10`)
