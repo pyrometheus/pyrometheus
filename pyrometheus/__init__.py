@@ -43,11 +43,13 @@ Interface of the Generated Per-Mechanism Code
         usr_np
             numpy-like namespace providing at least the following functions, for
             any user's array, X:
-            usr_np.log(X)
-            usr_np.log10(X)
-            usr_np.exp(X)
-            usr_np.where(X > 0, X_yes, X_no)
-            usr_np.linalg.norm(X, np.inf)
+
+            - ``usr_np.log(X)`` (like :func:`numpy.log`)
+            - ``usr_np.log10(X)`` (like :func:`numpy.log10`)
+            - ``usr_np.exp(X)`` (like :func:`numpy.`)
+            - ``usr_np.where(X > 0, X_yes, X_no)`` (like :func:`numpy.where`)
+            - ``usr_np.linalg.norm(X, np.inf)`` (like :func:`numpy.linalg.norm`)
+
             where the "bulk array type" is a type that offers arithmetic analogous
             to :class:`numpy.ndarray` and is used to hold all types of (potentialy
             volumetric) "bulk data", such as temperature, pressure, mass fractions,
