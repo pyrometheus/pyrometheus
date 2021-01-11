@@ -207,7 +207,7 @@ def test_kinetics(mechname, fuel):
     equiv_ratio = 1.0
     ox_di_ratio = 0.21
     stoich_ratio = 3.0  # 0.5
-    i_fu = sol.species_index(f"{fuel}")
+    i_fu = sol.species_index(fuel)
     i_ox = sol.species_index("O2")
     i_di = sol.species_index("N2")
     x = np.zeros(ptk.num_species)
