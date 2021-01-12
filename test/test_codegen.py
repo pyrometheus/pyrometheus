@@ -33,7 +33,7 @@ import pytest
 # Write out all the mechanisms for inspection
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 def test_generate_mechfile(mechname):
-    """This function tests that pyrometheus-generated code."""
+    """This "test" produces the mechanism codes."""
     sol = ct.Solution(f"{mechname}.cti", "gas")
     with open(f"{mechname}.py", "w") as mech_file:
         code = pyro.gen_thermochem_code(sol)
@@ -43,8 +43,8 @@ def test_generate_mechfile(mechname):
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 def test_get_rate_coefficients(mechname):
     """This function tests that pyrometheus-generated code
-    computes the right rate coefficients for given temeprature
-    and composition"""
+    computes the rate coefficients matching Cantera
+    for given temperature and composition"""
     sol = ct.Solution(f"{mechname}.cti", "gas")
     ptk = pyro.get_thermochem_class(sol)()
     # Test temperatures
@@ -67,8 +67,8 @@ def test_get_rate_coefficients(mechname):
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 def test_get_pressure(mechname):
     """This function tests that pyrometheus-generated code
-    computes the right pressure for given density, temperature,
-    and mass fractions
+    computes the Cantera-predicted pressure for given density,
+    temperature, and mass fractions
     """
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"{mechname}.cti", "gas")
@@ -155,7 +155,7 @@ def test_get_thermo_properties(mechname):
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 def test_get_temperature(mechname):
     """This function tests that pyrometheus-generated code
-    computes the right temperature for given internal energy
+    computes the Cantera-predicted temperature for given internal energy
     and mass fractions"""
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"{mechname}.cti", "gas")
@@ -191,8 +191,8 @@ def test_get_temperature(mechname):
                                        ("sanDiego", "H2")])
 def test_kinetics(mechname, fuel):
     """This function tests that pyrometheus-generated code
-    computes the right rates of progress for given temperature
-    and composition"""
+    computes the Cantera-predicted rates of progress for given
+    temperature and composition"""
     sol = ct.Solution(f"{mechname}.cti", "gas")
     code = pyro.gen_thermochem_code(sol)
     mechfile = open(f"{mechname}.py", "w")
