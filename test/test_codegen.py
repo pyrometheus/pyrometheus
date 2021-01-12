@@ -221,7 +221,7 @@ def test_kinetics(mechname, fuel):
 
     time = 0.0
     for step in range(50):
-        time += 1.0e-7  # 1.0e-6 for H2
+        time += 1.0e-7  # dt limited by C2H4 mech, 1e-6 sufficient for H2
         sim.advance(time)
         # Cantera kinetics
         r_ct = reactor.kinetics.net_rates_of_progress

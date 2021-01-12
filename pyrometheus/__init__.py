@@ -205,6 +205,12 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 # }}}
 
+# {{{ Data-handling helper
+
+def _zeros_like(argument):
+    return 0 * argument
+
+# }}}
 
 # {{{ Equilibrium constants
 
@@ -339,7 +345,7 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
     """:returns: Species production rate for species *species* in terms of
     the net reaction rates of progress *r_net* as a
     :class:`pymbolic>primitives.Expression`"""
-    ones = (r_net[0] + 1.0) - r_net[0]
+    ones = _zeros_like(r_net[0]) + 1.0
     indices_fwd = [int(react.ID)-1 for react in sol.reactions()
                    if species in react.reactants]
     indices_rev = [int(react.ID)-1 for react in sol.reactions()
@@ -391,6 +397,8 @@ def _pyro_norm(usr_np, argument, normord):
         return np.abs(argument)
     return usr_np.linalg.norm(argument, normord)
 
+def _pyro_zeros_like(argument):
+    return 0 * argument
 
 class Thermochemistry:
     def __init__(self, usr_np=np):
@@ -439,34 +447,34 @@ class Thermochemistry:
 
     def get_concentrations(self, rho, Y):
         concs = self.iwts * rho * Y
-        zero = 0 * concs[0]
+        zero = _pyro_zeros_like(concs[0])
         for i, conc in enumerate(concs):
             concs[i] = self.usr_np.where(concs[i] > 0, concs[i], zero)
         return concs
 
+    def sum_over_species(self, massfractions, proparray):
+        return sum([massfractions[i] * proparray[i] * self.iwts[i]
+                    for i in range(self.num_species)])
+
     def get_mixture_specific_heat_cp_mass(self, temperature, massfractions):
         cp0_r = self.get_species_specific_heats_R(temperature)
-        cpsum = sum([massfractions[i] * cp0_r[i] * self.iwts[i]
-                     for i in range(self.num_species)])
+        cpsum = self.sum_over_species(massfractions, cp0_r)
         return self.gas_constant * cpsum
 
     def get_mixture_specific_heat_cv_mass(self, temperature, massfractions):
         cp0_r = self.get_species_specific_heats_R(temperature) - 1.0
-        cpsum = sum([massfractions[i] * cp0_r[i] * self.iwts[i]
-                     for i in range(self.num_species)])
+        cpsum = self.sum_over_species(massfractions, cp0_r)
         return self.gas_constant * cpsum
 
     def get_mixture_enthalpy_mass(self, temperature, massfractions):
         h0_rt = self.get_species_enthalpies_RT(temperature)
-        hsum = sum([massfractions[i] * h0_rt[i] * self.iwts[i]
-                    for i in range(self.num_species)])
+        hsum = self.sum_over_species(massfractions, h0_rt)
         return self.gas_constant * temperature * hsum
 
     def get_mixture_internal_energy_mass(self, temperature, massfractions):
 
         e0_rt = self.get_species_enthalpies_RT(temperature) - 1.0
-        esum = sum([massfractions[i] * e0_rt[i] * self.iwts[i]
-                    for i in range(self.num_species)])
+        esum = self.sum_over_species(massfractions, e0_rt)
         return self.gas_constant * temperature * esum
 
     def get_species_specific_heats_R(self, T):
@@ -521,7 +529,7 @@ class Thermochemistry:
 
         num_iter = 500
         tol = 1.0e-6
-        ones = (1 + enthalpy_or_energy) - enthalpy_or_energy
+        ones = _pyro_zeros_like(enthalpy_or_energy) + 1.0
         t_i = t_guess * ones
 
         for iter in range(num_iter):
@@ -535,7 +543,7 @@ class Thermochemistry:
         return t_i
 
     def get_falloff_rates(self, T, C, k_fwd):
-        ones = (1.0 + T) - T
+        ones = _pyro_zeros_like(T) + 1.0
         k_high = _pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(rate_coefficient_expr(react.high_rate, Variable("T")))},
@@ -580,7 +588,7 @@ class Thermochemistry:
 
 
     def get_fwd_rate_coefficients(self, T, C):
-        ones = (1.0 + T) - T
+        ones = _pyro_zeros_like(T) + 1.0
         k_fwd = _pyro_make_array([
         %for react in sol.reactions():
         %if isinstance(react, ct.FalloffReaction):
@@ -615,7 +623,7 @@ class Thermochemistry:
     def get_net_production_rates(self, rho, T, Y):
         C = self.get_concentrations(rho, Y)
         r_net = self.get_net_rates_of_progress(T, C)
-        ones = (1.0 + r_net[0]) - r_net[0]
+        ones = _pyro_zeros_like(r_net[0]) + 1.0
         return _pyro_make_array([
             %for sp in sol.species():
                 ${cgm(production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
