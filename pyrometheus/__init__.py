@@ -483,21 +483,21 @@ class Thermochemistry:
             % for sp in sol.species():
             ${cgm(poly_to_expr(sp.thermo, "temperature"))},
             % endfor
-            ])
+                ])
 
     def get_species_enthalpies_rt(self, temperature):
         return _pyro_make_array([
             % for sp in sol.species():
             ${cgm(poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
-            ])
+                ])
 
     def get_species_entropies_r(self, temperature):
         return _pyro_make_array([
             % for sp in sol.species():
                 ${cgm(poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
-            ])
+                ])
 
     def get_species_gibbs_rt(self, temperature):
         h0_rt = self.get_species_enthalpies_rt(temperature)
@@ -518,7 +518,7 @@ class Thermochemistry:
                     -0.17364695002734*temperature,
                 %endif
             %endfor
-            ])
+                ])
 
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
         if do_energy is False:
@@ -549,20 +549,20 @@ class Thermochemistry:
         %for react in falloff_reactions:
             ${cgm(rate_coefficient_expr(react.high_rate, Variable("temperature")))},
         %endfor
-        ])
+                ])
 
         k_low = _pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(rate_coefficient_expr(react.low_rate, Variable("temperature")))},
         %endfor
-        ])
+                ])
 
         reduced_pressure = _pyro_make_array([
         %for i, react in enumerate(falloff_reactions):
             (${cgm(third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
-        ])
+                            ])
 
         falloff_center = _pyro_make_array([
         %for react in falloff_reactions:
@@ -573,7 +573,7 @@ class Thermochemistry:
             1,
             %endif
         %endfor
-        ])
+                        ])
 
         falloff_function = _pyro_make_array([
         %for i, react in enumerate(falloff_reactions):
@@ -581,7 +581,7 @@ class Thermochemistry:
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
                 Variable("falloff_center")))},
         %endfor
-        ])*reduced_pressure/(1+reduced_pressure)
+                            ])*reduced_pressure/(1+reduced_pressure)
 
         %for i, react in enumerate(falloff_reactions):
         k_fwd[${int(react.ID)-1}] = k_high[${i}]*falloff_function[${i}]*ones
@@ -599,7 +599,7 @@ class Thermochemistry:
                                         Variable("temperature")))} * ones,
         %endif
         %endfor
-        ])
+                ])
         %if falloff_reactions:
         self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
@@ -630,7 +630,7 @@ class Thermochemistry:
             %for sp in sol.species():
                 ${cgm(production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
             %endfor
-    ])""", strict_undefined=True)
+               ])""", strict_undefined=True)
 
 # }}}
 
