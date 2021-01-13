@@ -103,7 +103,7 @@ def test_get_pressure(mechname):
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 def test_get_thermo_properties(mechname):
     """This function tests that pyrometheus-generated code
-    computes thermodynamic properties c_p, s_R, h_RT, and k_eq
+    computes thermodynamic properties c_p, s_r, h_rt, and k_eq
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"{mechname}.cti", "gas")
@@ -117,19 +117,19 @@ def test_get_thermo_properties(mechname):
         sol.TP = t, ct.one_atm
 
         # Get properties from pyrometheus and compare to Cantera
-        cp_pm = ptk.get_species_specific_heats_R(t)
+        cp_pm = ptk.get_species_specific_heats_r(t)
         cp_err = np.linalg.norm(cp_pm - sol.standard_cp_R, np.inf)
         print(f"cp_pm = {cp_pm}")
         print(f"cnt_cp = {sol.standard_cp_R}")
         assert cp_err < 1.0e-13
 
-        s_pm = ptk.get_species_entropies_R(t)
+        s_pm = ptk.get_species_entropies_r(t)
         s_err = np.linalg.norm(s_pm - sol.standard_entropies_R, np.inf)
         print(f"s_pm = {s_pm}")
         print(f"cnt_s = {sol.standard_entropies_R}")
         assert s_err < 1.0e-13
 
-        h_pm = ptk.get_species_enthalpies_RT(t)
+        h_pm = ptk.get_species_enthalpies_rt(t)
         h_err = np.linalg.norm(h_pm - sol.standard_enthalpies_RT, np.inf)
         print(f"h_pm = {h_pm}")
         print(f"cnt_h = {sol.standard_enthalpies_RT}")
