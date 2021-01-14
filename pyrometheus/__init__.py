@@ -502,6 +502,7 @@ class Thermochemistry:
 
         return T
 
+    %if falloff_reactions:
     def get_falloff_rates(self, T, C, k_fwd):
         k_high = np.array([
         %for react in falloff_reactions:
@@ -544,6 +545,7 @@ class Thermochemistry:
         k_fwd[${int(react.ID)-1}] = k_high[${i}]*falloff_function[${i}]
         %endfor
         return
+    %endif
 
     def get_fwd_rate_coefficients(self, T, C):
         k_fwd = np.array([
