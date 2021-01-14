@@ -19,4 +19,5 @@ distribute*tar.gz
 notebooks
 examples
 test/install.sh
+test/*_mech.py
 pyrometheus/thermochem_example.py
