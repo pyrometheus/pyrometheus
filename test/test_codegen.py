@@ -34,8 +34,8 @@ import pytest
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 def test_generate_mechfile(mechname):
     """This "test" produces the mechanism codes."""
-    sol = ct.Solution(f"{mechname}.cti", "gas")
-    with open(f"{mechname}.py", "w") as mech_file:
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    with open(f"mechs/{mechname}.py", "w") as mech_file:
         code = pyro.gen_thermochem_code(sol)
         print(code, file=mech_file)
 
@@ -45,7 +45,7 @@ def test_get_rate_coefficients(mechname):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
-    sol = ct.Solution(f"{mechname}.cti", "gas")
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk = pyro.get_thermochem_class(sol)()
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
@@ -71,7 +71,7 @@ def test_get_pressure(mechname):
     temperature, and mass fractions
     """
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution(f"{mechname}.cti", "gas")
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk = pyro.get_thermochem_class(sol)()
 
     # Temperature, equivalence ratio, oxidizer ratio, stoichiometry ratio
@@ -106,7 +106,7 @@ def test_get_thermo_properties(mechname):
     computes thermodynamic properties c_p, s_r, h_rt, and k_eq
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution(f"{mechname}.cti", "gas")
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk = pyro.get_thermochem_class(sol)()
 
     # Loop over temperatures
@@ -158,7 +158,7 @@ def test_get_temperature(mechname):
     computes the Cantera-predicted temperature for given internal energy
     and mass fractions"""
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution(f"{mechname}.cti", "gas")
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk = pyro.get_thermochem_class(sol)()
     tol = 1.0e-10
     # Test temperatures
@@ -193,12 +193,7 @@ def test_kinetics(mechname, fuel):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted rates of progress for given
     temperature and composition"""
-    sol = ct.Solution(f"{mechname}.cti", "gas")
-    code = pyro.gen_thermochem_code(sol)
-    mechfile = open(f"{mechname}.py", "w")
-    print(code, file=mechfile)
-    mechfile.close()
-
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk = pyro.get_thermochem_class(sol)()
 
     # Homogeneous reactor to get test data
