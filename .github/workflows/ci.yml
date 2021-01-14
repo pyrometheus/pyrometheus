@@ -35,8 +35,7 @@ jobs:
                 build_py_project_in_conda_env
                 python -m pip install flake8 pep8-naming flake8-quotes
                 python .ci/generate-test-mech.py
-                flake8 --extend-ignore E501,Q000 test/uiuc_mech.py
-                flake8 --extend-ignore E501,Q000 test/sanDiego_mech.py
+                flake8 --extend-ignore E501,Q000 test/mechs
 
     pytest:
         name: Pytest Conda Py
