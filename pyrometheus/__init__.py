@@ -543,6 +543,7 @@ class Thermochemistry:
 
         return t_i
 
+    %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
         ones = _pyro_zeros_like(temperature) + 1.0
         k_high = _pyro_make_array([
@@ -588,6 +589,7 @@ class Thermochemistry:
         %endfor
         return
 
+    %endif
     def get_fwd_rate_coefficients(self, temperature, concentrations):
         ones = _pyro_zeros_like(temperature) + 1.0
         k_fwd = _pyro_make_array([
