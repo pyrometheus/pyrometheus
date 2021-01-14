@@ -449,7 +449,6 @@ class Thermochemistry:
 
     def get_concentrations(self, rho, mass_fractions):
         concs = self.iwts * rho * mass_fractions
-        zero = _pyro_zeros_like(concs[0])
         for i, conc in enumerate(concs):
             concs[i] = max(concs[i], 0)
         return concs
