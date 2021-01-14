@@ -449,8 +449,9 @@ class Thermochemistry:
 
     def get_concentrations(self, rho, mass_fractions):
         concs = self.iwts * rho * mass_fractions
+        zero = _pyro_zeros_like(concs[0])
         for i, conc in enumerate(concs):
-            concs[i] = max(concs[i], 0)
+            concs[i] = self.usr_np.where(concs[i] > 0, concs[i], zero)
         return concs
 
     def sum_over_species(self, mass_fractions, proparray):
