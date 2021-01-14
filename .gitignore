@@ -19,4 +19,4 @@ distribute*tar.gz
 notebooks
 examples
 test/install.sh
-test/mechs
+test/mechs/*.py
