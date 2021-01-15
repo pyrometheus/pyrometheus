@@ -74,8 +74,8 @@ jobs:
                 CONDA_ENVIRONMENT=.test-conda-env-py3.yml
                 curl -L -O -k https://gitlab.tiker.net/inducer/ci-support/raw/master/ci-support.sh
                 . ci-support.sh
-                python .ci/generate-example-mech.py test/mechs/sanDiego.cti pyrometheus/thermochem_example.py
                 build_py_project_in_conda_env
+                python .ci/generate-example-mech.py test/mechs/sanDiego.cti pyrometheus/thermochem_example.py
                 build_docs
 
 # vim: sw=4
