@@ -2,59 +2,15 @@
 .. autofunction:: gen_thermochem_code
 .. autofunction:: get_thermochem_class
 
-Interface of the Generated Per-Mechanism Code
----------------------------------------------
-
-.. class:: Thermochemistry
-
-    .. attribute:: model_name
-    .. attribute:: num_elements
-    .. attribute:: num_species
-    .. attribute:: num_reactions
-    .. attribute:: num_falloff
-    .. attribute:: one_atm
-
-        Returns 1 atm in SI units of pressure (Pa).
-
-    .. attribute:: gas_constant
-    .. attribute:: species_names
-    .. attribute:: species_indices
-
-    .. method:: get_specific_gas_constant(self, Y)
-    .. method:: get_density(self, p, T, Y)
-    .. method:: get_pressure(self, rho, T, Y)
-    .. method:: get_mix_molecular_weight(self, Y)
-    .. method:: get_concentrations(self, rho, Y)
-    .. method:: get_mixture_specific_heat_cp_mass(self, T, Y)
-    .. method:: get_mixture_specific_heat_cv_mass(self, T, Y)
-    .. method:: get_mixture_enthalpy_mass(self, T, Y)
-    .. method:: get_mixture_internal_energy_mass(self, T, Y)
-    .. method:: get_species_specific_heats_r(self, T)
-    .. method:: get_species_enthalpies_rt(self, T)
-    .. method:: get_species_entropies_r(self, T)
-    .. method:: get_species_gibbs_rt(self, T)
-    .. method:: get_equilibrium_constants(self, T)
-    .. method:: get_temperature(self, H_or_E, T_guess, Y, do_energy=False)
-    .. method:: __init__(self, usr_np=numpy)
-
-        Specify a user-defined NUMPY namespace as (*usr_np*) to the constructor
-        of a given mechanism thermochemistry class.
-
-        usr_np
-            :mod:`numpy`-like namespace providing at least the following functions,
-            for any array ``X`` of the bulk array type:
-
-            - ``usr_np.log(X)`` (like :data:`numpy.log`)
-            - ``usr_np.log10(X)`` (like :data:`numpy.log10`)
-            - ``usr_np.exp(X)`` (like :data:`numpy.exp`)
-            - ``usr_np.where(X > 0, X_yes, X_no)`` (like :func:`numpy.where`)
-            - ``usr_np.linalg.norm(X, np.inf)`` (like :func:`numpy.linalg.norm`)
-
-            where the "bulk array type" is a type that offers arithmetic analogous
-            to :class:`numpy.ndarray` and is used to hold all types of (potentialy
-            volumetric) "bulk data", such as temperature, pressure, mass fractions,
-            etc. This parameter defaults to *actual numpy*, so it can be ignored
-            unless it is needed by the user (e.g. for GPU processing).
+Internal Functionality
+^^^^^^^^^^^^^^^^^^^^^^
+.. autofunction:: equilibrium_constants_expr
+.. autofunction:: rate_coefficient_expr
+.. autofunction:: third_body_efficiencies_expr
+.. autofunction:: troe_falloff_expr
+.. autofunction:: falloff_function_expr
+.. autofunction:: rate_of_progress_expr
+.. autofunction:: production_rate_expr
 """
 
 __copyright__ = """
@@ -216,9 +172,13 @@ def _zeros_like(argument):
 
 
 def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
-    """:returns: Equilibrium constant expression for reaction *react* in terms of
-    the species Gibbs functions *gibbs_rt* as a
-    :class:`pymbolic.primitives.Expression`"""
+    """Generate code for equilibrium constants.
+
+    :returns: Equilibrium constant expression for reaction *react* in terms of
+        the species Gibbs functions *gibbs_rt* as a
+        :class:`pymbolic.primitives.Expression`
+    """
+
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
 
@@ -252,8 +212,10 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
 # {{{ Rate coefficients
 
 def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
-    """:returns: The rate coefficient expression for *rate_coeff* in terms
-    of the temperature *t* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: The rate coefficient expression for *rate_coeff* in terms
+        of the temperature *t* as a :class:`pymbolic.primitives.Expression`
+    """
     # Rate parameters
     a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
@@ -273,8 +235,10 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
-    """:returns: The third-body concentration expression for reaction *react* in terms
-    of the species concentraions *c* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: The third-body concentration expression for reaction *react* in terms
+        of the species concentraions *c* as a :class:`pymbolic.primitives.Expression`
+    """
     efficiencies = [react.efficiencies[sp] for sp in react.efficiencies]
     indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
     indices_default = [i for i in range(sol.n_species) if i not in indices_nondef]
@@ -285,8 +249,10 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
 
 
 def troe_falloff_expr(react: ct.Reaction, t):
-    """:returns: The Troe falloff center expression for reaction *react* in terms of the
-    temperature *t* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: The Troe falloff center expression for reaction *react* in terms of the
+        temperature *t* as a :class:`pymbolic.primitives.Expression`
+    """
     troe_params = react.falloff.parameters
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
@@ -298,9 +264,11 @@ def troe_falloff_expr(react: ct.Reaction, t):
 
 
 def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center):
-    """:returns: Falloff function expression for reaction *react* in terms
-    of the temperature *t*, reduced pressure *red_pressure*, and falloff center
-    *falloff_center* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: Falloff function expression for reaction *react* in terms
+        of the temperature *t*, reduced pressure *red_pressure*, and falloff center
+        *falloff_center* as a :class:`pymbolic.primitives.Expression`
+    """
     if react.falloff.falloff_type == "Troe":
         log_rp = p.Variable("log10")(red_pressure[i])
         c = -0.4-0.67*falloff_center[i]
@@ -316,9 +284,11 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
 # {{{ Rates of progress
 
 def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
-    """:returns: Rate of progress expression for reaction *react* in terms of
-    species concentrations *c* with rate coefficients *k_fwd* and equilbrium
-    constants *k_eq* as a :class:`pymbolic.primitives.Expression`"""
+    """
+    :returns: Rate of progress expression for reaction *react* in terms of
+        species concentrations *c* with rate coefficients *k_fwd* and equilbrium
+        constants *k_eq* as a :class:`pymbolic.primitives.Expression`
+    """
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
 
@@ -342,9 +312,11 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
 # {{{ Species production rates
 
 def production_rate_expr(sol: ct.Solution, species, r_net):
-    """:returns: Species production rate for species *species* in terms of
-    the net reaction rates of progress *r_net* as a
-    :class:`pymbolic>primitives.Expression`"""
+    """
+    :returns: Species production rate for species *species* in terms of
+        the net reaction rates of progress *r_net* as a
+        :class:`pymbolic>primitives.Expression`
+    """
     ones = _zeros_like(r_net[0]) + 1.0
     indices_fwd = [int(react.ID)-1 for react in sol.reactions()
                    if species in react.reactants]
@@ -364,7 +336,12 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
 # {{{ main code template
 
 code_tpl = Template(
-    """import numpy as np
+    """'''
+.. autoclass:: Thermochemistry
+'''
+
+
+import numpy as np
 
 
 def _pyro_make_array(res_list):
@@ -403,6 +380,57 @@ def _pyro_zeros_like(argument):
 
 
 class Thermochemistry:
+    '''
+    .. attribute:: model_name
+    .. attribute:: num_elements
+    .. attribute:: num_species
+    .. attribute:: num_reactions
+    .. attribute:: num_falloff
+    .. attribute:: one_atm
+
+        Returns 1 atm in SI units of pressure (Pa).
+
+    .. attribute:: gas_constant
+    .. attribute:: species_names
+    .. attribute:: species_indices
+
+    .. method:: get_specific_gas_constant(self, Y)
+    .. method:: get_density(self, p, T, Y)
+    .. method:: get_pressure(self, rho, T, Y)
+    .. method:: get_mix_molecular_weight(self, Y)
+    .. method:: get_concentrations(self, rho, Y)
+    .. method:: get_mixture_specific_heat_cp_mass(self, T, Y)
+    .. method:: get_mixture_specific_heat_cv_mass(self, T, Y)
+    .. method:: get_mixture_enthalpy_mass(self, T, Y)
+    .. method:: get_mixture_internal_energy_mass(self, T, Y)
+    .. method:: get_species_specific_heats_r(self, T)
+    .. method:: get_species_enthalpies_rt(self, T)
+    .. method:: get_species_entropies_r(self, T)
+    .. method:: get_species_gibbs_rt(self, T)
+    .. method:: get_equilibrium_constants(self, T)
+    .. method:: get_temperature(self, H_or_E, T_guess, Y, do_energy=False)
+    .. method:: __init__(self, usr_np=numpy)
+
+        Specify a user-defined NUMPY namespace as (*usr_np*) to the constructor
+        of a given mechanism thermochemistry class.
+
+        usr_np
+            :mod:`numpy`-like namespace providing at least the following functions,
+            for any array ``X`` of the bulk array type:
+
+            - ``usr_np.log(X)`` (like :data:`numpy.log`)
+            - ``usr_np.log10(X)`` (like :data:`numpy.log10`)
+            - ``usr_np.exp(X)`` (like :data:`numpy.exp`)
+            - ``usr_np.where(X > 0, X_yes, X_no)`` (like :func:`numpy.where`)
+            - ``usr_np.linalg.norm(X, np.inf)`` (like :func:`numpy.linalg.norm`)
+
+            where the "bulk array type" is a type that offers arithmetic analogous
+            to :class:`numpy.ndarray` and is used to hold all types of (potentialy
+            volumetric) "bulk data", such as temperature, pressure, mass fractions,
+            etc. This parameter defaults to *actual numpy*, so it can be ignored
+            unless it is needed by the user (e.g. for GPU processing).
+    '''
+
     def __init__(self, usr_np=np):
         self.usr_np = usr_np
         self.model_name = ${repr(sol.source)}
@@ -640,7 +668,7 @@ class Thermochemistry:
 def gen_thermochem_code(sol: ct.Solution) -> str:
     """For the mechanism given by *sol*, return Python source code for a class conforming
     to a module containing a class called ``Thermochemistry`` adhering to the
-    :class:`Thermochemistry` interface.
+    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
     """
     return code_tpl.render(
         ct=ct,
@@ -683,7 +711,7 @@ def compile_class(code_str, class_name="Thermochemistry"):
 
 def get_thermochem_class(sol: ct.Solution):
     """For the mechanism given by *sol*, return a class conforming to the
-    :class:`Thermochemistry` interface.
+    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
     """
     return compile_class(gen_thermochem_code(sol))
 

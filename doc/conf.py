@@ -19,8 +19,10 @@
 
 project = "pyrometheus"
 copyright = "2020, University of Illinois Board of Trustees"
-author = "Esteban Cisneros, Andreas Kloeckner, Center for Exascale-Enabled Scramjet Design"
-
+author = (
+    "Esteban Cisneros, Andreas Kloeckner, "
+    "Center for Exascale-Enabled Scramjet Design"
+)
 _ver_file = "../pyrometheus/version.py"
 with open(_ver_file) as ver_file:
     ver_src = ver_file.read()
