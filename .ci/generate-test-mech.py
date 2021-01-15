@@ -1,4 +1,3 @@
-import cantera as ct
 import pyrometheus as pyro
 import glob
 
