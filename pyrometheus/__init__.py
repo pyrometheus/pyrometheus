@@ -688,4 +688,10 @@ def get_thermochem_class(sol: ct.Solution):
     return compile_class(gen_thermochem_code(sol))
 
 
+def cti_to_mech_file(cti_file_name, mech_file_name):
+    """Write python file for mechanism specified by CTI file."""
+    with open(mech_file_name, "w") as outf:
+        code = gen_thermochem_code(ct.Solution(cti_file_name, "gas"))
+        print(code, file=outf)
+
 # vim: foldmethod=marker
