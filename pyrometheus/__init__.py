@@ -315,7 +315,7 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
     """
     :returns: Species production rate for species *species* in terms of
         the net reaction rates of progress *r_net* as a
-        :class:`pymbolic>primitives.Expression`
+        :class:`pymbolic.primitives.Expression`
     """
     ones = _zeros_like(r_net[0]) + 1.0
     indices_fwd = [int(react.ID)-1 for react in sol.reactions()
