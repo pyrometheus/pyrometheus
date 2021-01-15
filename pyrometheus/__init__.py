@@ -336,9 +336,9 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
 # {{{ main code template
 
 code_tpl = Template(
-    """'''
+    """\"""
 .. autoclass:: Thermochemistry
-'''
+\"""
 
 
 import numpy as np
@@ -380,7 +380,7 @@ def _pyro_zeros_like(argument):
 
 
 class Thermochemistry:
-    '''
+    \"""
     .. attribute:: model_name
     .. attribute:: num_elements
     .. attribute:: num_species
@@ -429,7 +429,7 @@ class Thermochemistry:
             volumetric) "bulk data", such as temperature, pressure, mass fractions,
             etc. This parameter defaults to *actual numpy*, so it can be ignored
             unless it is needed by the user (e.g. for GPU processing).
-    '''
+    \"""
 
     def __init__(self, usr_np=np):
         self.usr_np = usr_np
