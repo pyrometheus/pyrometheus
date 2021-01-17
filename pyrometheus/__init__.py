@@ -232,15 +232,9 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
     a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
     t_a = rate_coeff.activation_energy/ct.gas_constant
-    if b == 0 and t_a == 0:
-        # Constant rate
-        return a
-    elif b != 0 and t_a == 0:
+    if t_a == 0:
         # Weakly temperature-dependent rate
         return a * t**b
-    elif b == 0 and a != 0 and t_a != 0:
-        # Classic Arrhenius rate
-        return p.Variable("exp")(np.log(a)-t_a/t)
     else:
         # Modified Arrhenius
         return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
