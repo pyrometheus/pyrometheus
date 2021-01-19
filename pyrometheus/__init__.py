@@ -220,15 +220,9 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
     a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
     t_a = rate_coeff.activation_energy/ct.gas_constant
-    if b == 0 and t_a == 0:
-        # Constant rate
-        return a
-    elif b != 0 and t_a == 0:
+    if t_a == 0:
         # Weakly temperature-dependent rate
         return a * t**b
-    elif b == 0 and a != 0 and t_a != 0:
-        # Classic Arrhenius rate
-        return p.Variable("exp")(np.log(a)-t_a/t)
     else:
         # Modified Arrhenius
         return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
@@ -237,7 +231,8 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
     """
     :returns: The third-body concentration expression for reaction *react* in terms
-        of the species concentraions *c* as a :class:`pymbolic.primitives.Expression`
+        of the species concentrations *c* as a
+        :class:`pymbolic.primitives.Expression`
     """
     efficiencies = [react.efficiencies[sp] for sp in react.efficiencies]
     indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
@@ -302,7 +297,11 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
     if react.reversible:
         nu_prod = [react.products[sp] for sp in react.products]
         r_rev = np.prod([c[index]**nu for index, nu in zip(indices_prod, nu_prod)])
-        return k_fwd[int(react.ID)-1] * (r_fwd - k_eq[int(react.ID)-1] * r_rev)
+        # FIXME: It's not clear that this is available other than by this clunky,
+        # string-parsing route
+        reaction_index = int(react.ID)-1
+
+        return k_fwd[reaction_index] * (r_fwd - k_eq[reaction_index] * r_rev)
     else:
         return k_fwd[int(react.ID)-1] * r_fwd
 
