@@ -482,29 +482,29 @@ class Thermochemistry:
             concs[i] = self.usr_np.where(concs[i] > 0, concs[i], zero)
         return concs
 
-    def sum_over_species(self, mass_fractions, proparray):
-        return sum([mass_fractions[i] * proparray[i] * self.iwts[i]
+    def get_mass_average_property(self, mass_fractions, spec_property):
+        return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
                     for i in range(self.num_species)])
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
         cp0_r = self.get_species_specific_heats_r(temperature)
-        cpsum = self.sum_over_species(mass_fractions, cp0_r)
-        return self.gas_constant * cpsum
+        cpmix = self.get_mass_average_property(mass_fractions, cp0_r)
+        return self.gas_constant * cpmix
 
     def get_mixture_specific_heat_cv_mass(self, temperature, mass_fractions):
         cp0_r = self.get_species_specific_heats_r(temperature) - 1.0
-        cpsum = self.sum_over_species(mass_fractions, cp0_r)
-        return self.gas_constant * cpsum
+        cpmix = self.get_mass_average_property(mass_fractions, cp0_r)
+        return self.gas_constant * cpmix
 
     def get_mixture_enthalpy_mass(self, temperature, mass_fractions):
         h0_rt = self.get_species_enthalpies_rt(temperature)
-        hsum = self.sum_over_species(mass_fractions, h0_rt)
-        return self.gas_constant * temperature * hsum
+        hmix = self.get_mass_average_property(mass_fractions, h0_rt)
+        return self.gas_constant * temperature * hmix
 
     def get_mixture_internal_energy_mass(self, temperature, mass_fractions):
         e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
-        esum = self.sum_over_species(mass_fractions, e0_rt)
-        return self.gas_constant * temperature * esum
+        emix = self.get_mass_average_property(mass_fractions, e0_rt)
+        return self.gas_constant * temperature * emix
 
     def get_species_specific_heats_r(self, temperature):
         return _pyro_make_array([
