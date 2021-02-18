@@ -238,7 +238,7 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
     indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
     indices_default = [i for i in range(sol.n_species) if i not in indices_nondef]
     sum_nondef = sum(eff_i * c[index_i] for eff_i, index_i
-                     in zip(efficiencies, indices_nondef))
+                     in zip(np.array(efficiencies), indices_nondef))
     sum_default = react.default_efficiency * sum(c[i] for i in indices_default)
     return sum_nondef + sum_default
 
@@ -300,7 +300,6 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
         # FIXME: It's not clear that this is available other than by this clunky,
         # string-parsing route
         reaction_index = int(react.ID)-1
-
         return k_fwd[reaction_index] * (r_fwd - k_eq[reaction_index] * r_rev)
     else:
         return k_fwd[int(react.ID)-1] * r_fwd
