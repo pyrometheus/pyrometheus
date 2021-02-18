@@ -139,15 +139,20 @@ def test_get_thermo_properties(mechname):
         print(f"keq1 = {keq_pm1}")
         keq_pm = 1.0 / np.exp(ptk.get_equilibrium_constants(t))
         keq_ct = sol.equilibrium_constants
-        # Exclude check on irreversible reaction
-        keq_pm_test = keq_pm[1:]
-        keq_ct_test = keq_ct[1:]
-        keq_err = np.linalg.norm((keq_pm_test - keq_ct_test) / keq_ct_test, np.inf)
+
         print(f"keq_pm = {keq_pm}")
         print(f"keq_cnt = {keq_ct}")
         print(f"temperature = {t}")
-        print(f"keq_err = {keq_err}")
-        assert keq_err < 1.0e-13
+        # Exclude check on irreversible reactions
+        for i, reaction in enumerate(sol.reactions()):
+            if reaction.reversible:
+                keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])  
+                print(f"keq_err = {keq_err}")
+                assert keq_err < 1.0e-13
+        # keq_pm_test = keq_pm[1:]
+        # keq_ct_test = keq_ct[1:]
+        # keq_err = np.linalg.norm((keq_pm_test - keq_ct_test) / keq_ct_test, np.inf)
+        # assert keq_err < 1.0e-13
 
     return
 
@@ -187,9 +192,10 @@ def test_get_temperature(mechname):
         assert np.abs(t - t_pm) < tol
 
 
-@pytest.mark.parametrize("mechname,fuel", [("uiuc", "C2H4"),
-                                       ("sanDiego", "H2")])
-def test_kinetics(mechname, fuel):
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
+                         [("uiuc", "C2H4", 3.0, 1e-7),
+                          ("sanDiego", "H2", 0.5, 1e-6)])
+def test_kinetics(mechname, fuel, stoich_ratio, dt):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted rates of progress for given
     temperature and composition"""
@@ -200,38 +206,43 @@ def test_kinetics(mechname, fuel):
     init_temperature = 1500.0
     equiv_ratio = 1.0
     ox_di_ratio = 0.21
-    stoich_ratio = 3.0  # 0.5
-    if fuel == "H2":
-        stoich_ratio = 0.5
+
     i_fu = sol.species_index(fuel)
     i_ox = sol.species_index("O2")
     i_di = sol.species_index("N2")
+
     x = np.zeros(ptk.num_species)
     x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
     x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
     x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
+
+    # Init Cantera reactor
     sol.TPX = init_temperature, ct.one_atm, x
     reactor = ct.IdealGasConstPressureReactor(sol)
     sim = ct.ReactorNet([reactor])
 
     time = 0.0
-    for step in range(50):
-        time += 1.0e-7  # dt limited by C2H4 mech, 1e-6 sufficient for H2
+    for step in range(100):
+        time += dt
         sim.advance(time)
+
         # Cantera kinetics
         r_ct = reactor.kinetics.net_rates_of_progress
         omega_ct = reactor.kinetics.net_production_rates
+
         # Get state from Cantera
         temp = reactor.T
         rho = reactor.density
         y = np.where(reactor.Y > 0, reactor.Y, 0)
+
         # Prometheus kinetics
         c = ptk.get_concentrations(rho, y)
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
-        # Print
         err_r = np.linalg.norm(r_ct-r_pm, np.inf)
         err_omega = np.linalg.norm(omega_ct - omega_pm, np.inf)
+
+        # Print
         print("T = ", reactor.T)
         print("y_ct", reactor.Y)
         print("y = ", y)
@@ -240,6 +251,7 @@ def test_kinetics(mechname, fuel):
         print("err_omega = ", err_omega)
         print("err_r = ", err_r)
         print()
+
         # Compare
         assert err_r < 1.0e-10
         assert err_omega < 1.0e-10
