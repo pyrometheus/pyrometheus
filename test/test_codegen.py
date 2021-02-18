@@ -146,7 +146,7 @@ def test_get_thermo_properties(mechname):
         # Exclude check on irreversible reactions
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:
-                keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])  
+                keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
                 print(f"keq_err = {keq_err}")
                 assert keq_err < 1.0e-13
         # keq_pm_test = keq_pm[1:]
