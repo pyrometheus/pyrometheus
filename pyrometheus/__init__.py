@@ -247,7 +247,7 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
     indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
     indices_default = [i for i in range(sol.n_species) if i not in indices_nondef]
     sum_nondef = sum(eff_i * c[index_i] for eff_i, index_i
-                     in zip(efficiencies, indices_nondef))
+                     in zip(np.array(efficiencies), indices_nondef))
     sum_default = react.default_efficiency * sum(c[i] for i in indices_default)
     return sum_nondef + sum_default
 
