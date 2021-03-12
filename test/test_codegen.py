@@ -28,7 +28,7 @@ import cantera as ct
 import numpy as np  # noqa: F401
 import pyrometheus as pyro
 import pytest
-
+from pytools.obj_array import make_obj_array
 
 # Write out all the mechanisms for inspection
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
@@ -46,16 +46,23 @@ def test_get_rate_coefficients(mechname):
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    nspecies = sol.n_species
     ptk = pyro.get_thermochem_class(sol)()
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
+    ones = np.ones(100)
     for t in temp:
         # Set new temperature in Cantera
         sol.TP = t, ct.one_atm
+
         # Concentrations
         y = sol.Y
         rho = sol.density
+        rho_array = rho * ones
+        y_array = y.reshape(-1, 1) * ones
         c = ptk.get_concentrations(rho, y)
+        c_array = ptk.get_concentrations(rho_array, y_array)
+
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
