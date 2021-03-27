@@ -72,7 +72,7 @@ def test_get_rate_coefficients(mechname):
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
-def test_get_pressure(mechname):
+def test_get_pressure(mechname):  # test CI
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted pressure for given density,
     temperature, and mass fractions
