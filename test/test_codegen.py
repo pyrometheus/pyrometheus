@@ -39,7 +39,7 @@ def test_generate_mechfile(mechname):
         code = pyro.gen_thermochem_code(sol)
         print(code, file=mech_file)
 
-
+#  test CI
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 def test_get_rate_coefficients(mechname):
     """This function tests that pyrometheus-generated code
