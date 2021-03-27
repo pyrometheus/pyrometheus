@@ -1,14 +1,9 @@
 name: CI
-on:
-    pull_request_target:
-    push:
-        branches: master 
-    schedule:
-        - cron:  '17 3 * * 0'
+on: [push, pull_request]
 
 jobs:
     flake8:
-        name: Flake8 
+        name: Flake8
         runs-on: ubuntu-latest
         steps:
         -   uses: actions/checkout@v2
