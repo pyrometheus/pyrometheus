@@ -366,6 +366,12 @@ def _pyro_make_array(res_list):
 
 
 def _pyro_norm(usr_np, argument, normord):
+    \"""This works around numpy.linalg norm not working with scalars.
+
+    If the argument is a regular ole number, it just uses regular numpy.abs,
+    otherwise use a linalg norm from regular numpy, or from the user's numpy
+    clone if one was specified.
+    \"""
     # Wrap norm for scalars
     from numbers import Number
     if isinstance(argument, Number):
