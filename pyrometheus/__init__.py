@@ -374,6 +374,7 @@ def _pyro_norm(usr_np, argument, normord):
 
 
 def _pyro_zeros_like(argument):
+    # FIXME: This is imperfect, as a NaN will stay a NaN.
     return 0 * argument
 
 
@@ -409,7 +410,7 @@ class Thermochemistry:
     .. method:: get_temperature(self, H_or_E, T_guess, Y, do_energy=False)
     .. method:: __init__(self, usr_np=numpy)
 
-        Specify a user-defined NUMPY namespace as (*usr_np*) to the constructor
+        Specify a user-defined :mod:`numpy`-like namespace as (*usr_np*) to the constructor
         of a given mechanism thermochemistry class.
 
         usr_np
