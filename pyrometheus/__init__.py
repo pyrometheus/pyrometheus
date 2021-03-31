@@ -487,7 +487,7 @@ class Thermochemistry:
         concs = self.iwts * rho * mass_fractions
         zero = _pyro_zeros_like(concs[0])
         for i, conc in enumerate(concs):
-            concs[i] = self.usr_np.where(concs[i] > 0, concs[i], zero)
+            concs[i] = self.usr_np.where(concs[i] < 0, zero, concs[i])
         return concs
 
     def get_mass_average_property(self, mass_fractions, spec_property):
