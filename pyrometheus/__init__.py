@@ -436,7 +436,7 @@ class Thermochemistry:
             to :class:`numpy.ndarray` and is used to hold all types of (potentialy
             volumetric) "bulk data", such as temperature, pressure, mass fractions,
             etc. This parameter defaults to *actual numpy*, so it can be ignored
-            unless it is needed by the user (e.g. for purposes of 
+            unless it is needed by the user (e.g. for purposes of
             GPU processing or automatic differentiation).
 
         \"""

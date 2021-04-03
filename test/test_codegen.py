@@ -143,7 +143,7 @@ def test_get_thermo_properties(mechname):
         print(f"keq_pm = {keq_pm}")
         print(f"keq_cnt = {keq_ct}")
         print(f"temperature = {t}")
-        # Exclude meaningless check on equilibrium constants for irreversible reactions
+        # xclude meaningless check on equilibrium constants for irreversible reaction
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:
                 keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
