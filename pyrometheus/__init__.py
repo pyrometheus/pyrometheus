@@ -164,6 +164,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 # {{{ Data-handling helper
 
 def _zeros_like(argument):
+    # FIXME: This mishandles NaNs.
     return 0 * argument
 
 # }}}
@@ -368,9 +369,8 @@ def _pyro_make_array(res_list):
 def _pyro_norm(usr_np, argument, normord):
     \"""This works around numpy.linalg norm not working with scalars.
 
-    If the argument is a regular ole number, it just uses regular numpy.abs,
-    otherwise use a linalg norm from regular numpy, or from the user's numpy
-    clone if one was specified.
+    If the argument is a regular ole number, it uses :func:`numpy.abs`,
+    otherwise it uses ``usr_np.linalg.norm``.
     \"""
     # Wrap norm for scalars
     from numbers import Number
@@ -436,7 +436,8 @@ class Thermochemistry:
             to :class:`numpy.ndarray` and is used to hold all types of (potentialy
             volumetric) "bulk data", such as temperature, pressure, mass fractions,
             etc. This parameter defaults to *actual numpy*, so it can be ignored
-            unless it is needed by the user (e.g. for GPU processing).
+            unless it is needed by the user (e.g. for purposes of 
+            GPU processing or automatic differentiation).
 
         \"""
 
@@ -575,9 +576,9 @@ class Thermochemistry:
             dt = -f / j
             t_i += dt
             if _pyro_norm(self.usr_np, dt, np.inf) < tol:
-                break
+                return t_i
 
-        return t_i
+        raise RuntimeError("Temperature iteration failed to converge")
 
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
