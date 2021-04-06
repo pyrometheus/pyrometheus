@@ -22,6 +22,21 @@ jobs:
                 curl -L -O -k https://gitlab.tiker.net/inducer/ci-support/raw/master/prepare-and-run-flake8.sh
                 . ./prepare-and-run-flake8.sh "$(basename $GITHUB_REPOSITORY)" test
 
+    flake8_gen:
+        name: Flake8 on Generated Code
+        runs-on: ubuntu-latest
+        steps:
+        -   uses: actions/checkout@v2
+        -   name: "Main Script"
+            run: |
+                CONDA_ENVIRONMENT=.test-conda-env-py3.yml
+                curl -L -O -k https://gitlab.tiker.net/inducer/ci-support/raw/master/ci-support.sh
+                . ./ci-support.sh
+                build_py_project_in_conda_env
+                python -m pip install flake8 pep8-naming flake8-quotes
+                python .ci/generate-test-mech.py
+                flake8 --extend-ignore E501,Q000 test/mechs
+
     pytest:
         name: Pytest Conda Py
         runs-on: ubuntu-latest
@@ -60,6 +75,7 @@ jobs:
                 curl -L -O -k https://gitlab.tiker.net/inducer/ci-support/raw/master/ci-support.sh
                 . ci-support.sh
                 build_py_project_in_conda_env
+                python .ci/generate-example-mech.py test/mechs/sanDiego.cti pyrometheus/thermochem_example.py
                 build_docs
 
 # vim: sw=4

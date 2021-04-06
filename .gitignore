@@ -17,3 +17,5 @@ distribute*tar.gz
 
 *.dat
 notebooks
+test/install.sh
+test/generated-mechs/*.py
