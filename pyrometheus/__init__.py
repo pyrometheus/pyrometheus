@@ -341,6 +341,7 @@ code_tpl = Template(
 
 import numpy as np
 
+
 def _pyro_make_array(usr_np, res_list):
     \"""This works around (e.g.) numpy.exp not working with object arrays of numpy
     scalars. It defaults to making object arrays, however if an array consists of all
