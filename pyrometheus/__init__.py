@@ -482,8 +482,8 @@ class Thermochemistry:
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/np.dot(self.iwts, mass_fractions)
 
-    def get_concentrations(self, rho, mass_fractions):
-        concs = _rev_mul(self.iwts, rho * mass_fractions)
+    def get_concentrations(self, rho, mass_fractions):        
+        concs = self.iwts*_rev_mul(rho, mass_fractions)
         zero = _pyro_zeros_like(concs[0])
         for i, conc in enumerate(concs):
             concs[i] = self.usr_np.where(concs[i] > 0, concs[i], zero)
@@ -593,12 +593,14 @@ class Thermochemistry:
         %endfor
                 ])
 
+        # print("checkpoint 1")
         reduced_pressure = _pyro_make_array([
         %for i, react in enumerate(falloff_reactions):
             (${cgm(third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
                             ])
+        # print("checkpoint 2")
 
         falloff_center = _pyro_make_array([
         %for react in falloff_reactions:

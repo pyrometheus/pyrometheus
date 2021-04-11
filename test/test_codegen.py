@@ -265,6 +265,47 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt):
 
     return
 
+@pytest.mark.parameterize("mechname, fuel, stoich_ratio",
+                          [("uiuc", "C2H4", 3.0),
+                           ("sanDiego", "H2", 0.5)])
+def test_array_pyro(mechname, fuel, stoich_ratio):
+    """This function tests that pyrometheus-generated code
+    computes Cantera-predicted net-production rates on grids"""
+    print(mechname)
+    
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    ptk = pyro.get_thermochem_class(sol)()
+
+    # 1D laminar premix flame to get test data
+    temperature = 300
+    pressure = ct.one_atm
+    equiv_ratio = 1
+    ox_to_di_ratio = 0.21
+    
+    x_fu = (ox_to_di_ratio*equiv_ratio)/(stoich_ratio+ox_to_di_ratio*equiv_ratio)
+    x_ox = stoich_ratio*x_fu/equiv_ratio
+    x_di = (1-ox_to_di_ratio)*x_ox/ox_to_di_ratio
+    
+    mole_fractions = fuel+":"+str(x_fu)+", O2:"+str(x_ox)+", N2:"+str(x_di)
+    sol.TPX = temperature, pressure, mole_fractions
+
+    grid = np.linspace(0, 0.1, 101)
+    free_flame = ct.FreeFlame(sol, grid=grid)
+
+    free_flame.set_refine_criteria(ratio=2, slope=0.2, curve=0.02)
+    free_flame.transport_model = "Mix"
+    free_flame.solve(loglevel=0, auto=True)
+
+
+    density = np.array(free_flame.density)
+    temperature = np.array(free_flame.T)
+    mass_fractions = np.array(free_flame.Y).T
+
+    omega_pyro = ptk.get_net_production_rates(density, temperature, mass_fractions)
+
+    return
+    
+    
 
 # run single tests using
 # $ python test_codegen.py 'test_sandiego()'
