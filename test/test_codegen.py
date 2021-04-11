@@ -260,9 +260,9 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt):
     return
 
 
-@pytest.mark.parameterize("mechname, fuel, stoich_ratio",
-                          [("UConn32", "C2H4", 3),
-                           ("sanDiego", "H2", 0.5)])
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio",
+                         [("UConn32", "C2H4", 3),
+                          ("sanDiego", "H2", 0.5)])
 def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted falloff rate coefficients"""
