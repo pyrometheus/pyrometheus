@@ -325,7 +325,7 @@ def test_autodiff_accuracy():
     for i, delta_y in enumerate(deltas):
         j_fd = jacobian_fd_approx(mass_fractions, delta_y)
         # Lapack norm (Anderson)
-        err[i] = np.linalg.norm(j-j_fd, 'fro')/np.linalg.norm(j, 'fro')
+        err[i] = np.linalg.norm(j-j_fd, "fro")/np.linalg.norm(j, "fro")
         eocrec.add_data_point(delta_y, err[i])
 
     print("------------------------------------------------------")
