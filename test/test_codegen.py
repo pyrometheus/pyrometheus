@@ -289,7 +289,8 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     sim = ct.ReactorNet([reactor])
 
     # Falloff reactions
-    i_falloff = [i for i, r in enumerate(sol.reactions()) if isinstance(r, ct.FalloffReaction)]
+    i_falloff = [i for i, r in enumerate(sol.reactions())
+            if isinstance(r, ct.FalloffReaction)]
 
     dt = 1e-6
     time = 0
@@ -308,19 +309,20 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
         # Prometheus kinetics
         concentrations = ptk.get_concentrations(density, mass_fractions)
         k_pm = ptk.get_fwd_rate_coefficients(temperature, concentrations)
-        err = np.linalg.norm((k_ct[i_falloff] - k_pm[i_falloff])/k_ct[i_falloff], np.inf)
-        
-        
+        err = np.linalg.norm((k_ct[i_falloff] - k_pm[i_falloff])/k_ct[i_falloff],
+                np.inf)
+
         # Print
         print("T = ", reactor.T)
         print("k_ct = ", k_ct[i_falloff])
         print("k_pm = ", k_pm[i_falloff])
         print("err = ", err)
-        
+
         # Compare
         assert err < 1e-14
 
     return
+
 
 # run single tests using
 # $ python test_codegen.py 'test_sandiego()'
