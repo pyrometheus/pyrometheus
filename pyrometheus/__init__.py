@@ -252,7 +252,7 @@ def troe_falloff_expr(react: ct.Reaction, t):
     troe_params = react.falloff.parameters
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
-    if troe_params[3] > 1.0e-16:
+    if troe_params[3]:
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
         return troe_1 + troe_2 + troe_3
     else:

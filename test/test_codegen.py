@@ -1,5 +1,6 @@
 __copyright__ = """
-Copyright (C) 2020 Andreas Kloeckner
+Copyright (C) 2020 University of Illinois Board of Trustees
+Copyright (C) 2021 Esteban Cisneros
 """
 
 __license__ = """
@@ -64,6 +65,7 @@ def test_get_rate_coefficients(mechname, np_instance):
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
+        print(k_ct)
         print(np.abs((k_ct-k_pm)/k_ct))
         assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-14
     return
@@ -334,6 +336,70 @@ def test_autodiff_accuracy():
     print(eocrec.pretty_print())
     orderest = eocrec.estimate_order_of_convergence()[0, 1]
     assert orderest > 1.95
+
+
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio",
+                         [("UConn32", "C2H4", 3),
+                          ("sanDiego", "H2", 0.5)])
+def test_falloff_kinetics(mechname, fuel, stoich_ratio):
+    """This function tests that pyrometheus-generated code
+    computes the Cantera-predicted falloff rate coefficients"""
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    ptk = pyro.get_thermochem_class(sol)()
+
+    # Homogeneous reactor to get test data
+    init_temperature = 1500
+    equiv_ratio = 1
+    ox_di_ratio = 0.21
+
+    i_fu = sol.species_index(fuel)
+    i_ox = sol.species_index("O2")
+    i_di = sol.species_index("N2")
+
+    x = np.zeros(ptk.num_species)
+    x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
+    x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
+    x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
+
+    # Init Cantera reactor
+    sol.TPX = init_temperature, ct.one_atm, x
+    reactor = ct.IdealGasConstPressureReactor(sol)
+    sim = ct.ReactorNet([reactor])
+
+    # Falloff reactions
+    i_falloff = [i for i, r in enumerate(sol.reactions())
+            if isinstance(r, ct.FalloffReaction)]
+
+    dt = 1e-6
+    time = 0
+    for step in range(100):
+        time += dt
+        sim.advance(time)
+
+        # Cantera kinetics
+        k_ct = reactor.kinetics.forward_rate_constants
+
+        # Get state from Cantera
+        density = reactor.density
+        temperature = reactor.T
+        mass_fractions = np.where(reactor.Y > 0, reactor.Y, 0)
+
+        # Prometheus kinetics
+        concentrations = ptk.get_concentrations(density, mass_fractions)
+        k_pm = ptk.get_fwd_rate_coefficients(temperature, concentrations)
+        err = np.linalg.norm((k_ct[i_falloff] - k_pm[i_falloff])/k_ct[i_falloff],
+                np.inf)
+
+        # Print
+        print("T = ", reactor.T)
+        print("k_ct = ", k_ct[i_falloff])
+        print("k_pm = ", k_pm[i_falloff])
+        print("err = ", err)
+
+        # Compare
+        assert err < 1e-14
+
+    return
 
 
 # run single tests using
