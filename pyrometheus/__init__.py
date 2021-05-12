@@ -572,7 +572,7 @@ class Thermochemistry:
         ones = _pyro_zeros_like(enthalpy_or_energy) + 1.0
         t_i = t_guess * ones
 
-        for iter in range(num_iter):
+        for _ in range(num_iter):
             f = enthalpy_or_energy - he_fun(t_i, y)
             j = -pv_fun(t_i, y)
             dt = -f / j

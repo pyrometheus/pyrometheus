@@ -233,7 +233,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, np_instance):
     sim = ct.ReactorNet([reactor])
 
     time = 0.0
-    for step in range(100):
+    for _ in range(100):
         time += dt
         sim.advance(time)
 
@@ -372,7 +372,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
     dt = 1e-6
     time = 0
-    for step in range(100):
+    for _ in range(100):
         time += dt
         sim.advance(time)
 
