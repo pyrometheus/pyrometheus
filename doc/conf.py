@@ -78,7 +78,7 @@ intersphinx_mapping = {
 
 autoclass_content = "class"
 
-mathjax_config = {
+mathjax3_config = {
     "tex2jax": {
         "inlineMath": [["\\(", "\\)"]],
         "displayMath": [["\\[", "\\]"]],

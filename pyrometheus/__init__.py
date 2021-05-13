@@ -485,11 +485,7 @@ class Thermochemistry:
         return 1/np.dot(self.iwts, mass_fractions)
 
     def get_concentrations(self, rho, mass_fractions):
-        concs = self.iwts * rho * mass_fractions
-        zero = _pyro_zeros_like(concs[0])
-        for i, conc in enumerate(concs):
-            concs[i] = self.usr_np.where(concs[i] < 0, zero, conc)
-        return concs
+        return self.iwts * rho * mass_fractions
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
