@@ -27,12 +27,72 @@ import sys
 
 import cantera as ct
 import numpy as np  # noqa: F401
-import jax
-import jax.numpy as jnp  # noqa: F401
 import pyrometheus as pyro
 import pytest
 
-jax.config.update("jax_enable_x64", 1)
+import importlib
+jax_spec = importlib.util.find_spec("jax")
+found = jax_spec is not None
+
+if found:
+    import jax
+    import jax.numpy as jnp  # noqa: F401
+    jax.config.update("jax_enable_x64", 1)
+    numpy_list = [np, jnp]
+else:
+    numpy_list = [np]
+
+
+def make_jax_pyro_class(ptk_base_cls, usr_np):
+
+    class ptk_jnp(ptk_base_cls):
+
+        def pyro_make_array(self, res_list):
+            """This works around (e.g.) numpy.exp not working with object arrays of numpy
+            scalars. It defaults to making object arrays, however if an array
+            consists of all scalars, it makes a "plain old" :class:`numpy.ndarray`.
+
+            See ``this numpy bug <https://github.com/numpy/numpy/issues/18004>`__
+            for more context.
+            """
+
+            from numbers import Number
+            # Needed to play nicely with Jax, which frequently creates
+            # arrays of shape () when handed numbers
+            all_numbers = all(
+                isinstance(e, Number)
+                or (isinstance(e, self.usr_np.ndarray) and e.shape == ())
+                for e in res_list)
+
+            if all_numbers:
+                return self.usr_np.array(res_list, dtype=self.usr_np.float64)
+
+            result = self.usr_np.empty((len(res_list),), dtype=object)
+
+            # 'result[:] = res_list' may look tempting, however:
+            # https://github.com/numpy/numpy/issues/16564
+            for idx in range(len(res_list)):
+                result[idx] = res_list[idx]
+
+            return result
+
+        def pyro_norm(self, argument, normord):
+            """This works around numpy.linalg norm not working with scalars.
+
+            If the argument is a regular ole number, it uses :func:`numpy.abs`,
+            otherwise it uses ``usr_np.linalg.norm``.
+            """
+            # Wrap norm for scalars
+            from numbers import Number
+            if isinstance(argument, Number):
+                return self.usr_np.abs(argument)
+            # Needed to play nicely with Jax, which frequently creates
+            # arrays of shape () when handed numbers
+            if isinstance(argument, self.usr_np.ndarray) and argument.shape == ():
+                return self.usr_np.abs(argument)
+            return self.usr_np.linalg.norm(argument, normord)
+
+    return ptk_jnp(usr_np=usr_np)
 
 
 # Write out all the mechanisms for inspection
@@ -46,13 +106,17 @@ def test_generate_mechfile(mechname):
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
-@pytest.mark.parametrize("np_instance", [np, jnp])
-def test_get_rate_coefficients(mechname, np_instance):
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_rate_coefficients(mechname, usr_np):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
-    ptk = pyro.get_thermochem_class(sol)(usr_np=np_instance)
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    if usr_np == jnp:
+        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+    else:
+        ptk = ptk_base_cls(usr_np)
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
@@ -72,15 +136,19 @@ def test_get_rate_coefficients(mechname, np_instance):
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
-@pytest.mark.parametrize("np_instance", [np, jnp])
-def test_get_pressure(mechname, np_instance):
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_pressure(mechname, usr_np):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted pressure for given density,
     temperature, and mass fractions
     """
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
-    ptk = pyro.get_thermochem_class(sol)(usr_np=np_instance)
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    if usr_np == jnp:
+        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+    else:
+        ptk = ptk_base_cls(usr_np)
 
     # Temperature, equivalence ratio, oxidizer ratio, stoichiometry ratio
     t = 300.0
@@ -109,14 +177,18 @@ def test_get_pressure(mechname, np_instance):
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
-@pytest.mark.parametrize("np_instance", [np, jnp])
-def test_get_thermo_properties(mechname, np_instance):
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_thermo_properties(mechname, usr_np):
     """This function tests that pyrometheus-generated code
     computes thermodynamic properties c_p, s_r, h_rt, and k_eq
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
-    ptk = pyro.get_thermochem_class(sol)(usr_np=np_instance)
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    if usr_np == jnp:
+        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+    else:
+        ptk = ptk_base_cls(usr_np)
 
     # Loop over temperatures
     temp = np.linspace(500.0, 3000.0, 10)
@@ -167,14 +239,18 @@ def test_get_thermo_properties(mechname, np_instance):
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
-@pytest.mark.parametrize("np_instance", [np, jnp])
-def test_get_temperature(mechname, np_instance):
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_temperature(mechname, usr_np):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted temperature for given internal energy
     and mass fractions"""
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
-    ptk = pyro.get_thermochem_class(sol)(usr_np=np_instance)
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    if usr_np == jnp:
+        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+    else:
+        ptk = ptk_base_cls(usr_np)
     tol = 1.0e-10
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
@@ -205,13 +281,17 @@ def test_get_temperature(mechname, np_instance):
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
                          [("uiuc", "C2H4", 3.0, 1e-7),
                           ("sanDiego", "H2", 0.5, 1e-6)])
-@pytest.mark.parametrize("np_instance", [np, jnp])
-def test_kinetics(mechname, fuel, stoich_ratio, dt, np_instance):
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted rates of progress for given
     temperature and composition"""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
-    ptk = pyro.get_thermochem_class(sol)(usr_np=np_instance)
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    if usr_np == jnp:
+        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+    else:
+        ptk = ptk_base_cls(usr_np)
 
     # Homogeneous reactor to get test data
     init_temperature = 1500.0
@@ -271,8 +351,11 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, np_instance):
 
 
 def test_autodiff_accuracy():
+    pytest.importorskip("jax")
     sol = ct.Solution("mechs/sanDiego.cti", "gas")
-    ptk = pyro.get_thermochem_class(sol)(usr_np=jnp)
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+
+    ptk = make_jax_pyro_class(ptk_base_cls, jnp)
 
     # mass ratios
     equiv_ratio = 1.0
