@@ -45,7 +45,7 @@ else:
 
 def make_jax_pyro_class(ptk_base_cls, usr_np):
 
-    class ptk_jnp(ptk_base_cls):
+    class PyroJaxNumpy(ptk_base_cls):
 
         def pyro_make_array(self, res_list):
             """This works around (e.g.) numpy.exp not working with object arrays of numpy
@@ -92,7 +92,7 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
                 return self.usr_np.abs(argument)
             return self.usr_np.linalg.norm(argument, normord)
 
-    return ptk_jnp(usr_np=usr_np)
+    return PyroJaxNumpy(usr_np=usr_np)
 
 
 # Write out all the mechanisms for inspection

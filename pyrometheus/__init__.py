@@ -626,7 +626,7 @@ class Thermochemistry:
 
     %endif
     def get_fwd_rate_coefficients(self, temperature, concentrations):
-        ones = self.usr_np.zeros_like(temperature) + 1.0
+        ones = _pyro_zeros_like(temperature) + 1.0
         k_fwd = [
         %for react in sol.reactions():
         %if isinstance(react, ct.FalloffReaction):
