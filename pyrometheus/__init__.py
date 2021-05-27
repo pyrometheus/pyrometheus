@@ -471,7 +471,11 @@ class Thermochemistry:
         return self.species_indices[species_name]
 
     def get_specific_gas_constant(self, mass_fractions):
-        return self.gas_constant * self.usr_np.dot(self.iwts, mass_fractions)
+        return self.gas_constant * (
+                %for i in range(sol.n_species):
+                    + self.iwts[${i}]*mass_fractions[${i}]
+                %endfor
+                )
 
     def get_density(self, p, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
@@ -484,7 +488,11 @@ class Thermochemistry:
         return rho * rt / mmw
 
     def get_mix_molecular_weight(self, mass_fractions):
-        return 1/self.usr_np.dot(self.iwts, mass_fractions)
+        return 1/(
+                %for i in range(sol.n_species):
+                    + self.iwts[${i}]*mass_fractions[${i}]
+                %endfor
+                )
 
     def get_concentrations(self, rho, mass_fractions):
         return self.iwts * rho * mass_fractions
