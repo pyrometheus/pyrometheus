@@ -67,7 +67,8 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
             if all_numbers:
                 return self.usr_np.array(res_list, dtype=self.usr_np.float64)
 
-            result = self.usr_np.empty((len(res_list),), dtype=object)
+            result = self.usr_np.empty_like(res_list, dtype=object,
+                                            shape=(len(res_list),))
 
             # 'result[:] = res_list' may look tempting, however:
             # https://github.com/numpy/numpy/issues/16564
