@@ -343,47 +343,6 @@ code_tpl = Template(
 import numpy as np
 
 
-def _pyro_make_array(res_list):
-    \"""This works around (e.g.) numpy.exp not working with object arrays of numpy
-    scalars. It defaults to making object arrays, however if an array consists of all
-    scalars, it makes a "plain old" :class:`numpy.ndarray`.
-
-    See ``this numpy bug <https://github.com/numpy/numpy/issues/18004>`__
-    for more context.
-    \"""
-
-    from numbers import Number
-    all_numbers = all(isinstance(e, Number) for e in res_list)
-
-    dtype = np.float64 if all_numbers else np.object
-    result = np.empty((len(res_list),), dtype=dtype)
-
-    # 'result[:] = res_list' may look tempting, however:
-    # https://github.com/numpy/numpy/issues/16564
-    for idx in range(len(res_list)):
-        result[idx] = res_list[idx]
-
-    return result
-
-
-def _pyro_norm(usr_np, argument, normord):
-    \"""This works around numpy.linalg norm not working with scalars.
-
-    If the argument is a regular ole number, it uses :func:`numpy.abs`,
-    otherwise it uses ``usr_np.linalg.norm``.
-    \"""
-    # Wrap norm for scalars
-    from numbers import Number
-    if isinstance(argument, Number):
-        return np.abs(argument)
-    return usr_np.linalg.norm(argument, normord)
-
-
-def _pyro_zeros_like(argument):
-    # FIXME: This is imperfect, as a NaN will stay a NaN.
-    return 0 * argument
-
-
 class Thermochemistry:
     \"""
     .. attribute:: model_name
@@ -462,6 +421,47 @@ class Thermochemistry:
         self.wts = ${str_np(sol.molecular_weights)}
         self.iwts = 1/self.wts
 
+    def _pyro_zeros_like(self, argument):
+        # FIXME: This is imperfect, as a NaN will stay a NaN.
+        return 0 * argument
+
+    def _pyro_make_array(self, res_list):
+        \"""This works around (e.g.) numpy.exp not working with object
+        arrays of numpy scalars. It defaults to making object arrays, however
+        if an array consists of all scalars, it makes a "plain old"
+        :class:`numpy.ndarray`.
+
+        See ``this numpy bug <https://github.com/numpy/numpy/issues/18004>`__
+        for more context.
+        \"""
+
+        from numbers import Number
+        all_numbers = all(isinstance(e, Number) for e in res_list)
+
+        dtype = np.float64 if all_numbers else np.object
+        result = np.empty((len(res_list),), dtype=dtype)
+
+        # 'result[:] = res_list' may look tempting, however:
+        # https://github.com/numpy/numpy/issues/16564
+        for idx in range(len(res_list)):
+            result[idx] = res_list[idx]
+
+        return result
+
+    def _pyro_norm(self, argument, normord):
+        \"""This works around numpy.linalg norm not working with scalars.
+
+        If the argument is a regular ole number, it uses :func:`numpy.abs`,
+        otherwise it uses ``usr_np.linalg.norm``.
+        \"""
+        # Wrap norm for scalars
+
+        from numbers import Number
+
+        if isinstance(argument, Number):
+            return np.abs(argument)
+        return self.usr_np.linalg.norm(argument, normord)
+
     def species_name(self, species_index):
         return self.species_name[species_index]
 
@@ -469,7 +469,11 @@ class Thermochemistry:
         return self.species_indices[species_name]
 
     def get_specific_gas_constant(self, mass_fractions):
-        return self.gas_constant * np.dot(self.iwts, mass_fractions)
+        return self.gas_constant * (
+                %for i in range(sol.n_species):
+                    + self.iwts[${i}]*mass_fractions[${i}]
+                %endfor
+                )
 
     def get_density(self, p, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
@@ -482,7 +486,11 @@ class Thermochemistry:
         return rho * rt / mmw
 
     def get_mix_molecular_weight(self, mass_fractions):
-        return 1/np.dot(self.iwts, mass_fractions)
+        return 1/(
+                %for i in range(sol.n_species):
+                    + self.iwts[${i}]*mass_fractions[${i}]
+                %endfor
+                )
 
     def get_concentrations(self, rho, mass_fractions):
         return self.iwts * rho * mass_fractions
@@ -512,21 +520,21 @@ class Thermochemistry:
         return self.gas_constant * temperature * emix
 
     def get_species_specific_heats_r(self, temperature):
-        return _pyro_make_array([
+        return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(poly_to_expr(sp.thermo, "temperature"))},
             % endfor
                 ])
 
     def get_species_enthalpies_rt(self, temperature):
-        return _pyro_make_array([
+        return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
                 ])
 
     def get_species_entropies_r(self, temperature):
-        return _pyro_make_array([
+        return self._pyro_make_array([
             % for sp in sol.species():
                 ${cgm(poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
@@ -542,7 +550,7 @@ class Thermochemistry:
         c0 = self.usr_np.log(self.one_atm / rt)
 
         g0_rt = self.get_species_gibbs_rt(temperature)
-        return _pyro_make_array([
+        return self._pyro_make_array([
             %for react in sol.reactions():
                 %if react.reversible:
                     ${cgm(equilibrium_constants_expr(
@@ -563,7 +571,7 @@ class Thermochemistry:
 
         num_iter = 500
         tol = 1.0e-6
-        ones = _pyro_zeros_like(enthalpy_or_energy) + 1.0
+        ones = self._pyro_zeros_like(enthalpy_or_energy) + 1.0
         t_i = t_guess * ones
 
         for _ in range(num_iter):
@@ -571,34 +579,34 @@ class Thermochemistry:
             j = -pv_fun(t_i, y)
             dt = -f / j
             t_i += dt
-            if _pyro_norm(self.usr_np, dt, np.inf) < tol:
+            if self._pyro_norm(dt, np.inf) < tol:
                 return t_i
 
         raise RuntimeError("Temperature iteration failed to converge")
 
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
-        ones = _pyro_zeros_like(temperature) + 1.0
-        k_high = _pyro_make_array([
+        ones = self._pyro_zeros_like(temperature) + 1.0
+        k_high = self._pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(rate_coefficient_expr(react.high_rate, Variable("temperature")))},
         %endfor
                 ])
 
-        k_low = _pyro_make_array([
+        k_low = self._pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(rate_coefficient_expr(react.low_rate, Variable("temperature")))},
         %endfor
                 ])
 
-        reduced_pressure = _pyro_make_array([
+        reduced_pressure = self._pyro_make_array([
         %for i, react in enumerate(falloff_reactions):
             (${cgm(third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
                             ])
 
-        falloff_center = _pyro_make_array([
+        falloff_center = self._pyro_make_array([
         %for react in falloff_reactions:
             %if react.falloff.falloff_type == "Troe":
             self.usr_np.log10(${cgm(troe_falloff_expr(
@@ -609,7 +617,7 @@ class Thermochemistry:
         %endfor
                         ])
 
-        falloff_function = _pyro_make_array([
+        falloff_function = self._pyro_make_array([
         %for i, react in enumerate(falloff_reactions):
             ${cgm(falloff_function_expr(
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
@@ -624,8 +632,8 @@ class Thermochemistry:
 
     %endif
     def get_fwd_rate_coefficients(self, temperature, concentrations):
-        ones = _pyro_zeros_like(temperature) + 1.0
-        k_fwd = _pyro_make_array([
+        ones = self._pyro_zeros_like(temperature) + 1.0
+        k_fwd = [
         %for react in sol.reactions():
         %if isinstance(react, ct.FalloffReaction):
             0*temperature,
@@ -634,7 +642,7 @@ class Thermochemistry:
                                         Variable("temperature")))} * ones,
         %endif
         %endfor
-                ])
+                ]
         %if falloff_reactions:
         self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
@@ -643,13 +651,13 @@ class Thermochemistry:
         k_fwd[${int(react.ID)-1}] *= (${cgm(third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
-        return k_fwd
+        return self._pyro_make_array(k_fwd)
 
     def get_net_rates_of_progress(self, temperature, concentrations):
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
         k_eq = self.usr_np.exp(log_k_eq)
-        return _pyro_make_array([
+        return self._pyro_make_array([
                 %for react in sol.reactions():
                     ${cgm(rate_of_progress_expr(sol, react,
                         Variable("concentrations"),
@@ -660,8 +668,8 @@ class Thermochemistry:
     def get_net_production_rates(self, rho, temperature, mass_fractions):
         c = self.get_concentrations(rho, mass_fractions)
         r_net = self.get_net_rates_of_progress(temperature, c)
-        ones = _pyro_zeros_like(r_net[0]) + 1.0
-        return _pyro_make_array([
+        ones = self._pyro_zeros_like(r_net[0]) + 1.0
+        return self._pyro_make_array([
             %for sp in sol.species():
                 ${cgm(production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
             %endfor
