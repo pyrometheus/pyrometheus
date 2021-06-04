@@ -47,7 +47,7 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 
     class PyroJaxNumpy(ptk_base_cls):
 
-        def pyro_make_array(self, res_list):
+        def _pyro_make_array(self, res_list):
             """This works around (e.g.) numpy.exp not working with object arrays of numpy
             scalars. It defaults to making object arrays, however if an array
             consists of all scalars, it makes a "plain old" :class:`numpy.ndarray`.
@@ -77,7 +77,7 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 
             return result
 
-        def pyro_norm(self, argument, normord):
+        def _pyro_norm(self, argument, normord):
             """This works around numpy.linalg norm not working with scalars.
 
             If the argument is a regular ole number, it uses :func:`numpy.abs`,
