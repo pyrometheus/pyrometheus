@@ -114,7 +114,11 @@ def test_get_rate_coefficients(mechname, usr_np):
     for given temperature and composition"""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
+    cond = False
+    if found:
+        if usr_np == jnp:
+            cond = True
+    if cond:
         ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
     else:
         ptk = ptk_base_cls(usr_np)
@@ -146,7 +150,11 @@ def test_get_pressure(mechname, usr_np):
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
+    cond = False
+    if found:
+        if usr_np == jnp:
+            cond = True
+    if cond:
         ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
     else:
         ptk = ptk_base_cls(usr_np)
@@ -186,7 +194,11 @@ def test_get_thermo_properties(mechname, usr_np):
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
+    cond = False
+    if found:
+        if usr_np == jnp:
+            cond = True
+    if cond:
         ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
     else:
         ptk = ptk_base_cls(usr_np)
@@ -248,7 +260,11 @@ def test_get_temperature(mechname, usr_np):
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
+    cond = False
+    if found:
+        if usr_np == jnp:
+            cond = True
+    if cond:
         ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
     else:
         ptk = ptk_base_cls(usr_np)
@@ -289,7 +305,11 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
     temperature and composition"""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
+    cond = False
+    if found:
+        if usr_np == jnp:
+            cond = True
+    if cond:
         ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
     else:
         ptk = ptk_base_cls(usr_np)
