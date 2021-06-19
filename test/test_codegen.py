@@ -481,7 +481,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
         print("err = ", err)
 
         # Compare
-        assert err < 1e-14
+        assert err < 2e-14
 
     return
 
