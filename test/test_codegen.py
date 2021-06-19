@@ -30,20 +30,20 @@ import numpy as np  # noqa: F401
 import pyrometheus as pyro
 import pytest
 
-import importlib
-jax_spec = importlib.util.find_spec("jax")
-found = jax_spec is not None
-
-if found:
+try:
     import jax
+except ImportError:
+    numpy_list = [np]
+    jnp = None
+else:
     import jax.numpy as jnp  # noqa: F401
     jax.config.update("jax_enable_x64", 1)
     numpy_list = [np, jnp]
-else:
-    numpy_list = [np]
 
 
 def make_jax_pyro_class(ptk_base_cls, usr_np):
+    if usr_np != jnp:
+        return ptk_base_cls(usr_np)
 
     class PyroJaxNumpy(ptk_base_cls):
 
@@ -114,10 +114,8 @@ def test_get_rate_coefficients(mechname, usr_np):
     for given temperature and composition"""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
-        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
-    else:
-        ptk = ptk_base_cls(usr_np)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
@@ -146,10 +144,7 @@ def test_get_pressure(mechname, usr_np):
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
-        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
-    else:
-        ptk = ptk_base_cls(usr_np)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
     # Temperature, equivalence ratio, oxidizer ratio, stoichiometry ratio
     t = 300.0
@@ -186,10 +181,7 @@ def test_get_thermo_properties(mechname, usr_np):
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
-        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
-    else:
-        ptk = ptk_base_cls(usr_np)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
     # Loop over temperatures
     temp = np.linspace(500.0, 3000.0, 10)
@@ -248,10 +240,7 @@ def test_get_temperature(mechname, usr_np):
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
-        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
-    else:
-        ptk = ptk_base_cls(usr_np)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
     tol = 1.0e-10
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
@@ -289,10 +278,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
     temperature and composition"""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
-    if usr_np == jnp:
-        ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
-    else:
-        ptk = ptk_base_cls(usr_np)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
     # Homogeneous reactor to get test data
     init_temperature = 1500.0
@@ -353,6 +339,8 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
 
 def test_autodiff_accuracy():
     pytest.importorskip("jax")
+    assert jnp is not None
+
     sol = ct.Solution("mechs/sanDiego.cti", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
 
