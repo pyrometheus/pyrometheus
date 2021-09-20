@@ -57,6 +57,20 @@ class CodeGenerationMapper(StringifyMapper):
     def map_constant(self, expr, enclosing_prec):
         return repr(expr)
 
+    OP_NAMES = {
+            ">=": "greater_equal",
+            ">": "greater",
+            "==": "equal",
+            "!=": "not_equal",
+            "<=": "less_equal",
+            "<": "less",
+            }
+
+    def map_comparison(self, expr, enclosing_prec, *args, **kwargs):
+        return (f"self.usr_np.{self.OP_NAMES[expr.operator]}"
+            f"({self.rec(expr.left, PREC_NONE, *args, **kwargs)}, "
+            f"{self.rec(expr.right, PREC_NONE, *args, **kwargs)})")
+
     def map_if(self, expr, enclosing_prec, *args, **kwargs):
         return "self.usr_np.where(%s, %s, %s)" % (
             self.rec(expr.condition, PREC_NONE, *args, **kwargs),
