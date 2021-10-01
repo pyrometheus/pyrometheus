@@ -46,6 +46,9 @@ from mako.template import Template
 import pyrometheus.chem_expr
 
 
+file_extension = "py"
+
+
 # {{{ code generation helpers
 
 
