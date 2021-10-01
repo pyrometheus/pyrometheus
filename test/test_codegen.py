@@ -98,11 +98,15 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 
 # Write out all the mechanisms for inspection
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
-def test_generate_mechfile(mechname):
+@pytest.mark.parametrize("lang_module", [
+    pyro.codegen.python,
+    pyro.codegen.cpp,
+    ])
+def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
-    with open(f"mechs/{mechname}.py", "w") as mech_file:
-        code = pyro.gen_thermochem_code(sol)
+    with open(f"mechs/{mechname}.{lang_module.file_extension}", "w") as mech_file:
+        code = lang_module.gen_thermochem_code(sol)
         print(code, file=mech_file)
 
 
