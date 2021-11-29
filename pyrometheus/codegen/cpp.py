@@ -93,12 +93,19 @@ struct thermochemistry
                 );
     }
 
+    static ScalarT get_mix_molecular_weight(ContainerT const &mass_fractions)
+    {
+        return 1.0/(
+        %for i in range(sol.n_species):
+            + inv_weights[${i}]*mass_fractions[${i}]
+        %endfor
+        );
+    }
+
     static ScalarT get_density(ScalarT p, ScalarT temperature,
             ContainerT const &mass_fractions)
     {
-        // FIXME
-        // ScalarT mmw = get_mix_molecular_weight(mass_fractions);
-        ScalarT mmw = 1;
+        ScalarT mmw = get_mix_molecular_weight(mass_fractions);
         ScalarT rt = gas_constant * temperature;
         return p * mmw / rt;
     }
