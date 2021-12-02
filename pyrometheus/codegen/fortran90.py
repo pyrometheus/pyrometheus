@@ -1,6 +1,6 @@
 """
 Fortran code generation
-----------------------
+-----------------------
 
 .. autofunction:: gen_thermochem_code
 """
