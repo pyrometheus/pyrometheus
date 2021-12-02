@@ -101,6 +101,7 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 @pytest.mark.parametrize("lang_module", [
     pyro.codegen.python,
     pyro.codegen.cpp,
+    pyro.codegen.fortran90,
     ])
 def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
