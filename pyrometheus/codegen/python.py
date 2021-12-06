@@ -426,12 +426,11 @@ class Thermochemistry:
     def get_net_rates_of_progress(self, temperature, concentrations):
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
-        k_eq = self.usr_np.exp(log_k_eq)
         return self._pyro_make_array([
                 %for react in sol.reactions():
                     ${cgm(ce.rate_of_progress_expr(sol, react,
                         Variable("concentrations"),
-                        Variable("k_fwd"), Variable("k_eq")))},
+                        Variable("k_fwd"), Variable("log_k_eq")))},
                 %endfor
                ])
 
