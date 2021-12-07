@@ -50,8 +50,8 @@ def nasa7_conditional(t, poly, part_gen):
         part_gen(poly.coeffs[1:8], t),
         part_gen(poly.coeffs[8:15], t),
     )
-
-
+    
+    
 @singledispatch
 def poly_to_expr(poly):
     raise TypeError(f"unexpected argument type in poly_to_expr: {type(poly)}")
