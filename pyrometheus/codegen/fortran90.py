@@ -188,6 +188,12 @@ class FortranExpressionMapper(StringifyMapper):
                     " .and. ", expr.children, PREC_LOGICAL_AND),
                 enclosing_prec, PREC_LOGICAL_AND)
 
+    def map_if(self, expr, enclosing_prec):
+        return self.format(
+            "merge(%s)" % self.join_rec(", ",
+                                        [expr.then, expr.else_,
+                                         expr.condition],
+                                        PREC_NONE))
 # }}}
 
 
@@ -350,8 +356,7 @@ contains
         ${real_type}, intent(out), dimension(num_species) :: cp0_r
 
         %for i, sp in enumerate(sol.species()):
-        cp0_r(${i+1}) = merge(1.d0*temperature, 0.d0*temperature, &
-            temperature > 1000.d0)
+        cp0_r(${i+1}) = ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))}
         %endfor
 
     end subroutine get_species_specific_heats_r
@@ -362,8 +367,7 @@ contains
         ${real_type}, intent(out), dimension(num_species) :: h0_rt
 
         %for i, sp in enumerate(sol.species()):
-        h0_rt(${i+1}) = merge(1.d0*temperature, 0.d0*temperature, &
-            temperature > 1000.d0)
+        h0_rt(${i+1}) = ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))}
         %endfor
 
     end subroutine get_species_enthalpies_rt
@@ -374,8 +378,7 @@ contains
         ${real_type}, intent(out), dimension(num_species) :: s0_r
 
         %for i, sp in enumerate(sol.species()):
-        s0_r(${i+1}) = merge(1.d0*temperature, 0.d0*temperature, &
-            temperature > 1000.d0)
+        s0_r(${i+1}) = ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}
         %endfor
 
     end subroutine get_species_entropies_r
