@@ -16,7 +16,7 @@ from mako.template import Template
 import pyrometheus.chem_expr
 from pymbolic.mapper.stringifier import (
         StringifyMapper, PREC_NONE, PREC_CALL, PREC_PRODUCT)
-from itertools import compress
+from itertools import compress, product
 
 
 file_extension = "f90"
@@ -202,15 +202,23 @@ class FortranExpressionMapper(StringifyMapper):
 module_tpl = Template("""
 module ${module_name}
 
-    implicit none
+    implicit none    
+    integer, parameter :: num_elements = ${sol.n_elements}
     integer, parameter :: num_species = ${sol.n_species}
     integer, parameter :: num_reactions = ${sol.n_reactions}
+    integer, parameter :: num_falloff = ${
+        sum(1 if isinstance(r, ct.FalloffReaction) else 0
+        for r in sol.reactions())}
     ${real_type}, parameter :: one_atm = ${float_to_fortran(ct.one_atm)}
     ${real_type}, parameter :: gas_constant = ${float_to_fortran(ct.gas_constant)}
     ${real_type}, parameter :: mol_weights(*) = &
         (/ ${str_np(sol.molecular_weights)} /)
     ${real_type}, parameter :: inv_weights(*) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
+
+    ${real_type}, parameter :: elem_matrix(*, *) = transpose(reshape((/ & 
+        ${str_np(elem_matrix)}/), &
+        (/${sol.n_species}, ${sol.n_elements}/)))
 
 contains
 
@@ -460,11 +468,66 @@ contains
 
     end subroutine get_temperature
 
+    %if falloff_reactions:
+    subroutine get_falloff_rates(temperature, concentrations, k_fwd)
+
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(in), dimension(num_species) :: concentrations
+        ${real_type}, intent(out), dimension(${len(falloff_reactions)}) :: k_fwd
+
+        ${real_type}, dimension(${len(falloff_reactions)}) :: k_high
+        ${real_type}, dimension(${len(falloff_reactions)}) :: k_low
+        ${real_type}, dimension(${len(falloff_reactions)}) :: reduced_pressure
+        ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_center
+        ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_function
+
+        %for i, react in enumerate(falloff_reactions):
+        k_high(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.high_rate, Variable("temperature")))}
+        %endfor
+
+        %for i, react in enumerate(falloff_reactions):
+        k_low(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.low_rate, Variable("temperature")))}
+        %endfor
+
+        %for i, react in enumerate(falloff_reactions):
+        reduced_pressure(${i+1}) = (${cgm(
+            ce.third_body_efficiencies_expr(sol, 
+                                            react, 
+                                            Variable("concentrations")))})*k_low(${i+1})/k_high(${i+1})
+        %endfor
+
+        %for i, react in enumerate(falloff_reactions):
+        %if react.falloff.falloff_type == "Troe":
+        falloff_center(${i+1}) = log10(${cgm(ce.troe_falloff_expr(react, Variable("temperature")))})
+        %else:
+        falloff_center(${i+1}) = 1.d0
+        %endif
+        %endfor
+
+        %for i, react in enumerate(falloff_reactions):
+        falloff_function(${i+1}) = ${cgm(ce.falloff_function_expr(react, i, 
+                                         Variable("temperature"),
+                                         Variable("reduced_pressure"),
+                                         Variable("falloff_center")))}
+        %endfor
+
+        %for i in range(len(falloff_reactions)):
+        k_fwd(${i+1}) = k_high(${i+1})*falloff_function(${i+1}) * &
+            reduced_pressure(${i+1})/(1.d0 + reduced_pressure(${i+1}))
+        %endfor
+
+    end subroutine get_falloff_rates
+
+    %endif
     subroutine get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: concentrations
         ${real_type}, intent(out), dimension(num_reactions) :: k_fwd
+
+        %if falloff_reactions:
+        ${real_type}, dimension(${len(falloff_reactions)}) :: k_falloff
+        %endif
 
         %for i, react in enumerate(sol.reactions()):
         %if isinstance(react, ct.FalloffReaction):
@@ -479,6 +542,13 @@ contains
             ${cgm(ce.third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
+
+        %if falloff_reactions:
+        call get_falloff_rates(temperature, concentrations, k_falloff)        
+        %for i, react in enumerate(falloff_reactions):
+        k_fwd(${int(react.ID)}) = k_falloff(${i+1})
+        %endfor
+        %endif
 
     end subroutine get_fwd_rate_coefficients
 
@@ -546,6 +616,10 @@ def gen_thermochem_code(sol: ct.Solution, real_type="real(kind(1.d0))",
         module_name=module_name,
 
         ce=pyrometheus.chem_expr,
+
+        elem_matrix=np.array([sol.n_atoms(i, j)
+                              for i, j in product(range(sol.n_species),
+                                                  range(sol.n_elements))]),
 
         falloff_reactions=list(compress(sol.reactions(),
                                         [isinstance(r, ct.FalloffReaction)
