@@ -506,8 +506,17 @@ class Thermochemistry:
                 %endfor
                 )
 
+    def _pyro_zeros_like(argument):
+        return 0 * argument
+            
     def get_concentrations(self, rho, mass_fractions):
-        return self.iwts * rho * mass_fractions
+        concs = self.iwts * rho * mass_fractions
+
+        # ensure non-negative concentrations
+        zero = _pyro_zeros_like(concs[0])
+        for i, conc in enumerate(concs):
+            concs[i] = self.usr_np.where(concs[i] < 0, zero, concs[i])
+        return concs
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
