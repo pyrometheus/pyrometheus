@@ -293,11 +293,11 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
 
 # {{{ Rates of progress
 
-def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
+def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, log_k_eq):
     """
     :returns: Rate of progress expression for reaction *react* in terms of
         species concentrations *c* with rate coefficients *k_fwd* and equilbrium
-        constants *k_eq* as a :class:`pymbolic.primitives.Expression`
+        constants *log_k_eq* as a :class:`pymbolic.primitives.Expression`
     """
     indices_reac = [sol.species_index(sp) for sp in react.reactants]
     indices_prod = [sol.species_index(sp) for sp in react.products]
@@ -315,7 +315,8 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, k_eq):
         # FIXME: It's not clear that this is available other than by this clunky,
         # string-parsing route
         reaction_index = int(react.ID)-1
-        return k_fwd[reaction_index] * (r_fwd - k_eq[reaction_index] * r_rev)
+        return k_fwd[reaction_index] * (r_fwd -
+                                        p.Variable("exp")(log_k_eq[reaction_index]) * r_rev)
     else:
         return k_fwd[int(react.ID)-1] * r_fwd
 
@@ -507,7 +508,7 @@ class Thermochemistry:
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.iwts * rho * mass_fractions
+        return self.iwts * self._pyro_make_array(rho).reshape(-1, 1) * mass_fractions
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
@@ -670,18 +671,19 @@ class Thermochemistry:
     def get_net_rates_of_progress(self, temperature, concentrations):
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
-        k_eq = self.usr_np.exp(log_k_eq)
         return self._pyro_make_array([
                 %for react in sol.reactions():
                     ${cgm(rate_of_progress_expr(sol, react,
                         Variable("concentrations"),
-                        Variable("k_fwd"), Variable("k_eq")))},
+                        Variable("k_fwd"), Variable("log_k_eq")))},
                 %endfor
                ])
 
     def get_net_production_rates(self, rho, temperature, mass_fractions):
         c = self.get_concentrations(rho, mass_fractions)
-        r_net = self.get_net_rates_of_progress(temperature, c)
+        if c.shape != mass_fractions.shape:
+            c = c.reshape(mass_fractions.shape)
+        r_net = self.get_net_rates_of_progress(temperature, self._pyro_make_array(c.T))
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():

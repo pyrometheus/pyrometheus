@@ -124,7 +124,7 @@ def test_get_rate_coefficients(mechname, usr_np):
         # Concentrations
         y = sol.Y
         rho = sol.density
-        c = ptk.get_concentrations(rho, y)
+        c = ptk.get_concentrations([rho], y).ravel()
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
@@ -314,9 +314,9 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
         y = np.where(reactor.Y > 0, reactor.Y, 0)
 
         # Prometheus kinetics
-        c = ptk.get_concentrations(rho, y)
+        c = ptk.get_concentrations([rho], y).ravel()
         r_pm = ptk.get_net_rates_of_progress(temp, c)
-        omega_pm = ptk.get_net_production_rates(rho, temp, y)
+        omega_pm = ptk.get_net_production_rates([rho], temp, y)
         err_r = np.linalg.norm(r_ct-r_pm, np.inf)
         err_omega = np.linalg.norm(omega_ct - omega_pm, np.inf)
 
@@ -376,7 +376,7 @@ def test_autodiff_accuracy():
     def chemical_source_term(mass_fractions):
         temperature = ptk.get_temperature(enthalpy, guess_temp, mass_fractions)
         density = ptk.get_density(ptk.one_atm, temperature, mass_fractions)
-        return ptk.get_net_production_rates(density, temperature, mass_fractions)
+        return ptk.get_net_production_rates([density], temperature, mass_fractions)
 
     from jax import jacfwd
     chemical_jacobian = jacfwd(chemical_source_term)
@@ -457,7 +457,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
         mass_fractions = np.where(reactor.Y > 0, reactor.Y, 0)
 
         # Prometheus kinetics
-        concentrations = ptk.get_concentrations(density, mass_fractions)
+        concentrations = ptk.get_concentrations([density], mass_fractions).ravel()
         k_pm = ptk.get_fwd_rate_coefficients(temperature, concentrations)
         err = np.linalg.norm((k_ct[i_falloff] - k_pm[i_falloff])/k_ct[i_falloff],
                 np.inf)
