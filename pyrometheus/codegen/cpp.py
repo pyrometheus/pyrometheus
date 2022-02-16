@@ -80,9 +80,16 @@ struct thermochemistry
     typedef ContainerT container_type;
     typedef ScalarT scalar_type;
 
+    constexpr static int num_species = ${sol.n_species};
+    constexpr static int num_reactions = ${sol.n_reactions};
+    constexpr static int num_falloff = ${
+        sum(1 if isinstance(r, ct.FalloffReaction) else 0
+        for r in sol.reactions())};
+
     constexpr static ScalarT mol_weights[] = {${str_np(sol.molecular_weights)}};
     constexpr static ScalarT inv_weights[] = {${str_np(1/sol.molecular_weights)}};
     constexpr static ScalarT gas_constant = ${repr(ct.gas_constant)};
+    constexpr static ScalarT one_atm = ${repr(ct.one_atm)};
 
     static ScalarT get_specific_gas_constant(ContainerT const &mass_fractions)
     {
@@ -102,6 +109,37 @@ struct thermochemistry
         );
     }
 
+    static ContainerT get_concentrations(ScalarT rho, ContainerT const &mass_fractions)
+    {                                                                                                                                                              
+        ContainerT concentrations = {                                                                                                                              
+            %for i in range(sol.n_species):                                                                                                                        
+                inv_weights[${i}]*mass_fractions[${i}]*rho,                                                                                                        
+            %endfor                                                                                                                                                
+        };                                                                                                                                                         
+        return concentrations;                                                                                                                                     
+    }
+
+    static ScalarT get_mass_average_property(ContainerT const &mass_fractions, ContainerT const &spec_property)
+    {
+        return (
+            %for i in range(sol.n_species):
+                + mass_fractions[${i}]*spec_property[${i}]*inv_weights[${i}]
+            %endfor
+        );
+    }
+
+    static ScalarT get_mixture_specific_heat_cp_mass(ScalarT temperature, ContainerT const &mass_fractions)
+    {
+        ContainerT cp0_r = get_species_specific_heats_r(temperature);
+        ScalarT cpmix = get_mass_average_property(mass_fractions, cp0_r);
+    }
+
+    static ScalarT get_mixture_enthalpy_mass(ScalarT temperature, ContainerT const &mass_fractions)
+    {
+        ContainerT h0_rt = get_species_enthalpies_rt(temperature);
+        ScalarT hmix = get_mass_average_property(mass_fractions, h0_rt);
+    }
+
     static ScalarT get_density(ScalarT p, ScalarT temperature,
             ContainerT const &mass_fractions)
     {
@@ -112,12 +150,124 @@ struct thermochemistry
 
     static ContainerT get_species_specific_heats_r(ScalarT temperature)
     {
-        ContainerT result = {
+        ContainerT cp0_r = {
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
             };
-        return result;
+        return cp0_r;
+    }
+
+    static ContainerT get_species_enthalpies_rt(ScalarT temperature)
+    {
+        ContainerT h0_rt = {
+            % for sp in sol.species():
+            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
+            % endfor
+            };
+        return h0_rt;   
+    }
+
+    static ContainerT get_species_entropies_r(ScalarT temperature)
+    {
+        ContainerT s0_r = {
+            % for sp in sol.species():
+            ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+            % endfor
+            };
+        return s0_r;   
+    }
+
+    static ContainerT get_species_gibbs_rt(ScalarT temperature)
+    {
+        ContainerT h0_rt = get_species_enthalpies_rt(temperature);
+        ContainerT s0_r = get_species_entropies_r(temperature);
+        ContainerT g0_rt = {
+        %for sp in range(sol.n_species):
+        h0_rt[${sp}] - s0_r[${sp}],
+        %endfor
+        };
+        return g0_rt;
+    }
+
+    static ContainerT get_equilibrium_constants(ScalarT temperature)
+    {
+        ScalarT rt = gas_constant * temperature;
+        ScalarT c0 = std::log(one_atm/rt);
+        ContainerT g0_rt = get_species_gibbs_rt(temperature);
+        ContainerT k_eq = {
+        %for react in sol.reactions():
+        %if react.reversible:
+        ${cgm(ce.equilibrium_constants_expr(sol, react, Variable("g0_rt")))},
+        %else:
+        -0.17364695002734*temperature,
+        %endif
+        %endfor
+        };
+        return k_eq;
+    }
+
+    static ScalarT get_temperature(ScalarT enthalpy, ScalarT t_guess, 
+                                   ContainerT const &mass_fractions)
+    {
+        int iter = 0;
+        int num_iter = 500;
+        double tol = 1.0e-06;
+        ScalarT iter_temp = t_guess;
+
+        for(int iter = 0; iter < num_iter; ++iter){
+            ScalarT cp = get_mixture_specific_heat_cp_mass(iter_temp, mass_fractions);
+            ScalarT h = get_mixture_enthalpy_mass(iter_temp, mass_fractions);
+            ScalarT iter_rhs = enthalpy - h;
+            iter_temp -= iter_rhs/cp;
+            if(std::fabs(iter_rhs/cp) < tol){ break; }
+        }
+        return iter_temp;
+    }
+
+    static ContainerT get_fwd_rate_coefficients(ScalarT temperature, 
+                                                ContainerT const &concentrations)
+    {
+        ContainerT k_fwd = {
+        %for react in sol.reactions():
+        %if isinstance(react, ct.FalloffReaction):
+        0.0, 
+        %else:
+        ${cgm(ce.rate_coefficient_expr(react.rate, Variable("temperature")))},
+        %endif
+        %endfor
+        };
+
+        %for react in three_body_reactions:
+        k_fwd[${int(react.ID)-1}] *= (${cgm(ce.third_body_efficiencies_expr(
+        sol, react, Variable("concentrations")))});
+        %endfor
+        return k_fwd;
+    }
+
+    static ContainerT get_net_rates_of_progress(ScalarT rho, ScalarT temperature, ContainerT const &concentrations)
+    {
+        ContainerT k_fwd = get_fwd_rate_coefficients(temperature, concentrations);
+        ContainerT log_k_eq = get_equilibrium_constants(temperature);
+        ContainerT r_net = {
+        %for react in sol.reactions():
+        ${cgm(ce.rate_of_progress_expr(sol, react, Variable("concentrations"),
+        Variable("k_fwd"), Variable("log_k_eq")))}, 
+        %endfor
+        };
+        return r_net;
+    }
+
+    static ContainerT get_net_production_rates(ScalarT rho, ScalarT temperature, ContainerT const &mass_fractions)
+    {
+        ContainerT concentrations = get_concentrations(rho, mass_fractions);
+        ContainerT r_net = get_net_rates_of_progress(rho, temperature, concentrations);
+        ContainerT omega = {
+        %for sp in sol.species():
+        ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))},
+        %endfor
+        };
+        return omega;
     }
 };
 """, strict_undefined=True)
