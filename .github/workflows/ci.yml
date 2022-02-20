@@ -37,13 +37,23 @@ jobs:
                 flake8 --extend-ignore E501,Q000 test/mechs
 
     pytest:
-        name: Pytest Conda Py
+        name: Pytest Conda Py${{ matrix.python_version }}
+        strategy:
+            matrix:
+                # "3" is intentional: It's suppposed to be conda's default
+                # Python version number, which seems to have moved past
+                # 3.9 as of 2022-02-20.
+                python_version: ["3.9", "3"]
         runs-on: ubuntu-latest
+        env:
+            PYTHON_VERSION: ${{ matrix.python_version }}
         steps:
         -   uses: actions/checkout@v2
         -   name: "Main Script"
             run: |
                 CONDA_ENVIRONMENT=.test-conda-env-py3.yml
+                sed -i "s/python=3/python=${PYTHON_VERSION}/" "$CONDA_ENVIRONMENT"
+
                 curl -L -O https://tiker.net/ci-support-v0
                 . ./ci-support-v0
                 build_py_project_in_conda_env
