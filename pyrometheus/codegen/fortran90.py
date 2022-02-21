@@ -86,7 +86,7 @@ def wrap_code(s, indent=4):
         nspaces = count_leading_spaces(ln)
         level, remainder = divmod(nspaces, indent)
 
-        if remainder != 0:            
+        if remainder != 0:
             raise ValueError(f"indentation of '{ln}' is not a multiple of "
                     f"{indent}")
 
@@ -202,7 +202,7 @@ class FortranExpressionMapper(StringifyMapper):
 module_tpl = Template("""
 module ${module_name}
 
-    implicit none    
+    implicit none
     integer, parameter :: num_elements = ${sol.n_elements}
     integer, parameter :: num_species = ${sol.n_species}
     integer, parameter :: num_reactions = ${sol.n_reactions}
@@ -216,7 +216,7 @@ module ${module_name}
     ${real_type}, parameter :: inv_weights(*) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
-    ${real_type}, parameter :: elem_matrix(*, *) = transpose(reshape((/ & 
+    ${real_type}, parameter :: elem_matrix(*, *) = transpose(reshape((/ &
         ${str_np(elem_matrix)}/), &
         (/${sol.n_species}, ${sol.n_elements}/)))
 
@@ -286,7 +286,8 @@ contains
 
     end subroutine get_concentrations
 
-    subroutine get_mass_averaged_property(mass_fractions, spec_property, mix_property)
+    subroutine get_mass_averaged_property( &
+            mass_fractions, spec_property, mix_property)
 
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(in), dimension(num_species) :: spec_property
@@ -305,7 +306,7 @@ contains
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: cp_mix
-        
+
         ${real_type}, dimension(num_species) :: cp0_r
 
         call get_species_specific_heats_r(temperature, cp0_r)
@@ -319,7 +320,7 @@ contains
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: cv_mix
-        
+
         ${real_type}, dimension(num_species) :: cp0_r
 
         call get_species_specific_heats_r(temperature, cp0_r)
@@ -334,7 +335,7 @@ contains
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: h_mix
-        
+
         ${real_type}, dimension(num_species) :: h0_rt
 
         call get_species_enthalpies_rt(temperature, h0_rt)
@@ -348,7 +349,7 @@ contains
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: e_mix
-        
+
         ${real_type}, dimension(num_species) :: h0_rt
 
         call get_species_enthalpies_rt(temperature, h0_rt)
@@ -411,7 +412,8 @@ contains
         ${real_type}, intent(out), dimension(num_species) :: dhdt
 
         %for i, sp in enumerate(sol.species()):
-        dhdt(${i+1}) = ${cgm(ce.poly_to_enthalpy_deriv_expr(sp.thermo, "temperature"))}
+            dhdt(${i+1}) = ${
+                cgm(ce.poly_to_enthalpy_deriv_expr(sp.thermo, "temperature"))}
         %endfor
 
     end subroutine get_species_enthalpies_rt_derivative
@@ -422,7 +424,8 @@ contains
         ${real_type}, intent(out), dimension(num_species) :: dsdt
 
         %for i, sp in enumerate(sol.species()):
-        dsdt(${i+1}) = ${cgm(ce.poly_to_entropy_deriv_expr(sp.thermo, "temperature"))}
+            dsdt(${i+1}) = ${
+                cgm(ce.poly_to_entropy_deriv_expr(sp.thermo, "temperature"))}
         %endfor
 
     end subroutine get_species_entropies_r_derivative
@@ -448,7 +451,7 @@ contains
         ${real_type}, intent(out), dimension(num_reactions) :: k_eq
 
         ${real_type} :: rt
-        ${real_type} :: c0        
+        ${real_type} :: c0
         ${real_type}, dimension(num_species) :: g0_rt
 
         rt = gas_constant * temperature
@@ -465,8 +468,9 @@ contains
 
     end subroutine get_equilibrium_constants
 
-    subroutine get_temperature(do_energy, enthalpy_or_energy, t_guess, mass_fractions, temperature)
-        
+    subroutine get_temperature( &
+            do_energy, enthalpy_or_energy, t_guess, mass_fractions, temperature)
+
         logical, intent(in) :: do_energy
         ${real_type}, intent(in)  :: enthalpy_or_energy
         ${real_type}, intent(in)  :: t_guess
@@ -489,11 +493,15 @@ contains
 
         do iter = 1, num_iter
             if(do_energy) then
-                call get_mixture_specific_heat_cv_mass(temperature, mass_fractions, iter_energy_deriv)
-                call get_mixture_energy_mass(temperature, mass_fractions, iter_energy)
+                call get_mixture_specific_heat_cv_mass( &
+                    temperature, mass_fractions, iter_energy_deriv)
+                call get_mixture_energy_mass( &
+                    temperature, mass_fractions, iter_energy)
             else
-                call get_mixture_specific_heat_cp_mass(temperature, mass_fractions, iter_energy_deriv)
-                call get_mixture_enthalpy_mass(temperature, mass_fractions, iter_energy)
+                call get_mixture_specific_heat_cp_mass( &
+                    temperature, mass_fractions, iter_energy_deriv)
+                call get_mixture_enthalpy_mass( &
+                    temperature, mass_fractions, iter_energy)
             endif
             iter_rhs = enthalpy_or_energy - iter_energy
             iter_deriv = (-1.d0)*iter_energy_deriv
@@ -519,38 +527,44 @@ contains
         ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_function
 
         %for i, react in enumerate(falloff_reactions):
-        k_high(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.high_rate, Variable("temperature")))}
+            k_high(${i+1}) = ${
+                cgm(ce.rate_coefficient_expr(
+                    react.high_rate, Variable("temperature")))}
         %endfor
 
         %for i, react in enumerate(falloff_reactions):
-        k_low(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.low_rate, Variable("temperature")))}
+            k_low(${i+1}) = ${
+                cgm(ce.rate_coefficient_expr(
+                    react.low_rate, Variable("temperature")))}
         %endfor
 
         %for i, react in enumerate(falloff_reactions):
-        reduced_pressure(${i+1}) = (${cgm(
-            ce.third_body_efficiencies_expr(sol, 
-                                            react, 
-                                            Variable("concentrations")))})*k_low(${i+1})/k_high(${i+1})
+            reduced_pressure(${i+1}) = (${cgm(
+                ce.third_body_efficiencies_expr(
+                    sol,
+                    react,
+                    Variable("concentrations")))})*k_low(${i+1})/k_high(${i+1})
         %endfor
 
         %for i, react in enumerate(falloff_reactions):
-        %if react.falloff.falloff_type == "Troe":
-        falloff_center(${i+1}) = log10(${cgm(ce.troe_falloff_expr(react, Variable("temperature")))})
-        %else:
-        falloff_center(${i+1}) = 1.d0
-        %endif
+            %if react.falloff.falloff_type == "Troe":
+                falloff_center(${i+1}) = log10(${
+                        cgm(ce.troe_falloff_expr(react, Variable("temperature")))})
+            %else:
+                falloff_center(${i+1}) = 1.d0
+            %endif
         %endfor
 
         %for i, react in enumerate(falloff_reactions):
-        falloff_function(${i+1}) = ${cgm(ce.falloff_function_expr(react, i, 
-                                         Variable("temperature"),
-                                         Variable("reduced_pressure"),
-                                         Variable("falloff_center")))}
+            falloff_function(${i+1}) = ${cgm(ce.falloff_function_expr(react, i,
+                                             Variable("temperature"),
+                                             Variable("reduced_pressure"),
+                                             Variable("falloff_center")))}
         %endfor
 
         %for i in range(len(falloff_reactions)):
-        k_fwd(${i+1}) = k_high(${i+1})*falloff_function(${i+1}) * &
-            reduced_pressure(${i+1})/(1.d0 + reduced_pressure(${i+1}))
+            k_fwd(${i+1}) = k_high(${i+1})*falloff_function(${i+1}) * &
+                reduced_pressure(${i+1})/(1.d0 + reduced_pressure(${i+1}))
         %endfor
 
     end subroutine get_falloff_rates
@@ -567,24 +581,26 @@ contains
         %endif
 
         %for i, react in enumerate(sol.reactions()):
-        %if isinstance(react, ct.FalloffReaction):
-        k_fwd(${i+1}) = 0.d0
-        %else:
-        k_fwd(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.rate, Variable("temperature")))}
-        %endif
+            %if isinstance(react, ct.FalloffReaction):
+                k_fwd(${i+1}) = 0.d0
+            %else:
+                k_fwd(${i+1}) = ${
+                    cgm(ce.rate_coefficient_expr(
+                        react.rate, Variable("temperature")))}
+            %endif
         %endfor
 
         %for react in three_body_reactions:
-        k_fwd(${int(react.ID)}) = k_fwd(${int(react.ID)}) * ( &
-            ${cgm(ce.third_body_efficiencies_expr(
-            sol, react, Variable("concentrations")))})
+            k_fwd(${int(react.ID)}) = k_fwd(${int(react.ID)}) * ( &
+                ${cgm(ce.third_body_efficiencies_expr(
+                sol, react, Variable("concentrations")))})
         %endfor
 
         %if falloff_reactions:
-        call get_falloff_rates(temperature, concentrations, k_falloff)        
-        %for i, react in enumerate(falloff_reactions):
-        k_fwd(${int(react.ID)}) = k_falloff(${i+1})
-        %endfor
+            call get_falloff_rates(temperature, concentrations, k_falloff)
+            %for i, react in enumerate(falloff_reactions):
+                k_fwd(${int(react.ID)}) = k_falloff(${i+1})
+            %endfor
         %endif
 
     end subroutine get_fwd_rate_coefficients
@@ -601,9 +617,9 @@ contains
         call get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
         call get_equilibrium_constants(temperature, log_k_eq)
         %for i, react in enumerate(sol.reactions()):
-        r_net(${i+1}) = ${cgm(ce.rate_of_progress_expr(sol, react,
-                        Variable("concentrations"),
-                        Variable("k_fwd"), Variable("log_k_eq")))}
+            r_net(${i+1}) = ${cgm(ce.rate_of_progress_expr(sol, react,
+                            Variable("concentrations"),
+                            Variable("k_fwd"), Variable("log_k_eq")))}
         %endfor
 
     end subroutine get_net_rates_of_progress
@@ -622,8 +638,8 @@ contains
         call get_net_rates_of_progress(temperature, concentrations, r_net)
 
         %for i, sp in enumerate(sol.species()):
-        omega(${i+1}) = ${cgm(ce.production_rate_expr(sol, 
-            sp.name, Variable("r_net")))}
+            omega(${i+1}) = ${cgm(ce.production_rate_expr(sol,
+                sp.name, Variable("r_net")))}
         %endfor
 
     end subroutine get_net_production_rates
