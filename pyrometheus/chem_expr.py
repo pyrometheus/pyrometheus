@@ -50,8 +50,8 @@ def nasa7_conditional(t, poly, part_gen):
         part_gen(poly.coeffs[1:8], t),
         part_gen(poly.coeffs[8:15], t),
     )
-    
-    
+
+
 @singledispatch
 def poly_to_expr(poly):
     raise TypeError(f"unexpected argument type in poly_to_expr: {type(poly)}")
@@ -110,8 +110,8 @@ def _(poly: ct.NasaPoly2, arg_name):
         )
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
-    
-    
+
+
 @singledispatch
 def poly_to_enthalpy_deriv_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_to_enthalpy_deriv_expr: "
@@ -131,7 +131,7 @@ def _(poly: ct.NasaPoly2, arg_name):
         )
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
-                             
+
 
 @singledispatch
 def poly_to_entropy_deriv_expr(poly, arg_name):
@@ -154,6 +154,7 @@ def _(poly: ct.NasaPoly2, arg_name):
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 # }}}
+
 
 # {{{ Data-handling helper
 
@@ -295,8 +296,9 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, log_k_
         # FIXME: It's not clear that this is available other than by this clunky,
         # string-parsing route
         reaction_index = int(react.ID)-1
-        return k_fwd[reaction_index] * (r_fwd -
-                                        p.Variable("exp")(log_k_eq[reaction_index]) * r_rev)
+        return k_fwd[reaction_index] * (
+                r_fwd
+                - p.Variable("exp")(log_k_eq[reaction_index]) * r_rev)
     else:
         return k_fwd[int(react.ID)-1] * r_fwd
 
