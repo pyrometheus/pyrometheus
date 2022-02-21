@@ -114,7 +114,7 @@ struct thermochemistry
     {
         ContainerT result = {
             % for sp in sol.species():
-            ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
+                ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
             };
         return result;
