@@ -86,7 +86,7 @@ def wrap_code(s, indent=4):
         nspaces = count_leading_spaces(ln)
         level, remainder = divmod(nspaces, indent)
 
-        if remainder != 0:            
+        if remainder != 0:
             raise ValueError(f"indentation of '{ln}' is not a multiple of "
                     f"{indent}")
 
@@ -202,7 +202,7 @@ class FortranExpressionMapper(StringifyMapper):
 module_tpl = Template("""
 module ${module_name}
 
-    implicit none    
+    implicit none
     integer, parameter :: num_elements = ${sol.n_elements}
     integer, parameter :: num_species = ${sol.n_species}
     integer, parameter :: num_reactions = ${sol.n_reactions}
@@ -305,7 +305,7 @@ contains
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: cp_mix
-        
+
         ${real_type}, dimension(num_species) :: cp0_r
 
         call get_species_specific_heats_r(temperature, cp0_r)
@@ -319,7 +319,7 @@ contains
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: cv_mix
-        
+
         ${real_type}, dimension(num_species) :: cp0_r
 
         call get_species_specific_heats_r(temperature, cp0_r)
@@ -334,7 +334,7 @@ contains
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: h_mix
-        
+
         ${real_type}, dimension(num_species) :: h0_rt
 
         call get_species_enthalpies_rt(temperature, h0_rt)
@@ -348,7 +348,7 @@ contains
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: e_mix
-        
+
         ${real_type}, dimension(num_species) :: h0_rt
 
         call get_species_enthalpies_rt(temperature, h0_rt)
@@ -449,6 +449,7 @@ contains
 
         ${real_type} :: rt
         ${real_type} :: c0        
+
         ${real_type}, dimension(num_species) :: g0_rt
 
         rt = gas_constant * temperature
@@ -468,7 +469,7 @@ contains
     end subroutine get_equilibrium_constants
 
     subroutine get_temperature(do_energy, enthalpy_or_energy, t_guess, mass_fractions, temperature)
-        
+
         logical, intent(in) :: do_energy
         ${real_type}, intent(in)  :: enthalpy_or_energy
         ${real_type}, intent(in)  :: t_guess

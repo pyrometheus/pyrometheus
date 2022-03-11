@@ -8,3 +8,7 @@ dependencies:
 - cantera
 - pip
 - jax
+
+# https://github.com/conda-forge/jax-feedstock/issues/76
+- jax =0.2.26
+- jaxlib =0.1.75

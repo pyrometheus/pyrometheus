@@ -131,7 +131,7 @@ def _(poly: ct.NasaPoly2, arg_name):
         )
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
-                             
+
 
 @singledispatch
 def poly_to_entropy_deriv_expr(poly, arg_name):
@@ -154,6 +154,7 @@ def _(poly: ct.NasaPoly2, arg_name):
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 # }}}
+
 
 # {{{ Data-handling helper
 

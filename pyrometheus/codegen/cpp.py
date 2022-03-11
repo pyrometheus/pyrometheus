@@ -110,13 +110,13 @@ struct thermochemistry
     }
 
     static ContainerT get_concentrations(ScalarT rho, ContainerT const &mass_fractions)
-    {                                                                                                                                                              
-        ContainerT concentrations = {                                                                                                                              
-            %for i in range(sol.n_species):                                                                                                                        
-                inv_weights[${i}]*mass_fractions[${i}]*rho,                                                                                                        
-            %endfor                                                                                                                                                
-        };                                                                                                                                                         
-        return concentrations;                                                                                                                                     
+    {
+        ContainerT concentrations = {
+            %for i in range(sol.n_species):
+                inv_weights[${i}]*mass_fractions[${i}]*rho,
+            %endfor
+        };
+        return concentrations;
     }
 
     static ScalarT get_mass_average_property(ContainerT const &mass_fractions, ContainerT const &spec_property)
@@ -132,12 +132,14 @@ struct thermochemistry
     {
         ContainerT cp0_r = get_species_specific_heats_r(temperature);
         ScalarT cpmix = get_mass_average_property(mass_fractions, cp0_r);
+        return cpmix;
     }
 
     static ScalarT get_mixture_enthalpy_mass(ScalarT temperature, ContainerT const &mass_fractions)
     {
         ContainerT h0_rt = get_species_enthalpies_rt(temperature);
         ScalarT hmix = get_mass_average_property(mass_fractions, h0_rt);
+        return hmix;
     }
 
     static ScalarT get_density(ScalarT p, ScalarT temperature,
@@ -165,7 +167,7 @@ struct thermochemistry
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
             };
-        return h0_rt;   
+        return h0_rt;
     }
 
     static ContainerT get_species_entropies_r(ScalarT temperature)
@@ -175,7 +177,7 @@ struct thermochemistry
             ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
             };
-        return s0_r;   
+        return s0_r;
     }
 
     static ContainerT get_species_gibbs_rt(ScalarT temperature)
@@ -207,7 +209,7 @@ struct thermochemistry
         return k_eq;
     }
 
-    static ScalarT get_temperature(ScalarT enthalpy, ScalarT t_guess, 
+    static ScalarT get_temperature(ScalarT enthalpy, ScalarT t_guess,
                                    ContainerT const &mass_fractions)
     {
         int iter = 0;
