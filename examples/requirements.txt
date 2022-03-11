@@ -1,0 +1,22 @@
+islpy
+numpy
+pytest
+pytest-cov
+pyvisfile
+pymetis
+importlib-resources
+psutil
+pyyaml
+
+# The following packages will be git cloned by emirge:
+--editable git+https://github.com/inducer/pymbolic.git#egg=pymbolic
+#--editable git+https://github.com/inducer/pyopencl.git#egg=pyopencl
+--editable git+https://github.com/kaushikcfd/loopy.git@pytato-array-context-transforms#egg=loopy
+--editable git+https://github.com/inducer/dagrt.git#egg=dagrt
+--editable git+https://github.com/inducer/leap.git#egg=leap
+--editable git+https://github.com/inducer/modepy.git#egg=modepy
+--editable git+https://github.com/inducer/arraycontext.git#egg=arraycontext
+--editable git+https://github.com/kaushikcfd/meshmode.git@pytato-array-context-transforms#egg=meshmode
+--editable git+https://github.com/inducer/grudge.git@boundary_lazy_comm_v2#egg=grudge
+--editable git+https://github.com/inducer/pytato.git#egg=pytato
+--editable git+https://github.com/illinois-ceesd/logpyle.git#egg=logpyle
