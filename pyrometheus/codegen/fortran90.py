@@ -220,7 +220,36 @@ module ${module_name}
         ${str_np(elem_matrix)}/), &
         (/${sol.n_species}, ${sol.n_elements}/)))
 
+    character(len=12), parameter :: species_names(*) = &
+        (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
+
 contains
+
+    subroutine get_species_name(sp_index, sp_name)
+
+        integer, intent(in) :: sp_index
+        character(len=*), intent(out) :: sp_name
+        
+        sp_name = species_names(sp_index)
+
+    end subroutine get_species_name
+
+    subroutine get_species_index(sp_name, sp_index)
+
+        character(len=*), intent(in) :: sp_name
+        integer, intent(out) :: sp_index
+
+        integer :: idx
+
+        sp_index = 0
+        loop:do idx = 1, num_species
+            if(trim(adjustl(sp_name)) .eq. trim(species_names(idx))) then
+                sp_index = idx
+                exit loop
+            end if
+        end do loop
+
+    end subroutine get_species_index
 
     subroutine get_specific_gas_constant(mass_fractions, specific_gas_constant)
 
