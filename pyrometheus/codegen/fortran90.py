@@ -454,6 +454,8 @@ contains
         rt = gas_constant * temperature
         c0 = log(one_atm/rt)
 
+        call get_species_gibbs_rt(temperature, g0_rt)
+
         %for i, react in enumerate(sol.reactions()):
         %if react.reversible:
         k_eq(${i+1}) = ${cgm(
@@ -489,16 +491,16 @@ contains
 
         do iter = 1, num_iter
             if(do_energy) then
-                call get_mixture_specific_heat_cv_mass(temperature, mass_fractions, iter_energy_deriv)
-                call get_mixture_energy_mass(temperature, mass_fractions, iter_energy)
+                call get_mixture_specific_heat_cv_mass(iter_temp, mass_fractions, iter_energy_deriv)
+                call get_mixture_energy_mass(iter_temp, mass_fractions, iter_energy)
             else
-                call get_mixture_specific_heat_cp_mass(temperature, mass_fractions, iter_energy_deriv)
-                call get_mixture_enthalpy_mass(temperature, mass_fractions, iter_energy)
+                call get_mixture_specific_heat_cp_mass(iter_temp, mass_fractions, iter_energy_deriv)
+                call get_mixture_enthalpy_mass(iter_temp, mass_fractions, iter_energy)
             endif
             iter_rhs = enthalpy_or_energy - iter_energy
             iter_deriv = (-1.d0)*iter_energy_deriv
             iter_temp = iter_temp - iter_rhs / iter_deriv
-            if(abs(iter_rhs/iter_deriv) .gt. tol) exit
+            if(abs(iter_rhs/iter_deriv) .lt. tol) exit
         end do
 
         temperature = iter_temp
