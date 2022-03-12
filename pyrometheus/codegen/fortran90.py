@@ -223,6 +223,9 @@ module ${module_name}
     character(len=12), parameter :: species_names(*) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
 
+    character(len=4), parameter :: element_names(*) = &
+        (/ ${", ".join('"'+'{0: <4}'.format(e)+'"' for e in sol.element_names)} /)
+
 contains
 
     subroutine get_species_name(sp_index, sp_name)
@@ -250,6 +253,23 @@ contains
         end do loop
 
     end subroutine get_species_index
+
+    subroutine get_element_index(el_name, el_index)
+
+        character(len=*), intent(in) :: el_name
+        integer, intent(out) :: el_index
+
+        integer :: idx
+
+        el_index = 0
+        loop:do idx = 1, num_elements
+            if(trim(adjustl(el_name)) .eq. trim(element_names(idx))) then
+                el_index = idx
+                exit loop
+            end if
+        end do loop
+
+    end subroutine get_element_index
 
     subroutine get_specific_gas_constant(mass_fractions, specific_gas_constant)
 
