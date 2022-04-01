@@ -38,6 +38,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+from typing import Optional
 from numbers import Number
 from functools import singledispatch
 
@@ -94,9 +95,16 @@ def str_np_inner(ary):
     raise TypeError("invalid argument to str_np_inner")
 
 
-def str_np(ary):
-    return "np.array(%s)" % str_np_inner(ary)
-
+def str_np(ary, dtype=None):
+    """
+    :arg dtype: The 'dtype' argument passed to :func:`np.array`. Defaults to
+        *None*.
+    """
+    if dtype is not None:
+        assert isinstance(dtype, np.dtype)
+        return "np.array(%s, dtype=dtype.char)" % str_np_inner(ary)
+    else:
+        return "np.array(%s)" % str_np_inner(ary)
 
 # }}}
 
@@ -692,16 +700,19 @@ class Thermochemistry:
 # }}}
 
 
-def gen_thermochem_code(sol: ct.Solution) -> str:
+def gen_thermochem_code(sol: ct.Solution,
+                        npy_array_dtype: Optional[np.dtype] = None) -> str:
     """For the mechanism given by *sol*, return Python source code for a class conforming
     to a module containing a class called ``Thermochemistry`` adhering to the
     :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
+
+    :arg npy_array_dtype: The data-type of numpy-array literals in the returned code.
     """
     return code_tpl.render(
         ct=ct,
         sol=sol,
 
-        str_np=str_np,
+        str_np=lambda x: str_np(x, npy_array_dtype),
         cgm=CodeGenerationMapper(),
         Variable=p.Variable,
 
@@ -736,9 +747,12 @@ def compile_class(code_str, class_name="Thermochemistry"):
     return exec_dict[class_name]
 
 
-def get_thermochem_class(sol: ct.Solution):
+def get_thermochem_class(sol: ct.Solution,
+                         npy_array_dtype: Optional[np.dtype] = None):
     """For the mechanism given by *sol*, return a class conforming to the
     :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
+
+    :arg npy_array_dtype: The data-type of numpy-array literals.
     """
     return compile_class(gen_thermochem_code(sol))
 
