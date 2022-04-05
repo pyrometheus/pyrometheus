@@ -152,7 +152,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 @singledispatch
 def poly_to_entropy_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_to_entropy_expr: "
-            f"{type(poly)}")
+                    f"{type(poly)}")
 
 
 @poly_to_entropy_expr.register
@@ -181,6 +181,28 @@ def _zeros_like(argument):
     # FIXME: This mishandles NaNs.
     return 0 * argument
 
+# }}}
+
+# {{{ Transport polynomials
+
+def transport_polynomial_expr(c, n, t):
+    """Generate code for transport polynomials
+    :returns: Transport polynomial expression with coefficients c in terms of
+    the temperature t as a :class:`pymbolic.primitives.Expression`. For `thermal_conductivity`, `n = 1`, while for `viscosity` `n = 2`
+    """
+    log = p.Variable("log")
+    assert len(c) == 5
+    return (
+        p.Variable("sqrt")(t) * (
+            c[0] +
+            c[1] * p.Variable("log")(t) +
+            c[2] * p.Variable("log")(t) ** 2 +
+            c[3] * p.Variable("log")(t) ** 3 +
+            c[4] * p.Variable("log")(t) ** 4
+        )**n
+    )
+
+    
 # }}}
 
 # {{{ Equilibrium constants
@@ -533,6 +555,20 @@ class Thermochemistry:
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
 
+    def get_species_viscosities(self, temperature):
+        return self._pyro_make_array([
+                % for sp in range(sol.n_species):
+                ${cgm(transport_polynomial_expr(sol.get_viscosity_polynomial(sp), 2, Variable("temperature")))},
+                % endfor
+                ])
+
+    def get_species_thermal_conductivities(self, temperature):
+        return self._pyro_make_array([
+                % for sp in range(sol.n_species):
+                ${cgm(transport_polynomial_expr(sol.get_thermal_conductivity_polynomial(sp), 1, Variable("temperature")))},
+                % endfor
+                ])
+
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
@@ -708,6 +744,7 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
         poly_to_expr=poly_to_expr,
         poly_to_enthalpy_expr=poly_to_enthalpy_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
+        transport_polynomial_expr=transport_polynomial_expr,
         equilibrium_constants_expr=equilibrium_constants_expr,
         rate_coefficient_expr=rate_coefficient_expr,
         third_body_efficiencies_expr=third_body_efficiencies_expr,

@@ -174,6 +174,35 @@ def test_get_pressure(mechname, usr_np):
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 @pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_transport_properties(mechname, usr_np):
+    """This function tests that pyrometheus-generated code
+    computes transport properties (viscosity and thermal conductivity)
+    correctly by comparing against Cantera"""
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+
+    # Loop over temperatures
+    temp = np.linspace(300.0, 3000.0, 10)
+    for t in temp:
+        mu_pm = ptk.get_species_viscosities(t)
+        kappa_pm = ptk.get_species_thermal_conductivities(t)
+        # Loop over species, because apparently cannot
+        # access species transport directly through Python
+        for i, name in enumerate(sol.species_names):
+            sol.TPY = t, ct.one_atm, name + ':1'
+            # Viscosity error            
+            mu_err = np.abs(mu_pm[i] - sol.viscosity)
+            assert mu_err < 1.0e-13
+            # Conductivity
+            kappa_err = np.abs(kappa_pm[i] - sol.thermal_conductivity)
+            assert kappa_err < 1.0e-13
+
+    return
+
+
+@pytest.mark.parametrize("mechname", ["uiuc"])
+@pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_thermo_properties(mechname, usr_np):
     """This function tests that pyrometheus-generated code
     computes thermodynamic properties c_p, s_r, h_rt, and k_eq
@@ -409,7 +438,7 @@ def test_autodiff_accuracy():
     orderest = eocrec.estimate_order_of_convergence()[0, 1]
     assert orderest > 1.95
 
-
+    
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio",
                          [("UConn32", "C2H4", 3),
                           ("sanDiego", "H2", 0.5)])
