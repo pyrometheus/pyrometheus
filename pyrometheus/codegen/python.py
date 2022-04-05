@@ -261,7 +261,7 @@ class Thermochemistry:
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.iwts * rho * mass_fractions
+        return self.iwts * self._pyro_make_array(rho).reshape(-1, 1) * mass_fractions
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
@@ -286,6 +286,27 @@ class Thermochemistry:
         e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
+
+    def get_species_specific_heats_r_derivative(self, temperature):
+        return self._pyro_make_array([
+            % for sp in sol.species():
+            ${cgm(ce.poly_deriv_to_expr(sp.thermo, "temperature"))},
+            % endfor
+                ])
+
+    def get_species_enthalpies_rt_derivative(self, temperature):
+        return self._pyro_make_array([
+            % for sp in sol.species():
+            ${cgm(ce.poly_deriv_to_enthalpy_expr(sp.thermo, "temperature"))},
+            % endfor
+                ])
+
+    def get_species_entropies_rt_derivative(self, temperature):
+        return self._pyro_make_array([
+            % for sp in sol.species():
+            ${cgm(ce.poly_deriv_to_entropy_expr(sp.thermo, "temperature"))},
+            % endfor
+                ])
 
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
@@ -436,7 +457,9 @@ class Thermochemistry:
 
     def get_net_production_rates(self, rho, temperature, mass_fractions):
         c = self.get_concentrations(rho, mass_fractions)
-        r_net = self.get_net_rates_of_progress(temperature, c)
+        if c.shape != mass_fractions.shape:
+            c = c.reshape(mass_fractions.shape)
+        r_net = self.get_net_rates_of_progress(temperature, self._pyro_make_array(c.T))
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():

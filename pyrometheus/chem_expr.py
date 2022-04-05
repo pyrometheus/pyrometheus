@@ -111,14 +111,30 @@ def _(poly: ct.NasaPoly2, arg_name):
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
     
-    
+
 @singledispatch
-def poly_to_enthalpy_deriv_expr(poly, arg_name):
-    raise TypeError("unexpected argument type in poly_to_enthalpy_deriv_expr: "
+def poly_deriv_to_expr(poly, arg_name):
+    raise TypeError("unexpected argument type in poly_deriv_to_expr: "
             f"{type(poly)}")
 
 
-@poly_to_enthalpy_deriv_expr.register
+@poly_deriv_to_expr.register
+def _(poly: ct.NasaPoly2, arg_name):
+    def gen(c, t):
+        assert len(c) == 7        
+        return c[1] + 2 * c[2] * t + 3 * c[3] * t ** 2 + 4 * c[4] * t ** 3
+
+    return nasa7_conditional(p.Variable(arg_name), poly, gen)
+        
+    
+
+@singledispatch
+def poly_deriv_to_enthalpy_expr(poly, arg_name):
+    raise TypeError("unexpected argument type in poly_deriv_to_enthalpy_expr: "
+            f"{type(poly)}")
+
+
+@poly_deriv_to_enthalpy_expr.register
 def _(poly: ct.NasaPoly2, arg_name):
     def gen(c, t):
         assert len(c) == 7
@@ -134,12 +150,12 @@ def _(poly: ct.NasaPoly2, arg_name):
 
 
 @singledispatch
-def poly_to_entropy_deriv_expr(poly, arg_name):
-    raise TypeError("unexpected argument type in poly_to_entropy_deriv_expr: "
+def poly_deriv_to_entropy_expr(poly, arg_name):
+    raise TypeError("unexpected argument type in poly_deriv_to_entropy_expr: "
             f"{type(poly)}")
 
 
-@poly_to_entropy_deriv_expr.register
+@poly_deriv_to_entropy_expr.register
 def _(poly: ct.NasaPoly2, arg_name):
     def gen(c, t):
         assert len(c) == 7
