@@ -183,7 +183,7 @@ def _zeros_like(argument):
 
 # }}}
 
-# {{{ Transport polynomials
+# {{{ Transport polynomials & mixture rules
 
 def transport_polynomial_expr(c, n, t):
     """Generate code for transport polynomials
@@ -202,6 +202,21 @@ def transport_polynomial_expr(c, n, t):
         )**n
     )
 
+
+def wilke_mixture_rule_expr(sol: ct.Solution, sp, x, mu):
+    """Generate code for wilke mixture rule
+    
+    :returns: Expression for the Wilke viscosity mixture rule 
+        for species *sp* in terms of species mole fractions *w*
+        and viscosities *mu* as a :class:`pymbolic.primitives.Expression`
+    """
+    w = sol.molecular_weights
+    sqrt = p.Variable("sqrt")
+    return sum([x[j]*(
+        1 + sqrt((mu[sp]/mu[j])*sqrt(w[j]/w[sp]))
+    )**2 / sqrt(
+        8*(1 + (w[sp]/w[j]))
+    ) for j in range(sol.n_species)])
     
 # }}}
 
@@ -555,6 +570,22 @@ class Thermochemistry:
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
 
+    def get_mixture_viscosity(self, temperature, mass_fractions):
+        mole_fractions = self.iwts * mass_fractions * self.get_mix_molecular_weight(mass_fractions)
+        viscosities = self.get_species_viscosities(temperature)
+        mix_rule_f = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(wilke_mixture_rule_expr(sol, sp, Variable("mole_fractions"), Variable("viscosities")))},
+            %endfor
+            ])   
+        return sum(mole_fractions*viscosities/mix_rule_f)
+
+    def get_mixture_thermal_conductivity(self, temperature, mass_fractions):
+        mole_fractions = self.iwts * mass_fractions * self.get_mix_molecular_weight(mass_fractions)
+        conductivities = self.get_species_thermal_conductivities(temperature)
+        return 0.5*(sum(mole_fractions*conductivities) 
+            + 1/sum(mole_fractions/conductivities))
+
     def get_species_viscosities(self, temperature):
         return self._pyro_make_array([
                 % for sp in range(sol.n_species):
@@ -745,6 +776,7 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
         poly_to_enthalpy_expr=poly_to_enthalpy_expr,
         poly_to_entropy_expr=poly_to_entropy_expr,
         transport_polynomial_expr=transport_polynomial_expr,
+        wilke_mixture_rule_expr=wilke_mixture_rule_expr,
         equilibrium_constants_expr=equilibrium_constants_expr,
         rate_coefficient_expr=rate_coefficient_expr,
         third_body_efficiencies_expr=third_body_efficiencies_expr,

@@ -172,9 +172,9 @@ def test_get_pressure(mechname, usr_np):
     assert abs(p_ct - p_pm) / p_ct < 1.0e-12
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt", [("uiuc", "C2H4", 3.0, 1e-7)])
 @pytest.mark.parametrize("usr_np", numpy_list)
-def test_get_transport_properties(mechname, usr_np):
+def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
     """This function tests that pyrometheus-generated code
     computes transport properties (viscosity and thermal conductivity)
     correctly by comparing against Cantera"""
@@ -198,6 +198,57 @@ def test_get_transport_properties(mechname, usr_np):
             kappa_err = np.abs(kappa_pm[i] - sol.thermal_conductivity)
             assert kappa_err < 1.0e-13
 
+    # Now test mixture rules, with a reactor
+    # to get sensible mass fractions
+    init_temperature = 1500.0
+    equiv_ratio = 1.0
+    ox_di_ratio = 0.21
+
+    i_fu = sol.species_index(fuel)
+    i_ox = sol.species_index("O2")
+    i_di = sol.species_index("N2")
+
+    x = np.zeros(ptk.num_species)
+    x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
+    x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
+    x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
+
+    sol.TPX = init_temperature, ct.one_atm, x
+    reactor = ct.IdealGasConstPressureReactor(sol)
+    sim = ct.ReactorNet([reactor])
+
+    dt = 1.0e-7
+    time = 0.0
+    for _ in range(100):
+        time += dt
+        sim.advance(time)
+
+        # Cantera transport
+        sol.TPY = reactor.T, ct.one_atm, reactor.Y
+        
+        mu_ct = sol.viscosity
+        kappa_ct = sol.thermal_conductivity
+
+        # Get state from Cantera
+        temp = reactor.T
+        y = np.where(reactor.Y > 0, reactor.Y, 0)
+
+        # Pyrometheus transport
+        mu = ptk.get_mixture_viscosity(temp, y)
+        kappa = ptk.get_mixture_thermal_conductivity(temp, y)
+
+        err_mu = np.abs(mu - mu_ct)
+        err_kappa = np.abs(kappa - kappa_ct)
+        
+        # print("T = ", reactor.T)
+        # print("y = ", reactor.Y)
+        # print("mu, mu_ct ,err = ", mu, mu_ct, err_mu)
+        # print("kappa, kappa_ct ,err = ", kappa, kappa_ct, err_kappa)
+        # print()
+        
+        assert err_mu < 1.0e-13
+        assert err_kappa < 1.0e-13
+        
     return
 
 
@@ -342,7 +393,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
         rho = reactor.density
         y = np.where(reactor.Y > 0, reactor.Y, 0)
 
-        # Prometheus kinetics
+        # Pyrometheus kinetics
         c = ptk.get_concentrations(rho, y)
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
