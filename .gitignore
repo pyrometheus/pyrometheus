@@ -19,3 +19,6 @@ distribute*tar.gz
 notebooks
 test/install.sh
 test/generated-mechs/*.py
+test/mechs/*.py
+test/mechs/*.hpp
+*.so
