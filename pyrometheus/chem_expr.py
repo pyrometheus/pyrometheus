@@ -26,6 +26,9 @@ THE SOFTWARE.
 """
 Internal Functionality
 ^^^^^^^^^^^^^^^^^^^^^^
+.. autofunction:: transport_polynomial_expr
+.. autofunction:: wilke_mixture_rule_expr
+.. autofunction:: species_mixture_rule_expr
 .. autofunction:: equilibrium_constants_expr
 .. autofunction:: rate_coefficient_expr
 .. autofunction:: third_body_efficiencies_expr
@@ -164,6 +167,7 @@ def _zeros_like(argument):
 
 # }}}
 
+
 # {{{ Transport polynomials & mixture rules
 
 def transport_polynomial_expr(c, n, t):
@@ -174,7 +178,6 @@ def transport_polynomial_expr(c, n, t):
     log = p.Variable("log")
     assert len(c) == 5
     return (
-        #p.Variable("sqrt")(t) * (
         (
             c[0] +
             c[1] * p.Variable("log")(t) +
@@ -211,16 +214,14 @@ def species_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, Dij):
         and binary diffusion *Dij* as a :class:`pymbolic.primitives.Expression`
         
     """
-    #FIXME The code may crash when "Yi -> 1.0"
-    #FIXME In this case, it may be possible to have 0/0
     w = sol.molecular_weights
     return (1.0 - x[sp]*w[sp]/mmw)/(sum([x[j]/Dij[sp,j]
      for j in range(sol.n_species)]) - x[sp]/Dij[sp,sp])
     
 # }}}
 
-# {{{ Equilibrium constants
 
+# {{{ Equilibrium constants
 
 def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
     """Generate code for equilibrium constants.
