@@ -135,6 +135,12 @@ class Thermochemistry:
     .. automethod:: get_mixture_specific_heat_cv_mass
     .. automethod:: get_mixture_enthalpy_mass
     .. automethod:: get_mixture_internal_energy_mass
+    .. automethod:: get_species_viscosities
+    .. automethod:: get_mixture_viscosity
+    .. automethod:: get_species_thermal_conductivities
+    .. automethod:: get_mixture_thermal_conductivity
+    .. automethod:: get_species_diffusivities
+    .. automethod:: get_mixture_diffusivity
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
     .. automethod:: get_species_entropies_r
@@ -290,16 +296,16 @@ class Thermochemistry:
     def get_species_viscosities(self, temperature):
         return self._pyro_make_array([
                 % for sp in range(sol.n_species):
-                ${cgm(transport_polynomial_expr(sol.get_viscosity_polynomial(sp), 2, Variable("temperature")))},
+                ${cgm(ce.transport_polynomial_expr(sol.get_viscosity_polynomial(sp), 2, Variable("temperature")))},
                 % endfor
                 ])
-
+                
     def get_mixture_viscosity(self, temperature, mass_fractions):
         mole_fractions = self.iwts * mass_fractions * self.get_mix_molecular_weight(mass_fractions)
         viscosities = self.usr_np.sqrt(temperature)*self.get_species_viscosities(temperature)
         mix_rule_f = self._pyro_make_array([
             %for sp in range(sol.n_species):
-            ${cgm(wilke_mixture_rule_expr(sol, sp, Variable("mole_fractions"), Variable("viscosities")))},
+            ${cgm(ce.wilke_mixture_rule_expr(sol, sp, Variable("mole_fractions"), Variable("viscosities")))},
             %endfor
             ])   
         return sum(mole_fractions*viscosities/mix_rule_f)
@@ -307,7 +313,7 @@ class Thermochemistry:
     def get_species_thermal_conductivities(self, temperature):
         return self._pyro_make_array([
                 % for sp in range(sol.n_species):
-                ${cgm(transport_polynomial_expr(sol.get_thermal_conductivity_polynomial(sp), 1, Variable("temperature")))},
+                ${cgm(ce.transport_polynomial_expr(sol.get_thermal_conductivity_polynomial(sp), 1, Variable("temperature")))},
                 % endfor
                 ])
 
@@ -321,7 +327,7 @@ class Thermochemistry:
         return self._pyro_make_array([
                 % for ii in range(sol.n_species):        
                 % for jj in range(sol.n_species):
-                ${cgm(transport_polynomial_expr(sol.get_binary_diff_coeffs_polynomial(ii,jj), 1, Variable("temperature")))},
+                ${cgm(ce.transport_polynomial_expr(sol.get_binary_diff_coeffs_polynomial(ii,jj), 1, Variable("temperature")))},
                 % endfor                
                 % endfor  
                 ]).reshape((self.num_species,self.num_species))  
@@ -332,7 +338,7 @@ class Thermochemistry:
         Dij = self.get_species_diffusivities(temperature)
         mix_rule_f = self.usr_np.sqrt(temperature)*temperature/pressure*self._pyro_make_array([
               % for sp in range(sol.n_species):
-              ${cgm(species_mixture_rule_expr(sol, sp, Variable("mmw"), Variable("mole_fractions"), Variable("Dij")))},
+              ${cgm(ce.species_mixture_rule_expr(sol, sp, Variable("mmw"), Variable("mole_fractions"), Variable("Dij")))},
               % endfor
               ])
         return mix_rule_f
