@@ -97,12 +97,15 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 
 
 # Write out all the mechanisms for inspection
-@pytest.mark.parametrize("mechname", ["uiuc"])
-def test_generate_mechfile(mechname):
+@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
+@pytest.mark.parametrize("lang_module", [
+    pyro.codegen.python,
+    ])
+def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
-    with open(f"mechs/{mechname}.py", "w") as mech_file:
-        code = pyro.gen_thermochem_code(sol)
+    with open(f"mechs/{mechname}.{lang_module.file_extension}", "w") as mech_file:
+        code = lang_module.gen_thermochem_code(sol)
         print(code, file=mech_file)
 
 
@@ -237,6 +240,7 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
                     
     return
 
+
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt", [("uiuc", "C2H4", 3.0, 1e-7)])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_transport_properties_temp(mechname, fuel, stoich_ratio, dt, usr_np):
@@ -290,9 +294,9 @@ def test_get_transport_properties_temp(mechname, fuel, stoich_ratio, dt, usr_np)
             assert err_diff < 1.0e-7
             
     return 
-    
 
-@pytest.mark.parametrize("mechname", ["uiuc"])
+
+@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_thermo_properties(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -433,7 +437,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
         rho = reactor.density
         y = np.where(reactor.Y > 0, reactor.Y, 0)
 
-        # Pyrometheus kinetics
+        # Prometheus kinetics
         c = ptk.get_concentrations(rho, y)
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
@@ -529,7 +533,7 @@ def test_autodiff_accuracy():
     orderest = eocrec.estimate_order_of_convergence()[0, 1]
     assert orderest > 1.95
 
-    
+
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio",
                          [("UConn32", "C2H4", 3),
                           ("sanDiego", "H2", 0.5)])
