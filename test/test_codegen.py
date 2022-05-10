@@ -97,15 +97,12 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 
 
 # Write out all the mechanisms for inspection
-@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
-@pytest.mark.parametrize("lang_module", [
-    pyro.codegen.python,
-    ])
-def test_generate_mechfile(lang_module, mechname):
+@pytest.mark.parametrize("mechname", ["uiuc"])
+def test_generate_mechfile(mechname):
     """This "test" produces the mechanism codes."""
     sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
-    with open(f"mechs/{mechname}.{lang_module.file_extension}", "w") as mech_file:
-        code = lang_module.gen_thermochem_code(sol)
+    with open(f"mechs/{mechname}.py", "w") as mech_file:
+        code = pyro.gen_thermochem_code(sol)
         print(code, file=mech_file)
 
 
@@ -175,7 +172,127 @@ def test_get_pressure(mechname, usr_np):
     assert abs(p_ct - p_pm) / p_ct < 1.0e-12
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt", [("uiuc", "C2H4", 3.0, 1e-7)])
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
+    """This function tests that pyrometheus-generated code
+    computes transport properties (viscosity and thermal conductivity)
+    correctly by comparing against Cantera"""
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+
+    # Now test mixture rules, with a reactor
+    # to get sensible mass fractions
+    init_temperature = 1200.0
+    equiv_ratio = 1.0
+    ox_di_ratio = 0.21
+
+    i_fu = sol.species_index(fuel)
+    i_ox = sol.species_index("O2")
+    i_di = sol.species_index("N2")
+
+    x = np.zeros(ptk.num_species)
+    x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
+    x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
+    x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
+
+    sol.TPX = init_temperature, ct.one_atm, x
+    reactor = ct.IdealGasConstPressureReactor(sol)
+    sim = ct.ReactorNet([reactor])
+
+    dt = 1.0e-7
+    time = 0.0
+    cantT = np.zeros((3000,3+7))
+    pyroT = np.zeros((3000,3+7))
+    for ii in range(3000):
+        time += dt
+        sim.advance(time)
+
+        # Cantera transport
+        sol.TPY = reactor.T, ct.one_atm, reactor.Y
+        
+        mu_ct = sol.viscosity
+        kappa_ct = sol.thermal_conductivity
+        diff_ct = sol.mix_diff_coeffs
+
+        # Get state from Cantera
+        temp = reactor.T
+        y = np.where(reactor.Y > 0, reactor.Y, 0)
+
+        # Pyrometheus transport
+        mu = ptk.get_mixture_viscosity(temp, y)
+        kappa = ptk.get_mixture_thermal_conductivity(temp, y)
+        diff = ptk.get_mixture_diffusivity(temp,ct.one_atm,y)
+
+        err_mu = np.abs(mu - mu_ct)
+        assert err_mu < 1.0e-7
+
+        err_kappa = np.abs(kappa - kappa_ct)
+        assert err_kappa < 1.0e-7
+
+        for i in range(sol.n_species):
+            err_diff = np.abs(diff[i] - diff_ct[i])
+            assert err_diff < 1.0e-7
+                    
+    return
+
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt", [("uiuc", "C2H4", 3.0, 1e-7)])
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_transport_properties_temp(mechname, fuel, stoich_ratio, dt, usr_np):
+    """This function tests that pyrometheus-generated code
+    computes transport properties (viscosity and thermal conductivity)
+    correctly by comparing against Cantera"""
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+
+    # Loop over temperatures
+    ntemp = 29
+    temp = np.linspace(200.0, 3000.0, ntemp)
+    ii = -1
+    for t in temp:
+        ii = ii + 1
+    
+        equiv_ratio = 1.0
+        ox_di_ratio = 0.21
+
+        i_fu = sol.species_index(fuel)
+        i_ox = sol.species_index("O2")
+        i_di = sol.species_index("N2")
+
+        x = np.zeros(ptk.num_species)
+        x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
+        x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
+        x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
+
+        sol.TPX = t, ct.one_atm, x
+        sol.equilibrate("TP")
+        _, _, y = sol.TPY
+        
+        mu_ct = sol.viscosity
+        kappa_ct = sol.thermal_conductivity
+        diff_ct = sol.mix_diff_coeffs
+
+        # Pyrometheus transport
+        mu = ptk.get_mixture_viscosity(t, y)
+        kappa = ptk.get_mixture_thermal_conductivity(t, y)
+        diff = ptk.get_mixture_diffusivity(t,ct.one_atm,y)
+
+        err_mu = np.abs(mu - mu_ct)
+        assert err_mu < 1.0e-7
+
+        err_kappa = np.abs(kappa - kappa_ct)
+        assert err_kappa < 1.0e-7
+
+        for i in range(sol.n_species):
+            err_diff = np.abs(diff[i] - diff_ct[i])
+            assert err_diff < 1.0e-7
+            
+    return 
+    
+
+@pytest.mark.parametrize("mechname", ["uiuc"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_thermo_properties(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -316,7 +433,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
         rho = reactor.density
         y = np.where(reactor.Y > 0, reactor.Y, 0)
 
-        # Prometheus kinetics
+        # Pyrometheus kinetics
         c = ptk.get_concentrations(rho, y)
         r_pm = ptk.get_net_rates_of_progress(temp, c)
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
@@ -412,7 +529,7 @@ def test_autodiff_accuracy():
     orderest = eocrec.estimate_order_of_convergence()[0, 1]
     assert orderest > 1.95
 
-
+    
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio",
                          [("UConn32", "C2H4", 3),
                           ("sanDiego", "H2", 0.5)])
