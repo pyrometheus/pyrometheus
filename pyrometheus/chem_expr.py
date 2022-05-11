@@ -193,14 +193,11 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
 
     # Check if reaction is termolecular
     sum_nu_net = sum(nu_prod) - sum(nu_reac)
-    if sum_nu_net < 0:
-        # Three species on reactants side
-        return sum_p - sum_nu_net*p.Variable("c0") - sum_r
-    elif sum_nu_net > 0:
-        # Three species on products side
-        return sum_p - (sum_r - sum_nu_net*p.Variable("c0"))
+    if sum_nu_net != 0:
+        return sum_p - sum_r - sum_nu_net*p.Variable("c0")
     else:
         return sum_p - sum_r
+
 
 # }}}
 
