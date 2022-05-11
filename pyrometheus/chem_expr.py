@@ -198,7 +198,7 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
         return sum_p - sum_nu_net*p.Variable("c0") - sum_r
     elif sum_nu_net > 0:
         # Three species on products side
-        return sum_p - (sum_r - sum_nu_net*p.Variable("c0"))
+        return sum_p - (sum_r + sum_nu_net*p.Variable("c0"))
     else:
         return sum_p - sum_r
 
