@@ -454,43 +454,6 @@ contains
 
     end subroutine get_species_gibbs_rt
 
-    subroutine get_species_enthalpies_rt_derivative(temperature, dhdt)
-
-        ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(out), dimension(num_species) :: dhdt
-
-        %for i, sp in enumerate(sol.species()):
-        dhdt(${i+1}) = ${cgm(ce.poly_to_enthalpy_deriv_expr(sp.thermo, "temperature"))}
-        %endfor
-
-    end subroutine get_species_enthalpies_rt_derivative
-
-    subroutine get_species_entropies_r_derivative(temperature, dsdt)
-
-        ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(out), dimension(num_species) :: dsdt
-
-        %for i, sp in enumerate(sol.species()):
-        dsdt(${i+1}) = ${cgm(ce.poly_to_entropy_deriv_expr(sp.thermo, "temperature"))}
-        %endfor
-
-    end subroutine get_species_entropies_r_derivative
-
-    subroutine get_species_gibbs_rt_derivative(temperature, dgdt)
-
-        ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(out), dimension(num_species) :: dgdt
-
-        ${real_type}, dimension(num_species) :: dhdt
-        ${real_type}, dimension(num_species) :: dsdt
-
-        call get_species_enthalpies_rt_derivative(temperature, dhdt)
-        call get_species_entropies_r_derivative(temperature, dsdt)
-
-        dgdt(:) = dhdt(:) - dsdt(:)
-
-    end subroutine get_species_gibbs_rt_derivative
-
     subroutine get_equilibrium_constants(temperature, k_eq)
 
         ${real_type}, intent(in) :: temperature

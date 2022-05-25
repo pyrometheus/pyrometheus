@@ -116,7 +116,7 @@ def test_generate_mechfile(lang_module, mechname):
     "uiuc.yaml", "sandiego.yaml", "uconn32.yaml", "hong.yaml"
 ])
 @pytest.mark.parametrize("usr_np", numpy_list)
-def test_get_rate_coefficients(mechname, usr_np):
+def test_get_rate_coefficients(mechname, fuel, usr_np):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
@@ -137,7 +137,7 @@ def test_get_rate_coefficients(mechname, usr_np):
         # Concentrations
         y = sol.Y
         rho = sol.density
-        c = ptk.get_concentrations(rho, y)
+        c = ptk.get_concentrations([rho], y)
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
@@ -252,11 +252,11 @@ def test_get_thermo_properties(mechname, usr_np):
         print(f"keq_pm = {keq_pm}")
         print(f"keq_cnt = {keq_ct}")
         print(f"temperature = {t}")
-        # xclude meaningless check on equilibrium constants for irreversible reaction
+        # exclude meaningless check on equilibrium constants for irreversible reaction
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:
                 keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
-                print(f"keq_err = {keq_err}")
+                print(f"i = {i}, keq_err = {keq_err}")
                 assert keq_err < 1.0e-13
         # keq_pm_test = keq_pm[1:]
         # keq_ct_test = keq_ct[1:]
@@ -354,9 +354,9 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
         y = np.where(reactor.Y > 0, reactor.Y, 0)
 
         # Prometheus kinetics
-        c = ptk.get_concentrations(rho, y)
+        c = ptk.get_concentrations([rho], y)
         r_pm = ptk.get_net_rates_of_progress(temp, c)
-        omega_pm = ptk.get_net_production_rates(rho, temp, y)
+        omega_pm = ptk.get_net_production_rates([rho], temp, y)
         err_r = np.linalg.norm(r_ct-r_pm, np.inf)
         err_omega = np.linalg.norm(omega_ct - omega_pm, np.inf)
 
@@ -505,7 +505,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
         mass_fractions = np.where(reactor.Y > 0, reactor.Y, 0)
 
         # Prometheus kinetics
-        concentrations = ptk.get_concentrations(density, mass_fractions)
+        concentrations = ptk.get_concentrations([density], mass_fractions)
         k_pm = ptk.get_fwd_rate_coefficients(temperature, concentrations)
         err = np.linalg.norm(
             np.where(
@@ -529,7 +529,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
 
 # run single tests using
-# $ python test_codegen.py 'test_sandiego()'
+# $ python test_codegen.py 'test_get_thermo_properties()'
 if __name__ == "__main__":
 
     if len(sys.argv) > 1:
