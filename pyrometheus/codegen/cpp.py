@@ -73,7 +73,7 @@ def str_np(ary):
 header_tpl = Template("""
 #include <cmath>
 
-
+namespace ${namespace}{
 template <typename ContainerT, typename ScalarT>
 struct thermochemistry
 {
@@ -90,6 +90,8 @@ struct thermochemistry
     constexpr static ScalarT inv_weights[] = {${str_np(1/sol.molecular_weights)}};
     constexpr static ScalarT gas_constant = ${repr(ct.gas_constant)};
     constexpr static ScalarT one_atm = ${repr(ct.one_atm)};
+
+    static int nSpecies() { return num_species; };
 
     static ScalarT get_specific_gas_constant(ContainerT const &mass_fractions)
     {
@@ -132,14 +134,14 @@ struct thermochemistry
     {
         ContainerT cp0_r = get_species_specific_heats_r(temperature);
         ScalarT cpmix = get_mass_average_property(mass_fractions, cp0_r);
-        return cpmix;
+        return gas_constant * cpmix;
     }
 
     static ScalarT get_mixture_enthalpy_mass(ScalarT temperature, ContainerT const &mass_fractions)
     {
         ContainerT h0_rt = get_species_enthalpies_rt(temperature);
         ScalarT hmix = get_mass_average_property(mass_fractions, h0_rt);
-        return hmix;
+        return gas_constant * hmix * temperature;
     }
 
     static ScalarT get_density(ScalarT p, ScalarT temperature,
@@ -218,15 +220,56 @@ struct thermochemistry
         ScalarT iter_temp = t_guess;
 
         for(int iter = 0; iter < num_iter; ++iter){
-            ScalarT cp = get_mixture_specific_heat_cp_mass(iter_temp, mass_fractions);
-            ScalarT h = get_mixture_enthalpy_mass(iter_temp, mass_fractions);
-            ScalarT iter_rhs = enthalpy - h;
-            iter_temp -= iter_rhs/cp;
-            if(std::fabs(iter_rhs/cp) < tol){ break; }
+            ScalarT iter_rhs = enthalpy - get_mixture_enthalpy_mass(iter_temp, mass_fractions);
+            ScalarT iter_deriv = -1.0 * get_mixture_specific_heat_cp_mass(iter_temp, mass_fractions);
+            iter_temp -= iter_rhs/iter_deriv;
+            if(std::fabs(iter_rhs/iter_deriv) < tol){ break; }
         }
         return iter_temp;
     }
 
+    %if falloff_reactions:
+    static void get_falloff_rates(ScalarT temperature, ContainerT const &concentrations, ContainerT &k_fwd)
+    {
+        ContainerT k_high = {
+        %for react in falloff_reactions:
+            ${cgm(ce.rate_coefficient_expr(
+                react.high_rate, Variable("temperature")))}, 
+        %endfor
+        };
+
+        ContainerT k_low = {
+        %for react in falloff_reactions:
+            ${cgm(ce.rate_coefficient_expr(
+                react.low_rate, Variable("temperature")))}, 
+        %endfor
+        };
+
+        ContainerT reduced_pressure = {
+        %for i, react in enumerate(falloff_reactions):
+            (${cgm(ce.third_body_efficiencies_expr(
+                sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
+        %endfor
+        };
+
+        ContainerT falloff_center = {
+        %for react in falloff_reactions:
+            %if react.falloff.falloff_type == "Troe":
+            log10(${cgm(ce.troe_falloff_expr(react, Variable("temperature")))}),
+            %else:
+            1.0,
+            %endif
+        %endfor
+        };
+
+        %for i, react in enumerate(falloff_reactions):
+        k_fwd[${int(react.ID)-1}] = k_high[${i}]*${cgm(ce.falloff_function_expr(
+                react, i, Variable("temperature"), Variable("reduced_pressure"),
+                Variable("falloff_center")))} * reduced_pressure[${i}]/(1.0 + reduced_pressure[${i}]);
+        %endfor
+    };
+
+    %endif
     static ContainerT get_fwd_rate_coefficients(ScalarT temperature, 
                                                 ContainerT const &concentrations)
     {
@@ -240,6 +283,10 @@ struct thermochemistry
         %endfor
         };
 
+        %if falloff_reactions:
+        get_falloff_rates(temperature, concentrations, k_fwd);
+        %endif
+
         %for react in three_body_reactions:
         k_fwd[${int(react.ID)-1}] *= (${cgm(ce.third_body_efficiencies_expr(
         sol, react, Variable("concentrations")))});
@@ -247,7 +294,7 @@ struct thermochemistry
         return k_fwd;
     }
 
-    static ContainerT get_net_rates_of_progress(ScalarT rho, ScalarT temperature, ContainerT const &concentrations)
+    static ContainerT get_net_rates_of_progress(ScalarT temperature, ContainerT const &concentrations)
     {
         ContainerT k_fwd = get_fwd_rate_coefficients(temperature, concentrations);
         ContainerT log_k_eq = get_equilibrium_constants(temperature);
@@ -263,7 +310,7 @@ struct thermochemistry
     static ContainerT get_net_production_rates(ScalarT rho, ScalarT temperature, ContainerT const &mass_fractions)
     {
         ContainerT concentrations = get_concentrations(rho, mass_fractions);
-        ContainerT r_net = get_net_rates_of_progress(rho, temperature, concentrations);
+        ContainerT r_net = get_net_rates_of_progress(temperature, concentrations);
         ContainerT omega = {
         %for sp in sol.species():
         ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))},
@@ -272,12 +319,13 @@ struct thermochemistry
         return omega;
     }
 };
+}
 """, strict_undefined=True)
 
 # }}}
 
 
-def gen_thermochem_code(sol: ct.Solution) -> str:
+def gen_thermochem_code(sol: ct.Solution, namespace='pyrometheus') -> str:
     """For the mechanism given by *sol*, return Python source code for a class conforming
     to a module containing a class called ``Thermochemistry`` adhering to the
     :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
@@ -286,6 +334,8 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
         ct=ct,
         sol=sol,
 
+        namespace=namespace,
+        
         str_np=str_np,
         cgm=CodeGenerationMapper(),
         Variable=p.Variable,
