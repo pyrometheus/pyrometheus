@@ -284,12 +284,15 @@ contains
 
     end subroutine get_specific_gas_constant
 
-    subroutine get_density(pressure, temperature, mass_fractions, density)
+    subroutine get_density(num_x, num_y, num_mf, pressure, temperature, mass_fractions, density)
 
+        integer, intent(in) :: num_x
+        integer, intent(in) :: num_y
+        integer, intent(in) :: num_mf
         ${real_type}, intent(in) :: pressure
-        ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
-        ${real_type}, intent(out) :: density
+        ${real_type}, intent(in), dimension(num_x, num_y, num_mf) :: temperature
+        ${real_type}, intent(in), dimension(num_x, num_y, num_mf, num_species) :: mass_fractions
+        ${real_type}, intent(out) :: density(num_x, num_y, num_mf)
 
         ${real_type} :: mix_mol_weight
 
