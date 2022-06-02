@@ -167,7 +167,8 @@ def _zeros_like(argument):
 # {{{ Equilibrium constants
 
 
-def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, reaction_index, gibbs_rt):
+def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction,
+                               reaction_index, gibbs_rt):
     """Generate code for equilibrium constants.
 
     :returns: Equilibrium constant expression for reaction *react* in terms of
@@ -271,7 +272,8 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
 
 # {{{ Rates of progress
 
-def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, reaction_index, c, k_fwd, log_k_eq):
+def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction,
+                          reaction_index, c, k_fwd, log_k_eq):
     """
     :returns: Rate of progress expression for reaction *react* in terms of
         species concentrations *c* with rate coefficients *k_fwd* and equilbrium
