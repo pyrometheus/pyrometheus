@@ -97,7 +97,7 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 
 
 # Write out all the mechanisms for inspection
-@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego", "UConn32", "gri30"])
+@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
 @pytest.mark.parametrize("lang_module", [
     pyro.codegen.python,
     ])
@@ -109,7 +109,7 @@ def test_generate_mechfile(lang_module, mechname):
         print(code, file=mech_file)
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego"])
+@pytest.mark.parametrize("mechname", ["uiuc", "sandiego"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_rate_coefficients(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -137,7 +137,7 @@ def test_get_rate_coefficients(mechname, usr_np):
     return
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego", "UConn32", "gri30"])
+@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_pressure(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -175,7 +175,7 @@ def test_get_pressure(mechname, usr_np):
     assert abs(p_ct - p_pm) / p_ct < 1.0e-12
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego", "UConn32", "gri30"])
+@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_thermo_properties(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -234,7 +234,7 @@ def test_get_thermo_properties(mechname, usr_np):
     return
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sanDiego", "gri30"])
+@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "gri30"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_temperature(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -273,7 +273,7 @@ def test_get_temperature(mechname, usr_np):
 
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
                          [("uiuc", "C2H4", 3.0, 1e-7),
-                          ("sanDiego", "H2", 0.5, 1e-6)])
+                          ("sandiego", "H2", 0.5, 1e-6)])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
     """This function tests that pyrometheus-generated code
@@ -344,7 +344,7 @@ def test_autodiff_accuracy():
     pytest.importorskip("jax")
     assert jnp is not None
 
-    sol = ct.Solution("mechs/sanDiego.yaml", "gas")
+    sol = ct.Solution("mechs/sandiego.yaml", "gas")
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
 
     ptk = make_jax_pyro_class(ptk_base_cls, jnp)
@@ -415,8 +415,8 @@ def test_autodiff_accuracy():
 
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio",
                          [("gri30", "CH4", 2),
-                          ("UConn32", "C2H4", 3),
-                          ("sanDiego", "H2", 0.5)])
+                          ("uconn32", "C2H4", 3),
+                          ("sandiego", "H2", 0.5)])
 def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted falloff rate coefficients"""
