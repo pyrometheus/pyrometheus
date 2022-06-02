@@ -1,7 +1,7 @@
 import pyrometheus as pyro
 import glob
 
-test_mechs = glob.glob("test/mechs/*.cti")
+test_mechs = glob.glob("test/mechs/*.yaml")
 for cti_file_name in test_mechs:
     mechname = cti_file_name[11:-4]
     mech_file_name = f"test/mechs/{mechname}_mech.py"
