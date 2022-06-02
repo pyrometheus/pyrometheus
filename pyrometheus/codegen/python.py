@@ -319,10 +319,10 @@ class Thermochemistry:
 
         g0_rt = self.get_species_gibbs_rt(temperature)
         return self._pyro_make_array([
-            %for react in sol.reactions():
+            %for i, react in enumerate(sol.reactions()):
                 %if react.reversible:
                     ${cgm(ce.equilibrium_constants_expr(
-                        sol, react, Variable("g0_rt")))},
+                        sol, react, i, Variable("g0_rt")))},
                 %else:
                     -0.17364695002734*temperature,
                 %endif
@@ -395,8 +395,8 @@ class Thermochemistry:
         %endfor
                             ])*reduced_pressure/(1+reduced_pressure)
 
-        %for i, react in enumerate(falloff_reactions):
-        k_fwd[${int(react.ID)-1}] = k_high[${i}]*falloff_function[${i}]*ones
+        %for j, (i, react) in zip(falloff_indices, enumerate(falloff_reactions)):
+        k_fwd[${j}] = k_high[${i}]*falloff_function[${i}]*ones
         %endfor
         return
 
@@ -417,8 +417,8 @@ class Thermochemistry:
         self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
 
-        %for react in three_body_reactions:
-        k_fwd[${int(react.ID)-1}] *= (${cgm(ce.third_body_efficiencies_expr(
+        %for i, react in zip(three_body_indices, three_body_reactions):
+        k_fwd[${i}] *= (${cgm(ce.third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
         return self._pyro_make_array(k_fwd)
@@ -427,8 +427,8 @@ class Thermochemistry:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
         return self._pyro_make_array([
-                %for react in sol.reactions():
-                    ${cgm(ce.rate_of_progress_expr(sol, react,
+                %for i, react in enumerate(sol.reactions()):
+                    ${cgm(ce.rate_of_progress_expr(sol, react, i,
                         Variable("concentrations"),
                         Variable("k_fwd"), Variable("log_k_eq")))},
                 %endfor
@@ -466,12 +466,18 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
         falloff_reactions=list(compress(sol.reactions(),
                                         [isinstance(r, ct.FalloffReaction)
                                          for r in sol.reactions()])),
+        falloff_indices=list(compress(range(sol.n_reactions),
+                                      [isinstance(r, ct.FalloffReaction)
+                                       for r in sol.reactions()])),
         non_falloff_reactions=list(compress(sol.reactions(),
                                             [not isinstance(r, ct.FalloffReaction)
                                              for r in sol.reactions()])),
         three_body_reactions=list(compress(sol.reactions(),
                                            [isinstance(r, ct.ThreeBodyReaction)
                                             for r in sol.reactions()])),
+        three_body_indices=list(compress(range(sol.n_reactions),
+                                         [isinstance(r, ct.ThreeBodyReaction)
+                                         for r in sol.reactions()]))
     )
 
 

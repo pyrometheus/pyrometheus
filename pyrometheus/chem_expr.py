@@ -159,7 +159,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 # {{{ Data-handling helper
 
 def _zeros_like(argument):
-    # FIXME: This mishandles NaNs.
+    # Fixme: This mishandles NaNs.
     return 0 * argument
 
 # }}}
@@ -167,7 +167,7 @@ def _zeros_like(argument):
 # {{{ Equilibrium constants
 
 
-def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
+def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, reaction_index, gibbs_rt):
     """Generate code for equilibrium constants.
 
     :returns: Equilibrium constant expression for reaction *react* in terms of
@@ -181,9 +181,9 @@ def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction, gibbs_rt):
     # Stoichiometric coefficients
     #nu_reac = [react.reactants[sp] for sp in react.reactants]
     #nu_prod = [react.products[sp] for sp in react.products]
-    nu_reac = [sol.reactant_stoich_coeff(sol.species_index(sp), int(react.ID)-1)
+    nu_reac = [sol.reactant_stoich_coeff(sol.species_index(sp), reaction_index)
                for sp in react.reactants]
-    nu_prod = [sol.product_stoich_coeff(sol.species_index(sp), int(react.ID)-1)
+    nu_prod = [sol.product_stoich_coeff(sol.species_index(sp), reaction_index)
                for sp in react.products]
 
     sum_r = sum(nu_reac_i * gibbs_rt[indices_reac_i]
@@ -271,7 +271,7 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
 
 # {{{ Rates of progress
 
-def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, log_k_eq):
+def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, reaction_index, c, k_fwd, log_k_eq):
     """
     :returns: Rate of progress expression for reaction *react* in terms of
         species concentrations *c* with rate coefficients *k_fwd* and equilbrium
@@ -292,12 +292,11 @@ def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction, c, k_fwd, log_k_
         r_rev = np.prod([c[index]**nu for index, nu in zip(indices_prod, nu_prod)])
         # FIXME: It's not clear that this is available other than by this clunky,
         # string-parsing route
-        reaction_index = int(react.ID)-1
         return k_fwd[reaction_index] * (
                 r_fwd
                 - p.Variable("exp")(log_k_eq[reaction_index]) * r_rev)
     else:
-        return k_fwd[int(react.ID)-1] * r_fwd
+        return k_fwd[reaction_index] * r_fwd
 
 # }}}
 
@@ -311,9 +310,9 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
         :class:`pymbolic.primitives.Expression`
     """
     ones = _zeros_like(r_net[0]) + 1.0
-    indices_fwd = [int(react.ID)-1 for react in sol.reactions()
+    indices_fwd = [i for i, react in enumerate(sol.reactions())
                    if species in react.reactants]
-    indices_rev = [int(react.ID)-1 for react in sol.reactions()
+    indices_rev = [i for i, react in enumerate(sol.reactions())
                    if species in react.products]
     nu_fwd = [sol.reactant_stoich_coeff(sol.species_index(species), react_index)
               for react_index in indices_fwd]
