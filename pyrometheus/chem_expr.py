@@ -242,10 +242,10 @@ def troe_falloff_expr(react: ct.Reaction, t):
     :returns: The Troe falloff center expression for reaction *react* in terms of the
         temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
-    troe_params = react.falloff.parameters
+    troe_params = react.rate.falloff_coeffs
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
-    if troe_params[3]:
+    if len(troe_params) == 4:
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
         return troe_1 + troe_2 + troe_3
     else:
@@ -258,7 +258,7 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
         of the temperature *t*, reduced pressure *red_pressure*, and falloff center
         *falloff_center* as a :class:`pymbolic.primitives.Expression`
     """
-    if react.falloff.falloff_type == "Troe":
+    if react.rate.type == "Troe":
         log_rp = p.Variable("log10")(red_pressure[i])
         c = -0.4-0.67*falloff_center[i]
         n = 0.75-1.27*falloff_center[i]

@@ -358,14 +358,14 @@ class Thermochemistry:
         k_high = self._pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(ce.rate_coefficient_expr(
-                react.high_rate, Variable("temperature")))},
+                react.rate.high_rate, Variable("temperature")))},
         %endfor
                 ])
 
         k_low = self._pyro_make_array([
         %for react in falloff_reactions:
             ${cgm(ce.rate_coefficient_expr(
-                react.low_rate, Variable("temperature")))},
+                react.rate.low_rate, Variable("temperature")))},
         %endfor
                 ])
 
@@ -378,7 +378,7 @@ class Thermochemistry:
 
         falloff_center = self._pyro_make_array([
         %for react in falloff_reactions:
-            %if react.falloff.falloff_type == "Troe":
+            %if react.rate.type == "Troe":
             self.usr_np.log10(${cgm(ce.troe_falloff_expr(
                                    react, Variable("temperature")))}),
             %else:
