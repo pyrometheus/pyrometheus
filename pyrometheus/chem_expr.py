@@ -251,18 +251,18 @@ def troe_falloff_expr(react: ct.Reaction, t):
                 troe_params = react.falloff.parameters
             else:
                 troe_params = react.falloff.parameters[:-1]
-                
+
         else:
             # This isn't a Troe function
             return 1
-            
+
     else:
         if react.rate.type == "Troe":
             troe_params = react.rate.falloff_coeffs
         else:
             # This isn't a Troe function
             return 1
-    
+
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
     if len(troe_params) == 4:

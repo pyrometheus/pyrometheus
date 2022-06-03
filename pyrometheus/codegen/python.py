@@ -357,7 +357,7 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
         %for react in falloff_reactions:
-            %if react.uses_legacy:            
+            %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
                 react.high_rate, Variable("temperature")))},
             %else:
