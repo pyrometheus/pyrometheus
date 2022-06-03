@@ -3,6 +3,7 @@
 .. automodule:: pyrometheus.codegen.python
 .. automodule:: pyrometheus.codegen.cpp
 .. automodule:: pyrometheus.codegen.fortran90
+.. automodule:: pyrometheus.codegen.fortranacc
 """
 
 __copyright__ = """
@@ -34,6 +35,7 @@ THE SOFTWARE.
 import pyrometheus.codegen.python  # noqa: F401
 import pyrometheus.codegen.cpp  # noqa: F401
 import pyrometheus.codegen.fortran90  # noqa: F401
+import pyrometheus.codegen.fortranacc  # noqa: F401
 import pyrometheus.codegen.python as _py
 
 
