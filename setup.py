@@ -30,6 +30,7 @@ setup(name="pyrometheus",
 
       python_requires="~=3.6",
 
+      packages=find_packages(),
       install_requires=[
           "cantera",
           "pymbolic",
@@ -41,5 +42,4 @@ setup(name="pyrometheus",
       author="Andreas Kloeckner",
       url="https://github.com/inducer/pyrometheus",
       author_email="inform@tiker.net",
-      license="MIT",
-      packages=find_packages())
+      license="MIT")

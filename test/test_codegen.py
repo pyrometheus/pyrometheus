@@ -28,6 +28,7 @@ import sys
 import cantera as ct
 import numpy as np  # noqa: F401
 import pyrometheus as pyro
+from pyrometheus.mechanisms import get_mechanism_config
 import pytest
 
 try:
@@ -103,8 +104,7 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
     ])
 def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
-    sol = ct.Solution(name="gas",
-                      yaml=pyro.mechanisms.get_mechanism_config(mechname))
+    sol = ct.Solution(name="gas", yaml=get_mechanism_config(mechname))
     with open(f"mechs/{mechname}.{lang_module.file_extension}", "w") as mech_file:
         code = lang_module.gen_thermochem_code(sol)
         print(code, file=mech_file)
@@ -116,7 +116,7 @@ def test_get_rate_coefficients(mechname, usr_np):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
-    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
+    sol = ct.Solution(name="gas", yaml=get_mechanism_config(mechname))
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
@@ -146,7 +146,7 @@ def test_get_pressure(mechname, usr_np):
     temperature, and mass fractions
     """
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
+    sol = ct.Solution(name="gas", yaml=get_mechanism_config(mechname))
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
@@ -183,7 +183,7 @@ def test_get_thermo_properties(mechname, usr_np):
     computes thermodynamic properties c_p, s_r, h_rt, and k_eq
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution(f"mechs/{mechname}.yaml")
+    sol = ct.Solution(name="gas", yaml=get_mechanism_config(mechname))
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
@@ -242,7 +242,7 @@ def test_get_temperature(mechname, usr_np):
     computes the Cantera-predicted temperature for given internal energy
     and mass fractions"""
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
+    sol = ct.Solution(name="gas", yaml=get_mechanism_config(mechname))
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
     tol = 1.0e-10
@@ -280,7 +280,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted rates of progress for given
     temperature and composition"""
-    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
+    sol = ct.Solution(name="gas", yaml=get_mechanism_config(mechname))
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
@@ -345,7 +345,7 @@ def test_autodiff_accuracy():
     pytest.importorskip("jax")
     assert jnp is not None
 
-    sol = ct.Solution("mechs/sandiego.yaml", "gas")
+    sol = ct.Solution(name="gas", yaml=get_mechanism_config("sandiego"))
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
 
     ptk = make_jax_pyro_class(ptk_base_cls, jnp)
@@ -421,7 +421,7 @@ def test_autodiff_accuracy():
 def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted falloff rate coefficients"""
-    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
+    sol = ct.Solution(name="gas", yaml=get_mechanism_config(mechname))
     ptk = pyro.codegen.python.get_thermochem_class(sol)()
 
     # Homogeneous reactor to get test data
