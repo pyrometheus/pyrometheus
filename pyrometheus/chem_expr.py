@@ -242,14 +242,34 @@ def troe_falloff_expr(react: ct.Reaction, t):
     :returns: The Troe falloff center expression for reaction *react* in terms of the
         temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
-    troe_params = react.rate.falloff_coeffs
+    if react.uses_legacy:
+        from warnings import warn
+        warn("New Cantera implementation retrieves 'FalloffRate' objects "
+             "using the rate 'property'", DeprecationWarning)
+        if react.falloff.falloff_type == "Troe":
+            if react.falloff.parameters[3]:
+                troe_params = react.falloff.parameters
+            else:
+                troe_params = react.falloff.parameters[:-1]
+                
+        else:
+            # This isn't a Troe function
+            return 1
+            
+    else:
+        if react.rate.type == "Troe":
+            troe_params = react.rate.falloff_coeffs
+        else:
+            # This isn't a Troe function
+            return 1
+    
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
     if len(troe_params) == 4:
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
-        return troe_1 + troe_2 + troe_3
+        return p.Variable("log10")(troe_1 + troe_2 + troe_3)
     else:
-        return troe_1 + troe_2
+        return p.Variable("log10")(troe_1 + troe_2)
 
 
 def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center):
@@ -258,7 +278,15 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
         of the temperature *t*, reduced pressure *red_pressure*, and falloff center
         *falloff_center* as a :class:`pymbolic.primitives.Expression`
     """
-    if react.rate.type == "Troe":
+    if react.uses_legacy:
+        falloff_type = react.falloff.falloff_type
+        from warnings import warn
+        warn("New Cantera implementation retrieves 'FalloffRate' objects "
+             "using the rate 'property'", DeprecationWarning)
+    else:
+        falloff_type = react.rate.type
+        
+    if falloff_type == "Troe":
         log_rp = p.Variable("log10")(red_pressure[i])
         c = -0.4-0.67*falloff_center[i]
         n = 0.75-1.27*falloff_center[i]
