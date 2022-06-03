@@ -1,1 +1,1 @@
-include mirgecom/mechanisms/*.yaml
+include pyrometheus/mechanisms/*.yaml

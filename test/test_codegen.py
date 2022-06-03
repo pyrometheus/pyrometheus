@@ -104,7 +104,7 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
     sol = ct.Solution(name="gas",
-                      yaml=pyro.mechanism.get_mechanism_config(mechname))
+                      yaml=pyro.mechanisms.get_mechanism_config(mechname))
     with open(f"mechs/{mechname}.{lang_module.file_extension}", "w") as mech_file:
         code = lang_module.gen_thermochem_code(sol)
         print(code, file=mech_file)
