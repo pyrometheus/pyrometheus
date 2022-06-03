@@ -285,7 +285,7 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
              "using the rate 'property'", DeprecationWarning)
     else:
         falloff_type = react.rate.type
-        
+
     if falloff_type == "Troe":
         log_rp = p.Variable("log10")(red_pressure[i])
         c = -0.4-0.67*falloff_center[i]
