@@ -290,25 +290,25 @@ contains
         integer, intent(in) :: num_y
         integer, intent(in) :: num_z
         ${real_type}, intent(in) :: pressure
-        ${real_type}, intent(in), dimension(num_z, num_y, num_x) :: temperature
-        ${real_type}, intent(in), dimension(num_species, num_z, num_y, num_x) :: mass_fractions
-        ${real_type}, intent(out), dimension(num_z, num_y, num_x) :: density
+        ${real_type}, intent(in), dimension(num_x, num_y, num_y) :: temperature
+        ${real_type}, intent(in), dimension(num_species, num_x, num_y, num_z) :: mass_fractions
+        ${real_type}, intent(out), dimension(num_x, num_y, num_z) :: density
 
         integer :: i, j, k, s
         ${real_type} :: mix_mol_weight
 
         !$acc parallel loop collapse(3) vector_length(num_species)
-        do i = 1, num_x
+        do k = 1, num_z
             do j = 1, num_y
-                do k = 1, num_z
+                do i = 1, num_x
                     mix_mol_weight = 0.d0
                     !$acc loop vector
                     do s = 1, num_species
                         mix_mol_weight = mix_mol_weight + &
-                            inv_weights(s) * mass_fractions(s, k, j, i)
+                            inv_weights(s) * mass_fractions(s, i, j, k)
                     end do                    
-                    density(k, j, i) = pressure / (gas_constant * &
-                        mix_mol_weight * temperature(k, j, i))
+                    density(i, j, k) = pressure / (gas_constant * &
+                        mix_mol_weight * temperature(i, j, k))
                 end do
             end do
         end do
