@@ -220,6 +220,14 @@ module ${module_name}
         (/ ${str_np(arrhenius_coefficients)} /), &
         (/${sol.n_reactions}, 3/))
 
+    ${real_type}, parameter :: stoich_matrix_fwd(num_species, num_reactions) = reshape(&
+        (/ ${str_np(nu_fwd)} /), &
+        (/${sol.n_species}, ${sol.n_reactions}/))
+
+    ${real_type}, parameter :: stoich_matrix_rev(num_species, num_reactions) = reshape(&
+        (/ ${str_np(nu_rev)} /), &
+        (/${sol.n_species}, ${sol.n_reactions}/))
+
     character(len=12), parameter :: species_names(*) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
 
@@ -227,14 +235,17 @@ module ${module_name}
         (/ ${", ".join('"'+'{0: <4}'.format(e)+'"' for e in sol.element_names)} /)
 
     ${real_type}, allocatable, dimension(:) :: concentrations
-    !$acc declare create(concentrations)
+    ${real_type}, allocatable, dimension(:) :: k_fwd
+    !$acc declare create(concentrations, k_fwd)
 
 contains
 
     subroutine initialize_thermochem
 
         allocate(concentrations(num_species))
-        !$acc enter data create(concentrations(num_species))
+        allocate(k_fwd(num_reactions))
+        !$acc enter data create(concentrations(num_species), &
+        !$acc    k_fwd(num_reactions))
 
         concentrations = 0.d0
         !$acc update device(concentrations)
@@ -297,7 +308,7 @@ contains
         integer :: i, j, k, s
         ${real_type} :: mix_mol_weight
 
-        !$acc parallel loop collapse(3) vector_length(num_species)
+        !$acc parallel loop collapse(3) vector_length(32)
         do k = 1, num_z
             do j = 1, num_y
                 do i = 1, num_x
@@ -326,14 +337,17 @@ contains
         ${real_type}, intent(in), dimension(num_reactions, num_x, num_y, num_z) :: k_fwd
 
         integer :: i, j, k, s, r
+        ${real_type} :: inv_temp, log_temp
 
-        !$acc parallel loop collapse(3) vector_length(128)
+        !$acc parallel loop collapse(3) vector_length(32)
         do k = 1, num_z
             do j = 1, num_y
                 do i = 1, num_x
+                    inv_temp = 1.d0 / temperature(i, j, k)
+                    log_temp = log(temperature(i, j, k))
                     !$acc loop vector
                     do r = 1, num_reactions
-                        k_fwd = exp(arrhenius_params(r, 1) + &
+                        k_fwd(r, i, j, k) = exp(arrhenius_params(r, 1) + &
                             arrhenius_params(r, 2)*log(temperature(i, j, k)) + &
                             arrhenius_params(r, 3)/temperature(i, j, k))
                     end do
@@ -343,6 +357,47 @@ contains
         end do
 
     end subroutine get_fwd_rate_coefficients
+
+    subroutine get_fwd_rates_of_progress(num_x, num_y, num_z, density, temperature, mass_fractions, r_fwd)
+
+        integer, intent(in) :: num_x
+        integer, intent(in) :: num_y
+        integer, intent(in) :: num_z
+        ${real_type}, intent(in), dimension(num_x, num_y, num_y) :: density
+        ${real_type}, intent(in), dimension(num_x, num_y, num_y) :: temperature
+        ${real_type}, intent(in), dimension(num_species, num_x, num_y, num_z) :: mass_fractions        
+        ${real_type}, intent(out), dimension(num_reactions, num_x, num_y, num_z) :: r_fwd
+
+        integer :: i, j, k, s, r
+        ${real_type} :: inv_temp, log_temp
+
+        !$acc parallel loop collapse(3) vector_length(32)
+        do k = 1, num_z
+            do j = 1, num_y
+                do i = 1, num_x
+                    inv_temp = 1.d0 / temperature(i, j, k)
+                    log_temp = log(temperature(i, j, k))
+                    !$acc loop vector
+                    do s = 1, num_species
+                        concentrations(s) = density(i, j, k) * mass_fractions(s, i, j, k) * inv_weights(s)
+                    end do
+                    !$acc end loop
+                    !$acc loop vector
+                    do r = 1, num_reactions
+                        r_fwd(r, i, j, k) = exp(arrhenius_params(r, 1) + &
+                            arrhenius_params(r, 2)*log_temp + &
+                            arrhenius_params(r, 3)*inv_temp)
+                        !$acc loop seq
+                        do s = 1, num_species
+                            r_fwd(r, i, j, k) = r_fwd(r, i, j, k) * concentrations(s)**stoich_matrix_fwd(s, r)
+                        end do
+                    end do
+                    !$acc end loop
+                end do
+            end do
+        end do
+
+    end subroutine get_fwd_rates_of_progress
 
 end module
 """)
@@ -370,6 +425,14 @@ def gen_thermochem_code(sol: ct.Solution, real_type="real(kind(1.d0))",
 
         ce=pyrometheus.chem_expr,
 
+        nu_fwd=np.array([sol.reactant_stoich_coeff(s, r)
+                         for s, r in product(range(sol.n_species),
+                                             range(sol.n_reactions))]),
+
+        nu_rev=np.array([sol.product_stoich_coeff(s, r)
+                         for s, r in product(range(sol.n_species),
+                                             range(sol.n_reactions))]),
+        
         elem_matrix=np.array([sol.n_atoms(i, j)
                               for i, j in product(range(sol.n_species),
                                                   range(sol.n_elements))]),
