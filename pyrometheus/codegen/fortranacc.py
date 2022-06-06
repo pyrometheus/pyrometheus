@@ -216,6 +216,10 @@ module ${module_name}
     ${real_type}, parameter :: inv_weights(*) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
+    ${real_type}, parameter :: arrhenius_params(num_reactions, 3) = reshape(&
+        (/ ${str_np(arrhenius_coefficients)} /), &
+        (/${sol.n_reactions}, 3/))
+
     character(len=12), parameter :: species_names(*) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
 
@@ -223,21 +227,17 @@ module ${module_name}
         (/ ${", ".join('"'+'{0: <4}'.format(e)+'"' for e in sol.element_names)} /)
 
     ${real_type}, allocatable, dimension(:) :: concentrations
-    ${real_type}, allocatable, dimension(:) :: k_fwd
-    !$acc declare create(concentrations, k_fwd)
+    !$acc declare create(concentrations)
 
 contains
 
     subroutine initialize_thermochem
 
         allocate(concentrations(num_species))
-        allocate(k_fwd(num_reactions))
-        !$acc enter data create(concentrations(num_species), &
-        !$acc    k_fwd(num_reactions))
+        !$acc enter data create(concentrations(num_species))
 
         concentrations = 0.d0
-        k_fwd = 0.d0
-        !$acc update device(concentrations, k_fwd)
+        !$acc update device(concentrations)
 
     end subroutine initialize_thermochem
 
@@ -315,6 +315,35 @@ contains
 
     end subroutine get_density
 
+    subroutine get_fwd_rate_coefficients(num_x, num_y, num_z, density, temperature, mass_fractions, k_fwd)
+
+        integer, intent(in) :: num_x
+        integer, intent(in) :: num_y
+        integer, intent(in) :: num_z
+        ${real_type}, intent(in), dimension(num_x, num_y, num_y) :: density
+        ${real_type}, intent(in), dimension(num_x, num_y, num_y) :: temperature
+        ${real_type}, intent(in), dimension(num_species, num_x, num_y, num_z) :: mass_fractions
+        ${real_type}, intent(in), dimension(num_reactions, num_x, num_y, num_z) :: k_fwd
+
+        integer :: i, j, k, s, r
+
+        !$acc parallel loop collapse(3) vector_length(128)
+        do k = 1, num_z
+            do j = 1, num_y
+                do i = 1, num_x
+                    !$acc loop vector
+                    do r = 1, num_reactions
+                        k_fwd = exp(arrhenius_params(r, 1) + &
+                            arrhenius_params(r, 2)*log(temperature(i, j, k)) + &
+                            arrhenius_params(r, 3)/temperature(i, j, k))
+                    end do
+                    ! [ECG] Need to add concentration dependence
+                end do
+            end do
+        end do
+
+    end subroutine get_fwd_rate_coefficients
+
 end module
 """)
 
@@ -344,6 +373,12 @@ def gen_thermochem_code(sol: ct.Solution, real_type="real(kind(1.d0))",
         elem_matrix=np.array([sol.n_atoms(i, j)
                               for i, j in product(range(sol.n_species),
                                                   range(sol.n_elements))]),
+
+        arrhenius_coefficients=np.array([[np.log(r.rate.pre_exponential_factor),
+                                          r.rate.temperature_exponent,
+                                          r.rate.activation_energy/ct.gas_constant]
+                                         if not isinstance(r, ct.FalloffReaction)
+                                         else [1, 0, 0] for r in sol.reactions()]).ravel(),
 
         falloff_reactions=list(compress(sol.reactions(),
                                         [isinstance(r, ct.FalloffReaction)
