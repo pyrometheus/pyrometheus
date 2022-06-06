@@ -155,7 +155,7 @@ class FortranExpressionMapper(StringifyMapper):
             index_str = "%s" % (expr.index+1)  # self.rec(expr.index, PREC_NONE)
 
         return self.parenthesize_if_needed(
-                self.format("%s(%s, i, j, k)",
+                self.format("%s(%s)",
                     self.rec(expr.aggregate, PREC_CALL),
                     index_str),
                 enclosing_prec, PREC_CALL)
@@ -222,7 +222,24 @@ module ${module_name}
     character(len=4), parameter :: element_names(*) = &
         (/ ${", ".join('"'+'{0: <4}'.format(e)+'"' for e in sol.element_names)} /)
 
+    ${real_type}, allocatable, dimension(:) :: concentrations
+    ${real_type}, allocatable, dimension(:) :: k_fwd
+    !$acc declare create(concentrations, k_fwd)
+
 contains
+
+    subroutine initialize_thermochem
+
+        allocate(concentrations(num_species))
+        allocate(k_fwd(num_reactions))
+        !$acc enter data create(concentrations(num_species), &
+        !$acc    k_fwd(num_reactions))
+
+        concentrations = 0.d0
+        k_fwd = 0.d0
+        !$acc update device(concentrations, k_fwd)
+
+    end subroutine initialize_thermochem
 
     subroutine get_species_name(sp_index, sp_name)
 
@@ -273,147 +290,30 @@ contains
         integer, intent(in) :: num_y
         integer, intent(in) :: num_z
         ${real_type}, intent(in) :: pressure
-        ${real_type}, intent(in), dimension(num_x, num_y, num_z) :: temperature
-        ${real_type}, intent(in), dimension(num_species, num_x, num_y, num_z) :: mass_fractions
-        ${real_type}, intent(out), dimension(num_x, num_y, num_z) :: density
+        ${real_type}, intent(in), dimension(num_z, num_y, num_x) :: temperature
+        ${real_type}, intent(in), dimension(num_species, num_z, num_y, num_x) :: mass_fractions
+        ${real_type}, intent(out), dimension(num_z, num_y, num_x) :: density
 
-        integer :: i, j, k
+        integer :: i, j, k, s
         ${real_type} :: mix_mol_weight
 
-        !$acc parallel loop collapse(3)
-        do k = 1, num_z
+        !$acc parallel loop collapse(3) vector_length(num_species)
+        do i = 1, num_x
             do j = 1, num_y
-                do i = 1, num_x
-                    mix_mol_weight = 1.0d0 / ( &
-                            %for sp_idx in range(sol.n_species):
-                            + inv_weights(${sp_idx+1})*mass_fractions(${sp_idx+1}, i, j, k) &
-                            %endfor
-                )
-                    density(i, j, k) = pressure * mix_mol_weight / &
-                        (gas_constant * temperature(i, j, k))
+                do k = 1, num_z
+                    mix_mol_weight = 0.d0
+                    !$acc loop vector
+                    do s = 1, num_species
+                        mix_mol_weight = mix_mol_weight + &
+                            inv_weights(s) * mass_fractions(s, k, j, i)
+                    end do                    
+                    density(k, j, i) = pressure / (gas_constant * &
+                        mix_mol_weight * temperature(k, j, i))
                 end do
             end do
         end do
-        !$acc end parallel loop
 
     end subroutine get_density
-
-    %if falloff_reactions:
-    subroutine get_falloff_rates(num_x, num_y, num_z, temperature, concentrations, k_falloff)
-
-        integer, intent(in) :: num_x
-        integer, intent(in) :: num_y
-        integer, intent(in) :: num_z
-        ${real_type}, intent(in) :: temperature(num_x, num_y, num_z)
-        ${real_type}, intent(in), dimension(num_species, num_x, num_y, num_z) :: concentrations
-        ${real_type}, intent(out), dimension(num_falloff) :: k_falloff
-
-        ${real_type}, dimension(num_falloff) :: k_high
-        ${real_type}, dimension(num_falloff) :: k_low
-        ${real_type}, dimension(num_falloff) :: reduced_pressure
-        ${real_type}, dimension(num_falloff) :: falloff_center
-        ${real_type}, dimension(num_falloff) :: falloff_function
-
-        integer :: i, j, k
-        ${real_type} :: temp
-
-        !$acc parallel loop collapse(3)
-        do k = 1, num_z
-            do j = 1, num_y
-                do i = 1, num_x
-
-                    temp = temperature(i, j, k)
-                    %for r_idx, react in enumerate(falloff_reactions):
-                    k_high(${r_idx+1}) = ${cgm(ce.rate_coefficient_expr(react.high_rate, Variable("temp")))}
-                    %endfor
-
-                    %for r_idx, react in enumerate(falloff_reactions):
-                    k_low(${r_idx+1}) = ${cgm(ce.rate_coefficient_expr(react.low_rate, Variable("temp")))}
-                    %endfor
-
-                    %for r_idx, react in enumerate(falloff_reactions):
-                    reduced_pressure(${r_idx+1}) = (${cgm(
-                    ce.third_body_efficiencies_expr(sol, 
-                                                    react, 
-                                                    Variable("concentrations")))})*k_low(${r_idx+1})/k_high(${r_idx+1})
-                    %endfor
-
-                    %for r_idx, react in enumerate(falloff_reactions):
-                    %if react.falloff.falloff_type == "Troe":
-                    falloff_center(${r_idx+1}) = log10(${cgm(ce.troe_falloff_expr(react, Variable("temp")))})
-                    %else:
-                    falloff_center(${r_idx+1}) = 1.d0
-                    %endif
-                    %endfor
-
-                    %for r_idx, react in enumerate(falloff_reactions):
-                    falloff_function(${r_idx+1}) = ${cgm(ce.falloff_function_expr(react, r_idx, 
-                                                     Variable("temp"),
-                                                     Variable("reduced_pressure"),
-                                                     Variable("falloff_center")))}
-                    %endfor
-
-                    %for r_idx in range(len(falloff_reactions)):
-                    k_falloff(${r_idx+1}, i, j, k) = k_high(${r_idx+1})*falloff_function(${r_idx+1}) * &
-                    reduced_pressure(${r_idx+1})/(1.d0 + reduced_pressure(${r_idx+1}))
-                    %endfor
-                end do
-            end do
-        end do
-        !$acc end parallel loop
-
-    end subroutine get_falloff_rates
-
-    subroutine get_fwd_rate_coefficients(num_x, num_y, num_z, temperature, concentrations, k_falloff, k_fwd)    
-
-        integer, intent(in) :: num_x, num_y, num_z
-        ${real_type}, intent(in), dimension(num_x, num_y, num_z) :: temperature
-        ${real_type}, intent(in), dimension(num_species, num_x, num_y, num_z) :: concentrations
-        ${real_type}, intent(in), dimension(num_falloff, num_x, num_y, num_z) :: k_falloff
-        ${real_type}, intent(out), dimension(num_reactions, num_x, num_y, num_z) :: k_fwd
-
-    %else:
-    subroutine get_fwd_rate_coefficients(num_x, num_y, num_z, temperature, concentrations, k_fwd)
-
-        integer, intent(in) :: num_x, num_y, num_z
-        ${real_type}, intent(in), dimension(num_x, num_y, num_z) :: temperature
-        ${real_type}, intent(in), dimension(num_species, num_x, num_y, num_z) :: concentrations
-        ${real_type}, intent(out), dimension(num_reactions, num_x, num_y, num_z) :: k_fwd
-
-    %endif
-
-        integer :: i, j, k 
-        ${real_type} :: temp
-
-        !$acc parallel loop collapse(3)
-        do k = 1, num_z
-            do j = 1, num_y
-                do i = 1, num_x
-                    temp = temperature(i, j, k)
-                    %for r_idx, react in enumerate(sol.reactions()):
-                    %if isinstance(react, ct.FalloffReaction):
-                    k_fwd(${r_idx+1}, i, j, k) = 0.d0
-                    %else:
-                    k_fwd(${r_idx+1}, i, j, k) = ${cgm(ce.rate_coefficient_expr(react.rate, Variable("temp")))}
-                    %endif
-                    %endfor
-
-                    %for react in three_body_reactions:
-                    k_fwd(${int(react.ID)}, i, j, k) = k_fwd(${int(react.ID)}, i, j, k) * ( &
-                        ${cgm(ce.third_body_efficiencies_expr(
-                        sol, react, Variable("concentrations")))})
-                    %endfor
-
-                    %if falloff_reactions:        
-                    %for r_idx, react in enumerate(falloff_reactions):
-                    k_fwd(${int(react.ID)}, i, j, k) = k_falloff(${r_idx+1}, i, j, k)
-                    %endfor
-                    %endif
-                end do
-            end do
-        end do
-        !$acc end parallel loop
-    end subroutine get_fwd_rate_coefficients
 
 end module
 """)
