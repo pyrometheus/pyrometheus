@@ -206,7 +206,7 @@ class Thermochemistry:
         from numbers import Number
         all_numbers = all(isinstance(e, Number) for e in res_list)
 
-        dtype = np.float64 if all_numbers else np.object
+        dtype = np.float64 if all_numbers else object
         result = np.empty((len(res_list),), dtype=dtype)
 
         # 'result[:] = res_list' may look tempting, however:
