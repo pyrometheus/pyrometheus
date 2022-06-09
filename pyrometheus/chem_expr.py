@@ -159,7 +159,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 # {{{ Data-handling helper
 
 def _zeros_like(argument):
-    # Fixme: This mishandles NaNs.
+    # FIXME: This mishandles NaNs.
     return 0 * argument
 
 # }}}
