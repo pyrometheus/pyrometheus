@@ -322,7 +322,7 @@ class Thermochemistry:
             %for i, react in enumerate(sol.reactions()):
                 %if react.reversible:
                     ${cgm(ce.equilibrium_constants_expr(
-                        sol, react, i, Variable("g0_rt")))},
+                        sol, i, Variable("g0_rt")))},
                 %else:
                     -0.17364695002734*temperature,
                 %endif
@@ -356,7 +356,7 @@ class Thermochemistry:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
-        %for react in falloff_reactions:
+        %for _, react in falloff_reactions:
             %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
                 react.high_rate, Variable("temperature")))},
@@ -368,7 +368,7 @@ class Thermochemistry:
                 ])
 
         k_low = self._pyro_make_array([
-        %for react in falloff_reactions:
+        %for _, react in falloff_reactions:
             %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
                 react.low_rate, Variable("temperature")))},
@@ -380,28 +380,28 @@ class Thermochemistry:
                 ])
 
         reduced_pressure = self._pyro_make_array([
-        %for i, react in enumerate(falloff_reactions):
+        %for i, (_, react) in enumerate(falloff_reactions):
             (${cgm(ce.third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
                             ])
 
         falloff_center = self._pyro_make_array([
-        %for react in falloff_reactions:
+        %for _, react in falloff_reactions:
             ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))},
         %endfor
                         ])
 
         falloff_function = self._pyro_make_array([
-        %for i, react in enumerate(falloff_reactions):
+        %for i, (_, react) in enumerate(falloff_reactions):
             ${cgm(ce.falloff_function_expr(
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
                 Variable("falloff_center")))},
         %endfor
                             ])*reduced_pressure/(1+reduced_pressure)
 
-        %for j, (i, react) in zip(falloff_indices, enumerate(falloff_reactions)):
-        k_fwd[${j}] = k_high[${i}]*falloff_function[${i}]*ones
+        %for j, (i, react) in enumerate(falloff_reactions):
+        k_fwd[${i}] = k_high[${j}]*falloff_function[${j}]*ones
         %endfor
         return
 
@@ -422,7 +422,7 @@ class Thermochemistry:
         self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
 
-        %for i, react in zip(three_body_indices, three_body_reactions):
+        %for i, react in three_body_reactions:
         k_fwd[${i}] *= (${cgm(ce.third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
@@ -432,8 +432,8 @@ class Thermochemistry:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
         return self._pyro_make_array([
-                %for i, react in enumerate(sol.reactions()):
-                    ${cgm(ce.rate_of_progress_expr(sol, react, i,
+                %for i in range(sol.n_reactions):
+                    ${cgm(ce.rate_of_progress_expr(sol, i,
                         Variable("concentrations"),
                         Variable("k_fwd"), Variable("log_k_eq")))},
                 %endfor
@@ -468,21 +468,10 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
 
         ce=pyrometheus.chem_expr,
 
-        falloff_reactions=list(compress(sol.reactions(),
-                                        [isinstance(r, ct.FalloffReaction)
-                                         for r in sol.reactions()])),
-        falloff_indices=list(compress(range(sol.n_reactions),
-                                      [isinstance(r, ct.FalloffReaction)
-                                       for r in sol.reactions()])),
-        non_falloff_reactions=list(compress(sol.reactions(),
-                                            [not isinstance(r, ct.FalloffReaction)
-                                             for r in sol.reactions()])),
-        three_body_reactions=list(compress(sol.reactions(),
-                                           [isinstance(r, ct.ThreeBodyReaction)
-                                            for r in sol.reactions()])),
-        three_body_indices=list(compress(range(sol.n_reactions),
-                                         [isinstance(r, ct.ThreeBodyReaction)
-                                         for r in sol.reactions()]))
+        falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
+                           if isinstance(react, ct.FalloffReaction)],
+        three_body_reactions=[(i, react) for i, react in enumerate(sol.reactions())
+                             if isinstance(react, ct.ThreeBodyReaction)],
     )
 
 

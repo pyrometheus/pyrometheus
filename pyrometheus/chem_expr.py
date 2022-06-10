@@ -167,25 +167,26 @@ def _zeros_like(argument):
 # {{{ Equilibrium constants
 
 
-def equilibrium_constants_expr(sol: ct.Solution, react: ct.Reaction,
-                               reaction_index, gibbs_rt):
+def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
     """Generate code for equilibrium constants.
 
-    :returns: Equilibrium constant expression for reaction *react* in terms of
-        the species Gibbs functions *gibbs_rt* as a
-        :class:`pymbolic.primitives.Expression`
+    :returns: Equilibrium constant expression for reaction with
+        index *reaction_index* in terms of the species Gibbs
+        functions *gibbs_rt* as a :class:`pymbolic.primitives.Expression`
     """
 
-    indices_reac = [sol.species_index(sp) for sp in react.reactants]
-    indices_prod = [sol.species_index(sp) for sp in react.products]
+    indices_reac = [sol.species_index(sp)
+                    for sp in sol.reaction(reaction_index).reactants]
+    indices_prod = [sol.species_index(sp)
+                    for sp in sol.reaction(reaction_index).products]
 
     # Stoichiometric coefficients
     #nu_reac = [react.reactants[sp] for sp in react.reactants]
     #nu_prod = [react.products[sp] for sp in react.products]
     nu_reac = [sol.reactant_stoich_coeff(sol.species_index(sp), reaction_index)
-               for sp in react.reactants]
+               for sp in sol.reaction(reaction_index).reactants]
     nu_prod = [sol.product_stoich_coeff(sol.species_index(sp), reaction_index)
-               for sp in react.products]
+               for sp in sol.reaction(reaction_index).products]
 
     sum_r = sum(nu_reac_i * gibbs_rt[indices_reac_i]
             for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
@@ -242,34 +243,43 @@ def troe_falloff_expr(react: ct.Reaction, t):
     :returns: The Troe falloff center expression for reaction *react* in terms of the
         temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
-    if react.uses_legacy:
+    if not react.uses_legacy:
+        if react.rate.type == "Troe":
+            troe_params = react.rate.falloff_coeffs
+        elif react.rate.type == "Lindemann":
+            return 1
+        else:
+            raise ValueError(f"Unexpected value of 'rate.type': "
+                             " '{react.rate.type}'")
+    else:        
         from warnings import warn
-        warn("New Cantera implementation retrieves 'FalloffRate' objects "
-             "using the rate 'property'", DeprecationWarning)
+        warn("Legacy 'ct.Reaction.falloff' interface is deprecated "
+             "in Cantera 2.6 and will be removed in Cantera 3. "
+             "Access 'FalloffRate' objects using "
+             " ct.Reaction.rate' instead", DeprecationWarning, stacklevel=2)        
         if react.falloff.falloff_type == "Troe":
             if react.falloff.parameters[3]:
                 troe_params = react.falloff.parameters
             else:
                 troe_params = react.falloff.parameters[:-1]
 
-        else:
-            # This isn't a Troe function
+        elif react.falloff.falloff_type == "Lindemann":
             return 1
-
-    else:
-        if react.rate.type == "Troe":
-            troe_params = react.rate.falloff_coeffs
         else:
-            # This isn't a Troe function
-            return 1
+            raise ValueError(f"Unexpected value of 'falloff_type': "
+                             " '{react.falloff.falloff_type}'")
 
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
-    if len(troe_params) == 4:
+    if len(troe_params) == 3:
+        return p.Variable("log10")(troe_1 + troe_2)
+    elif len(troe_params) == 4:
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
         return p.Variable("log10")(troe_1 + troe_2 + troe_3)
     else:
-        return p.Variable("log10")(troe_1 + troe_2)
+        raise ValueError(f"Unexpected length of 'tro_params': "
+                         " '{len(troe_params)}'")
+    return
 
 
 def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center):
@@ -278,13 +288,15 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
         of the temperature *t*, reduced pressure *red_pressure*, and falloff center
         *falloff_center* as a :class:`pymbolic.primitives.Expression`
     """
-    if react.uses_legacy:
-        falloff_type = react.falloff.falloff_type
-        from warnings import warn
-        warn("New Cantera implementation retrieves 'FalloffRate' objects "
-             "using the rate 'property'", DeprecationWarning)
-    else:
+    if not react.uses_legacy:
         falloff_type = react.rate.type
+    else:
+        from warnings import warn
+        warn("Legacy 'ct.Reaction.falloff' interface is deprecated "
+             "in Cantera 2.6 and will be removed in Cantera 3. "
+             "Access 'FalloffRate' objects using "
+             " ct.Reaction.rate' instead", DeprecationWarning, stacklevel=2)
+        falloff_type = react.falloff.falloff_type
 
     if falloff_type == "Troe":
         log_rp = p.Variable("log10")(red_pressure[i])
@@ -292,36 +304,42 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
         n = 0.75-1.27*falloff_center[i]
         f = (log_rp+c)/(n-0.14*(log_rp+c))
         return 10**((falloff_center[i])/(1+f**2))
-    else:
+    elif falloff_type == "Lindemann":
         return 1
+    else:
+        raise ValueError(f"Unexpected value of 'falloff_type': "
+                             " '{falloff_type}'")
 
 # }}}
 
 
 # {{{ Rates of progress
 
-def rate_of_progress_expr(sol: ct.Solution, react: ct.Reaction,
-                          reaction_index, c, k_fwd, log_k_eq):
+def rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
+                          k_fwd, log_k_eq):
     """
-    :returns: Rate of progress expression for reaction *react* in terms of
-        species concentrations *c* with rate coefficients *k_fwd* and equilbrium
-        constants *k_eq* as a :class:`pymbolic.primitives.Expression`
+    :returns: Rate of progress expression for reaction with index *reaction_index*
+        in terms of species concentrations *c* with rate coefficients *k_fwd*
+        and equilbrium constants *k_eq* as a :class:`pymbolic.primitives.Expression`
     """
-    indices_reac = [sol.species_index(sp) for sp in react.reactants]
-    indices_prod = [sol.species_index(sp) for sp in react.products]
+    indices_reac = [sol.species_index(sp)
+                    for sp in sol.reaction(reaction_index).reactants]
+    indices_prod = [sol.species_index(sp)
+                    for sp in sol.reaction(reaction_index).products]
 
-    if react.orders:
-        nu_reac = [react.orders[sp] for sp in react.orders]
+    if sol.reaction(reaction_index).orders:
+        nu_reac = [sol.reaction(reaction_index).orders[sp]
+                   for sp in sol.reaction(reaction_index).orders]
     else:
-        nu_reac = [react.reactants[sp] for sp in react.reactants]
+        nu_reac = [sol.reaction(reaction_index).reactants[sp]
+                   for sp in sol.reaction(reaction_index).reactants]
 
     r_fwd = np.prod([c[index]**nu for index, nu in zip(indices_reac, nu_reac)])
 
-    if react.reversible:
-        nu_prod = [react.products[sp] for sp in react.products]
+    if sol.reaction(reaction_index).reversible:
+        nu_prod = [sol.reaction(reaction_index).products[sp]
+                   for sp in sol.reaction(reaction_index).products]
         r_rev = np.prod([c[index]**nu for index, nu in zip(indices_prod, nu_prod)])
-        # FIXME: It's not clear that this is available other than by this clunky,
-        # string-parsing route
         return k_fwd[reaction_index] * (
                 r_fwd
                 - p.Variable("exp")(log_k_eq[reaction_index]) * r_rev)
