@@ -41,7 +41,6 @@ from pymbolic.mapper.stringifier import StringifyMapper, PREC_NONE, PREC_CALL
 import cantera as ct
 import numpy as np  # noqa: F401
 
-from itertools import compress
 from mako.template import Template
 import pyrometheus.chem_expr
 

@@ -249,9 +249,9 @@ def troe_falloff_expr(react: ct.Reaction, t):
         elif react.rate.type == "Lindemann":
             return 1
         else:
-            raise ValueError(f"Unexpected value of 'rate.type': "
-                             " '{react.rate.type}'")
-    else:        
+            raise ValueError("Unexpected value of 'rate.type': "
+                             f" '{react.rate.type}'")
+    else:
         from warnings import warn
         warn("Legacy 'ct.Reaction.falloff' interface is deprecated "
              "in Cantera 2.6 and will be removed in Cantera 3. "
@@ -266,8 +266,8 @@ def troe_falloff_expr(react: ct.Reaction, t):
         elif react.falloff.falloff_type == "Lindemann":
             return 1
         else:
-            raise ValueError(f"Unexpected value of 'falloff_type': "
-                             " '{react.falloff.falloff_type}'")
+            raise ValueError("Unexpected value of 'falloff_type': "
+                             f" '{react.falloff.falloff_type}'")
 
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
@@ -277,8 +277,8 @@ def troe_falloff_expr(react: ct.Reaction, t):
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
         return p.Variable("log10")(troe_1 + troe_2 + troe_3)
     else:
-        raise ValueError(f"Unexpected length of 'tro_params': "
-                         " '{len(troe_params)}'")
+        raise ValueError("Unexpected length of 'tro_params': "
+                         f" '{len(troe_params)}'")
     return
 
 
@@ -307,8 +307,8 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
     elif falloff_type == "Lindemann":
         return 1
     else:
-        raise ValueError(f"Unexpected value of 'falloff_type': "
-                             " '{falloff_type}'")
+        raise ValueError("Unexpected value of 'falloff_type': "
+                         f" '{falloff_type}'")
 
 # }}}
 
