@@ -256,7 +256,7 @@ def troe_falloff_expr(react: ct.Reaction, t):
         warn("Legacy 'ct.Reaction.falloff' interface is deprecated "
              "in Cantera 2.6 and will be removed in Cantera 3. "
              "Access 'FalloffRate' objects using "
-             " ct.Reaction.rate' instead", DeprecationWarning, stacklevel=2)        
+             " ct.Reaction.rate' instead", DeprecationWarning, stacklevel=2)
         if react.falloff.falloff_type == "Troe":
             if react.falloff.parameters[3]:
                 troe_params = react.falloff.parameters
