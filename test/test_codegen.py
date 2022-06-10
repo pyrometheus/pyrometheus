@@ -109,13 +109,13 @@ def test_generate_mechfile(lang_module, mechname):
         print(code, file=mech_file)
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sandiego"])
+@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml", "uiuc.cti"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_rate_coefficients(mechname, usr_np):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
-    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
+    sol = ct.Solution(f"mechs/{mechname}", "gas")
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
