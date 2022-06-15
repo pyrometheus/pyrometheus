@@ -108,6 +108,7 @@ code_tpl = Template(
 
 
 import numpy as np
+import torch
 
 
 class Thermochemistry:
@@ -185,12 +186,20 @@ class Thermochemistry:
             dict([[sol.species_name(i), i]
                 for i in range(sol.n_species)])}
 
-        self.wts = ${str_np(sol.molecular_weights)}
+        #self.wts = ${str_np(sol.molecular_weights)}
+
+        self.wts = self._pyro_make_tensor(${str_np_inner(sol.molecular_weights)})
         self.iwts = 1/self.wts
 
     def _pyro_zeros_like(self, argument):
         # FIXME: This is imperfect, as a NaN will stay a NaN.
         return 0 * argument
+
+    def _pyro_make_tensor(self, res_list):
+        if self.usr_np is torch:
+            return self.usr_np.DoubleTensor(res_list)
+        else:
+            return self.usr_np.array(res_list)
 
     def _pyro_make_array(self, res_list):
         \"""This works around (e.g.) numpy.exp not working with object
@@ -260,7 +269,12 @@ class Thermochemistry:
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.iwts * rho * mass_fractions
+        #return self.iwts * rho * mass_fractions
+        return self._pyro_make_array([
+                %for i in range(sol.n_species):
+                    self.iwts[${i}]*mass_fractions[${i}]*rho,
+                %endfor
+                ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
@@ -462,6 +476,7 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
         sol=sol,
 
         str_np=str_np,
+        str_np_inner=str_np_inner,
         cgm=CodeGenerationMapper(),
         Variable=p.Variable,
 
