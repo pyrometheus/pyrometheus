@@ -509,10 +509,10 @@ class Thermochemistry:
 
 
 def gen_thermochem_code(sol: ct.Solution) -> str:
-    """For the mechanism given by *sol*, return Python source code for a class conforming
-    to a module containing a class called ``Thermochemistry`` adhering to the
-    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
-    """
+
+
+
+
     return code_tpl.render(
         ct=ct,
         sol=sol,
@@ -539,9 +539,9 @@ def compile_class(code_str, class_name="Thermochemistry"):
 
 
 def get_thermochem_class(sol: ct.Solution):
-    """For the mechanism given by *sol*, return a class conforming to the
-    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
-    """
+
+
+
     return compile_class(gen_thermochem_code(sol))
 
 
