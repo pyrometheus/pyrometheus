@@ -173,17 +173,17 @@ def _zeros_like(argument):
 def transport_polynomial_expr(c, n, t):
     """Generate code for transport polynomials
     :returns: Transport polynomial expression with coefficients c in terms of
-    the temperature t as a :class:`pymbolic.primitives.Expression`. For `thermal_conductivity`, `n = 1`, while for `viscosity` `n = 2`
+    the temperature t as a :class:`pymbolic.primitives.Expression`. For
+    `thermal_conductivity`, `n = 1`, while for `viscosity` `n = 2`
     """
-    log = p.Variable("log")
     assert len(c) == 5
     return (
         (
-            c[0] +
-            c[1] * p.Variable("log")(t) +
-            c[2] * p.Variable("log")(t) ** 2 +
-            c[3] * p.Variable("log")(t) ** 3 +
-            c[4] * p.Variable("log")(t) ** 4
+            c[0]
+            + c[1] * p.Variable("log")(t)
+            + c[2] * p.Variable("log")(t) ** 2
+            + c[3] * p.Variable("log")(t) ** 3
+            + c[4] * p.Variable("log")(t) ** 4
         )**n
     )
 
@@ -191,8 +191,8 @@ def transport_polynomial_expr(c, n, t):
 def wilke_mixture_rule_expr(sol: ct.Solution, sp, x, mu):
     """Generate code for wilke mixture rule
        See Robert Kee "Chemically Reacting Flow" book, chapter 12.
-    
-    :returns: Expression for the Wilke viscosity mixture rule 
+
+    :returns: Expression for the Wilke viscosity mixture rule
         for species *sp* in terms of species mole fractions *w*
         and viscosities *mu* as a :class:`pymbolic.primitives.Expression`
     """
@@ -204,20 +204,20 @@ def wilke_mixture_rule_expr(sol: ct.Solution, sp, x, mu):
         8*(1 + (w[sp]/w[j]))
     ) for j in range(sol.n_species)])
 
-    
-def species_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, Dij):
+
+def species_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, d_ij):
     """Generate code for species mixture rule.
        See Robert Kee "Chemically Reacting Flow" book, chapter 12.
-    
-    :returns: Expression for the species diffusion mixture rule 
+
+    :returns: Expression for the species diffusion mixture rule
         for species *sp* in terms of species mole fractions *w*
-        and binary diffusion *Dij* as a :class:`pymbolic.primitives.Expression`
-        
+        and binary diffusion *d_ij* as a :class:`pymbolic.primitives.Expression`
+
     """
     w = sol.molecular_weights
-    return (1.0 - x[sp]*w[sp]/mmw)/(sum([x[j]/Dij[sp,j]
-     for j in range(sol.n_species)]) - x[sp]/Dij[sp,sp])
-    
+    return (1.0 - x[sp]*w[sp]/mmw)/(sum([x[j]/d_ij[sp, j]
+     for j in range(sol.n_species)]) - x[sp]/d_ij[sp, sp])
+
 # }}}
 
 
