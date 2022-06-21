@@ -301,10 +301,10 @@ class Thermochemistry:
                 ])
 
     def get_mixture_viscosity(self, temperature, mass_fractions):
-        mole_fractions = self.iwts * mass_fractions \
+        mole_fractions = self.iwts * mass_fractions\
                          * self.get_mix_molecular_weight(mass_fractions)
         viscosities = self.usr_np.sqrt(temperature)\
-                      *self.get_species_viscosities(temperature)
+                      * self.get_species_viscosities(temperature)
         mix_rule_f = self._pyro_make_array([
             %for sp in range(sol.n_species):
             ${cgm(ce.wilke_mixture_rule_expr(sol, sp, Variable("mole_fractions"),
@@ -326,7 +326,7 @@ class Thermochemistry:
         mole_fractions = self.iwts * mass_fractions\
                          * self.get_mix_molecular_weight(mass_fractions)
         conductivities = self.usr_np.sqrt(temperature)\
-                         *self.get_species_thermal_conductivities(temperature)
+                         * self.get_species_thermal_conductivities(temperature)
         return 0.5*(sum(mole_fractions*conductivities)
             + 1/sum(mole_fractions/conductivities))
 
@@ -339,17 +339,17 @@ class Thermochemistry:
                       Variable("temperature")))},
                 % endfor
                 % endfor
-                ]).reshape((self.num_species,self.num_species))
+                ]).reshape((self.num_species, self.num_species))
 
     def get_mixture_diffusivity(self, temperature, pressure, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
-        mole_fractions = self.iwts * mass_fractions * mmw
-        Dij = self.get_species_diffusivities(temperature)
+        mole_fractions = self.iwts * mass_fractions*mmw
+        d_ij = self.get_species_diffusivities(temperature)
         mix_rule_f = self.usr_np.sqrt(temperature)*temperature/pressure\
-                     *self._pyro_make_array([
+                     * self._pyro_make_array([
               % for sp in range(sol.n_species):
               ${cgm(ce.species_mixture_rule_expr(sol, sp, Variable("mmw"),
-                Variable("mole_fractions"), Variable("Dij")))},
+                Variable("mole_fractions"), Variable("d_ij")))},
               % endfor
               ])
         return mix_rule_f
