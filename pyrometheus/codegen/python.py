@@ -345,13 +345,13 @@ class Thermochemistry:
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fractions = self.iwts * mass_fractions*mmw
         d_ij = self.get_species_diffusivities(temperature)
-        mix_rule_f = self.usr_np.sqrt(temperature)*temperature/pressure\
-                     * self._pyro_make_array([
+        mix_rule_f = (self.usr_np.sqrt(temperature)*temperature/pressure\
+ * self._pyro_make_array([
               % for sp in range(sol.n_species):
               ${cgm(ce.species_mixture_rule_expr(sol, sp, Variable("mmw"),
                 Variable("mole_fractions"), Variable("d_ij")))},
               % endfor
-              ])
+              ]))
         return mix_rule_f
 
     def get_species_specific_heats_r(self, temperature):
