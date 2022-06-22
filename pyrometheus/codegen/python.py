@@ -302,9 +302,9 @@ class Thermochemistry:
 
     def get_mixture_viscosity(self, temperature, mass_fractions):
         mole_fractions = self.iwts * mass_fractions\
-                         * self.get_mix_molecular_weight(mass_fractions)
+ * self.get_mix_molecular_weight(mass_fractions)
         viscosities = self.usr_np.sqrt(temperature)\
-                      * self.get_species_viscosities(temperature)
+ * self.get_species_viscosities(temperature)
         mix_rule_f = self._pyro_make_array([
             %for sp in range(sol.n_species):
             ${cgm(ce.wilke_mixture_rule_expr(sol, sp, Variable("mole_fractions"),
@@ -324,9 +324,9 @@ class Thermochemistry:
 
     def get_mixture_thermal_conductivity(self, temperature, mass_fractions):
         mole_fractions = self.iwts * mass_fractions\
-                         * self.get_mix_molecular_weight(mass_fractions)
+ * self.get_mix_molecular_weight(mass_fractions)
         conductivities = self.usr_np.sqrt(temperature)\
-                         * self.get_species_thermal_conductivities(temperature)
+ * self.get_species_thermal_conductivities(temperature)
         return 0.5*(sum(mole_fractions*conductivities)
             + 1/sum(mole_fractions/conductivities))
 
