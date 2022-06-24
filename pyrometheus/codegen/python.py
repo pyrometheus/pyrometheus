@@ -270,7 +270,7 @@ class Thermochemistry:
 
     def get_concentrations(self, rho, mass_fractions):
         #return self.iwts * rho * mass_fractions
-        return self._pyro_make_array([
+        return self._pyro_make_tensor([
                 %for i in range(sol.n_species):
                     self.iwts[${i}]*mass_fractions[${i}]*rho,
                 %endfor
@@ -301,21 +301,21 @@ class Thermochemistry:
         return self.gas_constant * temperature * emix
 
     def get_species_specific_heats_r(self, temperature):
-        return self._pyro_make_array([
+        return self._pyro_make_tensor([
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
                 ])
 
     def get_species_enthalpies_rt(self, temperature):
-        return self._pyro_make_array([
+        return self._pyro_make_tensor([
             % for sp in sol.species():
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
                 ])
 
     def get_species_entropies_r(self, temperature):
-        return self._pyro_make_array([
+        return self._pyro_make_tensor([
             % for sp in sol.species():
                 ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
@@ -331,7 +331,7 @@ class Thermochemistry:
         c0 = self.usr_np.log(self.one_atm / rt)
 
         g0_rt = self.get_species_gibbs_rt(temperature)
-        return self._pyro_make_array([
+        return self._pyro_make_tensor([
             %for i, react in enumerate(sol.reactions()):
                 %if react.reversible:
                     ${cgm(ce.equilibrium_constants_expr(
@@ -359,16 +359,21 @@ class Thermochemistry:
             f = enthalpy_or_energy - he_fun(t_i, y)
             j = -pv_fun(t_i, y)
             dt = -f / j
+
+            # Limit step size to 100 K as in Cantera
+            dt = self.usr_np.clip(dt, -100, 100)
+
             t_i += dt
             if self._pyro_norm(dt, np.inf) < tol:
                 return t_i
 
-        raise RuntimeError("Temperature iteration failed to converge")
+        raise RuntimeError("Temperature iteration failed to converge, min(T)={:7.4e}, max(T)={:7.4e}"
+                           .format(self.usr_np.min(t_i), self.usr_np.max(t_i)))
 
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
         ones = self._pyro_zeros_like(temperature) + 1.0
-        k_high = self._pyro_make_array([
+        k_high = self._pyro_make_tensor([
         %for _, react in falloff_reactions:
             %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
@@ -380,7 +385,7 @@ class Thermochemistry:
         %endfor
                 ])
 
-        k_low = self._pyro_make_array([
+        k_low = self._pyro_make_tensor([
         %for _, react in falloff_reactions:
             %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
@@ -392,20 +397,20 @@ class Thermochemistry:
         %endfor
                 ])
 
-        reduced_pressure = self._pyro_make_array([
+        reduced_pressure = self._pyro_make_tensor([
         %for i, (_, react) in enumerate(falloff_reactions):
             (${cgm(ce.third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
                             ])
 
-        falloff_center = self._pyro_make_array([
+        falloff_center = self._pyro_make_tensor([
         %for _, react in falloff_reactions:
             ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))},
         %endfor
                         ])
 
-        falloff_function = self._pyro_make_array([
+        falloff_function = self._pyro_make_tensor([
         %for i, (_, react) in enumerate(falloff_reactions):
             ${cgm(ce.falloff_function_expr(
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
@@ -439,12 +444,12 @@ class Thermochemistry:
         k_fwd[${i}] *= (${cgm(ce.third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
-        return self._pyro_make_array(k_fwd)
+        return self._pyro_make_tensor(k_fwd)
 
     def get_net_rates_of_progress(self, temperature, concentrations):
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
-        return self._pyro_make_array([
+        return self._pyro_make_tensor([
                 %for i in range(sol.n_reactions):
                     ${cgm(ce.rate_of_progress_expr(sol, i,
                         Variable("concentrations"),
@@ -456,7 +461,7 @@ class Thermochemistry:
         c = self.get_concentrations(rho, mass_fractions)
         r_net = self.get_net_rates_of_progress(temperature, c)
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
-        return self._pyro_make_array([
+        return self._pyro_make_tensor([
             %for sp in sol.species():
                 ${cgm(ce.production_rate_expr(
                     sol, sp.name, Variable("r_net")))} * ones,
