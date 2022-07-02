@@ -27,8 +27,8 @@ THE SOFTWARE.
 Internal Functionality
 ^^^^^^^^^^^^^^^^^^^^^^
 .. autofunction:: transport_polynomial_expr
-.. autofunction:: wilke_mixture_rule_expr
-.. autofunction:: species_mixture_rule_expr
+.. autofunction:: viscosity_mixture_rule_wilke_expr
+.. autofunction:: species_mass_diff_mixture_rule_expr
 .. autofunction:: equilibrium_constants_expr
 .. autofunction:: rate_coefficient_expr
 .. autofunction:: third_body_efficiencies_expr
@@ -172,6 +172,7 @@ def _zeros_like(argument):
 
 def transport_polynomial_expr(c, n, t):
     """Generate code for transport polynomials
+    
     :returns: Transport polynomial expression with coefficients c in terms of
     the temperature t as a :class:`pymbolic.primitives.Expression`. For
     `thermal_conductivity`, `n = 1`, while for `viscosity` `n = 2`
@@ -188,9 +189,10 @@ def transport_polynomial_expr(c, n, t):
     )
 
 
-def wilke_mixture_rule_expr(sol: ct.Solution, sp, x, mu):
-    """Generate code for wilke mixture rule
-       See Robert Kee "Chemically Reacting Flow" book, chapter 12.
+def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
+    """Generate code for species mixture rule.
+       See Robert J. Kee, Michael E. Coltrin and Peter Glarborg
+       "Chemically Reacting Flow" book, chapter 12.
 
     :returns: Expression for the Wilke viscosity mixture rule
         for species *sp* in terms of species mole fractions *w*
@@ -205,18 +207,18 @@ def wilke_mixture_rule_expr(sol: ct.Solution, sp, x, mu):
     ) for j in range(sol.n_species)])
 
 
-def species_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, d_ij):
+def species_mass_diff_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, diff_ij):
     """Generate code for species mixture rule.
-       See Robert Kee "Chemically Reacting Flow" book, chapter 12.
+       See Robert J. Kee, Michael E. Coltrin and Peter Glarborg
+       "Chemically Reacting Flow" book, chapter 12.
 
-    :returns: Expression for the species diffusion mixture rule
+    :returns: Expression for the species mass diffusion mixture rule
         for species *sp* in terms of species mole fractions *w*
-        and binary diffusion *d_ij* as a :class:`pymbolic.primitives.Expression`
-
+        and binary diffusivity *diff_ij* as a :class:`pymbolic.primitives.Expression`
     """
     w = sol.molecular_weights
-    return (1.0 - x[sp]*w[sp]/mmw)/(sum([x[j]/d_ij[sp, j]
-     for j in range(sol.n_species)]) - x[sp]/d_ij[sp, sp])
+    return (1.0 - x[sp]*w[sp]/mmw)/(sum([x[j]/diff_ij[sp, j]
+     for j in range(sol.n_species)]) - x[sp]/diff_ij[sp, sp])
 
 # }}}
 
@@ -230,7 +232,6 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
         index *reaction_index* in terms of the species Gibbs
         functions *gibbs_rt* as a :class:`pymbolic.primitives.Expression`
     """
-
     indices_reac = [sol.species_index(sp)
                     for sp in sol.reaction(reaction_index).reactants]
     indices_prod = [sol.species_index(sp)

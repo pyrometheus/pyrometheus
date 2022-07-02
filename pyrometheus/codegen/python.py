@@ -293,28 +293,27 @@ class Thermochemistry:
         return self.gas_constant * temperature * emix
 
     def get_species_viscosities(self, temperature):
-        return self._pyro_make_array([
+        return self.usr_np.sqrt(temperature)*self._pyro_make_array([
                 % for sp in range(sol.n_species):
                 ${cgm(ce.transport_polynomial_expr(sol.get_viscosity_polynomial(sp),
                                                     2, Variable("temperature")))},
                 % endfor
                 ])
 
-    def get_mixture_viscosity(self, temperature, mass_fractions):
+    def get_mixture_averaged_viscosity(self, temperature, mass_fractions):
         mole_fractions = self.iwts * mass_fractions\
  * self.get_mix_molecular_weight(mass_fractions)
-        viscosities = self.usr_np.sqrt(temperature)\
- * self.get_species_viscosities(temperature)
+        viscosities = self.get_species_viscosities(temperature)
         mix_rule_f = self._pyro_make_array([
             %for sp in range(sol.n_species):
-            ${cgm(ce.wilke_mixture_rule_expr(sol, sp, Variable("mole_fractions"),
-                                             Variable("viscosities")))},
+            ${cgm(ce.viscosity_mixture_rule_wilke_expr(sol, sp,
+                 Variable("mole_fractions"), Variable("viscosities")))},
             %endfor
             ])
         return sum(mole_fractions*viscosities/mix_rule_f)
 
     def get_species_thermal_conductivities(self, temperature):
-        return self._pyro_make_array([
+        return self.usr_np.sqrt(temperature)*self._pyro_make_array([
                 % for sp in range(sol.n_species):
                 ${cgm(ce.transport_polynomial_expr(
                     sol.get_thermal_conductivity_polynomial(sp), 1,
@@ -322,34 +321,34 @@ class Thermochemistry:
                 % endfor
                 ])
 
-    def get_mixture_thermal_conductivity(self, temperature, mass_fractions):
+    def get_mixture_averaged_thermal_conductivity(self, temperature, mass_fractions):
         mole_fractions = self.iwts * mass_fractions\
  * self.get_mix_molecular_weight(mass_fractions)
-        conductivities = self.usr_np.sqrt(temperature)\
- * self.get_species_thermal_conductivities(temperature)
+        conductivities = self.get_species_thermal_conductivities(temperature)
         return 0.5*(sum(mole_fractions*conductivities)
             + 1/sum(mole_fractions/conductivities))
 
-    def get_species_diffusivities(self, temperature):
+    def get_species_mass_diffusivities(self, temperature):
         return self._pyro_make_array([
-                % for ii in range(sol.n_species):
-                % for jj in range(sol.n_species):
+                % for i in range(sol.n_species):
+                % for j in range(sol.n_species):
                 ${cgm(ce.transport_polynomial_expr(
-                      sol.get_binary_diff_coeffs_polynomial(ii,jj), 1,
+                      sol.get_binary_diff_coeffs_polynomial(i, j), 1,
                       Variable("temperature")))},
                 % endfor
                 % endfor
                 ]).reshape((self.num_species, self.num_species))
 
-    def get_mixture_diffusivity(self, temperature, pressure, mass_fractions):
+    def get_mixture_averaged_mass_diffusivity(self,
+ temperature, pressure, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fractions = self.iwts * mass_fractions*mmw
-        d_ij = self.get_species_diffusivities(temperature)
+        diff_ij = self.get_species_mass_diffusivities(temperature)
         mix_rule_f = (self.usr_np.sqrt(temperature)*temperature/pressure\
  * self._pyro_make_array([
               % for sp in range(sol.n_species):
-              ${cgm(ce.species_mixture_rule_expr(sol, sp, Variable("mmw"),
-                Variable("mole_fractions"), Variable("d_ij")))},
+              ${cgm(ce.species_mass_diff_mixture_rule_expr(sol, sp, Variable("mmw"),
+                Variable("mole_fractions"), Variable("diff_ij")))},
               % endfor
               ]))
         return mix_rule_f
