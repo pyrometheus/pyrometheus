@@ -172,7 +172,7 @@ def _zeros_like(argument):
 
 def transport_polynomial_expr(c, n, t):
     """Generate code for transport polynomials
-    
+
     :returns: Transport polynomial expression with coefficients c in terms of
     the temperature t as a :class:`pymbolic.primitives.Expression`. For
     `thermal_conductivity`, `n = 1`, while for `viscosity` `n = 2`

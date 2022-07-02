@@ -135,11 +135,11 @@ class Thermochemistry:
     .. automethod:: get_mixture_enthalpy_mass
     .. automethod:: get_mixture_internal_energy_mass
     .. automethod:: get_species_viscosities
-    .. automethod:: get_mixture_viscosity
+    .. automethod:: get_mixture_averaged_viscosity
     .. automethod:: get_species_thermal_conductivities
-    .. automethod:: get_mixture_thermal_conductivity
-    .. automethod:: get_species_diffusivities
-    .. automethod:: get_mixture_diffusivity
+    .. automethod:: get_mixture_averaged_thermal_conductivity
+    .. automethod:: get_species_mass_diffusivities
+    .. automethod:: get_mixture_averaged_mass_diffusivity
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
     .. automethod:: get_species_entropies_r

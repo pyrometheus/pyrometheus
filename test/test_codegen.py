@@ -265,8 +265,8 @@ def test_get_transport_properties_temperature(mechname, fuel, stoich_ratio, usr_
         # Loop over species, because apparently cannot
         # access species transport directly through Python
         for i, name in enumerate(sol.species_names):
-            sol.TPY = t, ct.one_atm, name + ':1'
-            # Viscosity error            
+            sol.TPY = t, ct.one_atm, name + ":1"
+            # Viscosity error
             mu_err = np.abs(mu_pm[i] - sol.viscosity)
             assert mu_err < 1.0e-12
             # Conductivity
