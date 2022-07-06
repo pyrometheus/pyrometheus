@@ -135,11 +135,11 @@ class Thermochemistry:
     .. automethod:: get_mixture_enthalpy_mass
     .. automethod:: get_mixture_internal_energy_mass
     .. automethod:: get_species_viscosities
-    .. automethod:: get_mixture_averaged_viscosity
+    .. automethod:: get_mixture_viscosity_mixavg
     .. automethod:: get_species_thermal_conductivities
-    .. automethod:: get_mixture_averaged_thermal_conductivity
-    .. automethod:: get_species_mass_diffusivities
-    .. automethod:: get_mixture_averaged_mass_diffusivity
+    .. automethod:: get_mixture_thermal_conductivity_mixavg
+    .. automethod:: get_species_binary_mass_diffusivities
+    .. automethod:: get_species_mass_diffusivities_mixavg
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
     .. automethod:: get_species_entropies_r
@@ -300,7 +300,7 @@ class Thermochemistry:
                 % endfor
                 ])
 
-    def get_mixture_averaged_viscosity(self, temperature, mass_fractions):
+    def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
         mole_fractions = self.iwts * mass_fractions\
  * self.get_mix_molecular_weight(mass_fractions)
         viscosities = self.get_species_viscosities(temperature)
@@ -321,14 +321,14 @@ class Thermochemistry:
                 % endfor
                 ])
 
-    def get_mixture_averaged_thermal_conductivity(self, temperature, mass_fractions):
+    def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
         mole_fractions = self.iwts * mass_fractions\
  * self.get_mix_molecular_weight(mass_fractions)
         conductivities = self.get_species_thermal_conductivities(temperature)
         return 0.5*(sum(mole_fractions*conductivities)
             + 1/sum(mole_fractions/conductivities))
 
-    def get_species_mass_diffusivities(self, temperature):
+    def get_species_binary_mass_diffusivities(self, temperature):
         return self._pyro_make_array([
                 % for i in range(sol.n_species):
                 % for j in range(sol.n_species):
@@ -339,11 +339,11 @@ class Thermochemistry:
                 % endfor
                 ]).reshape((self.num_species, self.num_species))
 
-    def get_mixture_averaged_mass_diffusivity(self,
+    def get_species_mass_diffusivities_mixavg(self,
  temperature, pressure, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fractions = self.iwts * mass_fractions*mmw
-        diff_ij = self.get_species_mass_diffusivities(temperature)
+        diff_ij = self.get_species_binary_mass_diffusivities(temperature)
         mix_rule_f = (self.usr_np.sqrt(temperature)*temperature/pressure\
  * self._pyro_make_array([
               % for sp in range(sol.n_species):
