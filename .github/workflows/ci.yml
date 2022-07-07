@@ -85,7 +85,7 @@ jobs:
                 curl -L -O https://tiker.net/ci-support-v0
                 . ci-support-v0
                 build_py_project_in_conda_env
-                python .ci/generate-example-mech.py test/mechs/sanDiego.cti pyrometheus/thermochem_example.py
+                python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
                 build_docs
 
     downstream_tests:

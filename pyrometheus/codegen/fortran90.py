@@ -472,7 +472,7 @@ contains
         %for i, react in enumerate(sol.reactions()):
         %if react.reversible:
         k_eq(${i+1}) = ${cgm(
-            ce.equilibrium_constants_expr(sol, react, Variable("g0_rt")))}
+            ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))}
         %else:
         k_eq(${i+1}) = -0.1d0*temperature
         %endif
@@ -525,7 +525,7 @@ contains
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: concentrations
-        ${real_type}, intent(out), dimension(${len(falloff_reactions)}) :: k_fwd
+        ${real_type}, intent(out), dimension(num_reactions) :: k_fwd
 
         ${real_type}, dimension(${len(falloff_reactions)}) :: k_high
         ${real_type}, dimension(${len(falloff_reactions)}) :: k_low
@@ -533,39 +533,43 @@ contains
         ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_center
         ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_function
 
-        %for i, react in enumerate(falloff_reactions):
+        %for i, (_, react) in enumerate(falloff_reactions):
+        %if react.uses_legacy:
         k_high(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.high_rate, Variable("temperature")))}
+        %else:
+        k_high(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.rate.high_rate, Variable("temperature")))}
+        %endif
         %endfor
 
-        %for i, react in enumerate(falloff_reactions):
+        %for i, (_, react) in enumerate(falloff_reactions):
+        %if react.uses_legacy:
         k_low(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.low_rate, Variable("temperature")))}
+        %else:
+        k_low(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.rate.low_rate, Variable("temperature")))}
+        %endif
         %endfor
 
-        %for i, react in enumerate(falloff_reactions):
+        %for i, (_, react) in enumerate(falloff_reactions):
         reduced_pressure(${i+1}) = (${cgm(
             ce.third_body_efficiencies_expr(sol, 
                                             react, 
                                             Variable("concentrations")))})*k_low(${i+1})/k_high(${i+1})
         %endfor
 
-        %for i, react in enumerate(falloff_reactions):
-        %if react.falloff.falloff_type == "Troe":
+        %for i, (_, react) in enumerate(falloff_reactions):        
         falloff_center(${i+1}) = log10(${cgm(ce.troe_falloff_expr(react, Variable("temperature")))})
-        %else:
-        falloff_center(${i+1}) = 1.d0
-        %endif
         %endfor
 
-        %for i, react in enumerate(falloff_reactions):
+        %for i, (_, react) in enumerate(falloff_reactions):
         falloff_function(${i+1}) = ${cgm(ce.falloff_function_expr(react, i, 
                                          Variable("temperature"),
                                          Variable("reduced_pressure"),
                                          Variable("falloff_center")))}
         %endfor
 
-        %for i in range(len(falloff_reactions)):
-        k_fwd(${i+1}) = k_high(${i+1})*falloff_function(${i+1}) * &
-            reduced_pressure(${i+1})/(1.d0 + reduced_pressure(${i+1}))
+        %for j, (i, react) in range(len(falloff_reactions)):
+        k_fwd(${i+1}) = k_high(${j+1})*falloff_function(${j+1}) * &
+            reduced_pressure(${j+1})/(1.d0 + reduced_pressure(${j+1}))
         %endfor
 
     end subroutine get_falloff_rates
@@ -589,18 +593,15 @@ contains
         %endif
         %endfor
 
-        %for react in three_body_reactions:
-        k_fwd(${int(react.ID)}) = k_fwd(${int(react.ID)}) * ( &
+        %if falloff_reactions:
+        call get_falloff_rates(temperature, concentrations, k_fwd)
+        %endif
+
+        %for i, react in three_body_reactions:
+        k_fwd(${i+1}) = k_fwd(${i+1}) * ( &
             ${cgm(ce.third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
-
-        %if falloff_reactions:
-        call get_falloff_rates(temperature, concentrations, k_falloff)        
-        %for i, react in enumerate(falloff_reactions):
-        k_fwd(${int(react.ID)}) = k_falloff(${i+1})
-        %endfor
-        %endif
 
     end subroutine get_fwd_rate_coefficients
 
@@ -615,8 +616,8 @@ contains
 
         call get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
         call get_equilibrium_constants(temperature, log_k_eq)
-        %for i, react in enumerate(sol.reactions()):
-        r_net(${i+1}) = ${cgm(ce.rate_of_progress_expr(sol, react,
+        %for i in rage(sol.n_reactions):
+        r_net(${i+1}) = ${cgm(ce.rate_of_progress_expr(sol, i,
                         Variable("concentrations"),
                         Variable("k_fwd"), Variable("log_k_eq")))}
         %endfor
@@ -672,16 +673,11 @@ def gen_thermochem_code(sol: ct.Solution, real_type="real(kind(1.d0))",
         elem_matrix=np.array([sol.n_atoms(i, j)
                               for i, j in product(range(sol.n_species),
                                                   range(sol.n_elements))]),
-
-        falloff_reactions=list(compress(sol.reactions(),
-                                        [isinstance(r, ct.FalloffReaction)
-                                         for r in sol.reactions()])),
-        non_falloff_reactions=list(compress(sol.reactions(),
-                                            [not isinstance(r, ct.FalloffReaction)
-                                             for r in sol.reactions()])),
-        three_body_reactions=list(compress(sol.reactions(),
-                                           [isinstance(r, ct.ThreeBodyReaction)
-                                            for r in sol.reactions()])),
+        
+        falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
+                           if isinstance(react, ct.FalloffReaction)],
+        three_body_reactions=[(i, react) for i, react in enumerate(sol.reactions())
+                             if isinstance(react, ct.ThreeBodyReaction)],
     ))
 
 

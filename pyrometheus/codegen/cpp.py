@@ -200,9 +200,9 @@ struct thermochemistry
         ScalarT c0 = std::log(one_atm/rt);
         ContainerT g0_rt = get_species_gibbs_rt(temperature);
         ContainerT k_eq = {
-        %for react in sol.reactions():
+        %for i, react in enumerate(sol.reactions()):
         %if react.reversible:
-        ${cgm(ce.equilibrium_constants_expr(sol, react, Variable("g0_rt")))},
+        ${cgm(ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))},
         %else:
         -0.17364695002734*temperature,
         %endif
@@ -232,40 +232,46 @@ struct thermochemistry
     static void get_falloff_rates(ScalarT temperature, ContainerT const &concentrations, ContainerT &k_fwd)
     {
         ContainerT k_high = {
-        %for react in falloff_reactions:
+        %for _, react in falloff_reactions:
+            %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
                 react.high_rate, Variable("temperature")))}, 
+            %else:
+            ${cgm(ce.rate_coefficient_expr(
+                react.rate.high_rate, Variable("temperature")))},
+            %endif
         %endfor
         };
 
         ContainerT k_low = {
-        %for react in falloff_reactions:
+        %for _, react in falloff_reactions:
+            %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
-                react.low_rate, Variable("temperature")))}, 
+                react.low_rate, Variable("temperature")))},
+            %else:
+            ${cgm(ce.rate_coefficient_expr(
+                react.rate.low_rate, Variable("temperature")))}, 
+            %endif
         %endfor
         };
 
         ContainerT reduced_pressure = {
-        %for i, react in enumerate(falloff_reactions):
+        %for i, (_, react) in enumerate(falloff_reactions):
             (${cgm(ce.third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
         };
 
         ContainerT falloff_center = {
-        %for react in falloff_reactions:
-            %if react.falloff.falloff_type == "Troe":
-            log10(${cgm(ce.troe_falloff_expr(react, Variable("temperature")))}),
-            %else:
-            1.0,
-            %endif
+        %for _, react in falloff_reactions:
+            ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))},
         %endfor
         };
 
-        %for i, react in enumerate(falloff_reactions):
-        k_fwd[${int(react.ID)-1}] = k_high[${i}]*${cgm(ce.falloff_function_expr(
+        %for j, (i, react) in enumerate(falloff_reactions):
+        k_fwd[${i}] = k_high[${j}]*${cgm(ce.falloff_function_expr(
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
-                Variable("falloff_center")))} * reduced_pressure[${i}]/(1.0 + reduced_pressure[${i}]);
+                Variable("falloff_center")))} * reduced_pressure[${j}]/(1.0 + reduced_pressure[${j}]);
         %endfor
     };
 
@@ -287,8 +293,8 @@ struct thermochemistry
         get_falloff_rates(temperature, concentrations, k_fwd);
         %endif
 
-        %for react in three_body_reactions:
-        k_fwd[${int(react.ID)-1}] *= (${cgm(ce.third_body_efficiencies_expr(
+        %for i, react in three_body_reactions:
+        k_fwd[${i}] *= (${cgm(ce.third_body_efficiencies_expr(
         sol, react, Variable("concentrations")))});
         %endfor
         return k_fwd;
@@ -299,8 +305,8 @@ struct thermochemistry
         ContainerT k_fwd = get_fwd_rate_coefficients(temperature, concentrations);
         ContainerT log_k_eq = get_equilibrium_constants(temperature);
         ContainerT r_net = {
-        %for react in sol.reactions():
-        ${cgm(ce.rate_of_progress_expr(sol, react, Variable("concentrations"),
+        %for i in range(sol.n_reactions):
+        ${cgm(ce.rate_of_progress_expr(sol, i, Variable("concentrations"),
         Variable("k_fwd"), Variable("log_k_eq")))}, 
         %endfor
         };
@@ -342,15 +348,10 @@ def gen_thermochem_code(sol: ct.Solution, namespace='pyrometheus') -> str:
 
         ce=pyrometheus.chem_expr,
 
-        falloff_reactions=list(compress(sol.reactions(),
-                                        [isinstance(r, ct.FalloffReaction)
-                                         for r in sol.reactions()])),
-        non_falloff_reactions=list(compress(sol.reactions(),
-                                            [not isinstance(r, ct.FalloffReaction)
-                                             for r in sol.reactions()])),
-        three_body_reactions=list(compress(sol.reactions(),
-                                           [isinstance(r, ct.ThreeBodyReaction)
-                                            for r in sol.reactions()])),
+        falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
+                           if isinstance(react, ct.FalloffReaction)],
+        three_body_reactions=[(i, react) for i, react in enumerate(sol.reactions())
+                             if isinstance(react, ct.ThreeBodyReaction)],
     )
 
 
