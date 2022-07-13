@@ -44,6 +44,7 @@ import numpy as np  # noqa: F401
 from mako.template import Template
 import pyrometheus.chem_expr
 
+from itertools import product
 
 file_extension = "py"
 
@@ -330,12 +331,10 @@ class Thermochemistry:
 
     def get_species_binary_mass_diffusivities(self, temperature):
         return self._pyro_make_array([
-                % for i in range(sol.n_species):
-                % for j in range(sol.n_species):
+                % for i, j, in product(range(sol.n_species), range(sol.n_species)):
                 ${cgm(ce.transport_polynomial_expr(
                       sol.get_binary_diff_coeffs_polynomial(i, j), 1,
                       Variable("temperature")))},
-                % endfor
                 % endfor
                 ]).reshape((self.num_species, self.num_species))
 
@@ -527,6 +526,8 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     return code_tpl.render(
         ct=ct,
         sol=sol,
+
+        product=product,
 
         str_np=str_np,
         cgm=CodeGenerationMapper(),
