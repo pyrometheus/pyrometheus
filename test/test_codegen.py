@@ -502,8 +502,6 @@ def test_pyro_on_grids(usr_np):
     temperature = temp_ox + (temp_fu - temp_ox)*grid
     density = pyro_gas.get_density(pressure, temperature, mass_frac)
     omega = pyro_gas.get_net_production_rates(density, temperature, mass_frac)
-
-    print(omega.shape)
     
     omega_ct = usr_np.array([])
     for i in range(num_points):
