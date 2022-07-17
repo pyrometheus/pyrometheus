@@ -140,6 +140,7 @@ class Thermochemistry:
     .. automethod:: get_species_thermal_conductivities
     .. automethod:: get_mixture_thermal_conductivity_mixavg
     .. automethod:: get_species_binary_mass_diffusivities
+    .. automethod:: get_species_self_mass_diffusivities
     .. automethod:: get_species_mass_diffusivities_mixavg
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
@@ -337,6 +338,16 @@ class Thermochemistry:
                       Variable("temperature")))},
                 % endfor
                 ]).reshape((self.num_species, self.num_species))
+
+    def get_species_self_mass_diffusivities(self, temperature, pressure):
+        return self.usr_np.sqrt(temperature)*temperature/pressure\
+ * self._pyro_make_array([
+                % for i in range(sol.n_species):
+                ${cgm(ce.transport_polynomial_expr(
+                      sol.get_binary_diff_coeffs_polynomial(i, i), 1,
+                      Variable("temperature")))},
+                % endfor
+                ])
 
     def get_species_mass_diffusivities_mixavg(self,
  temperature, pressure, mass_fractions):

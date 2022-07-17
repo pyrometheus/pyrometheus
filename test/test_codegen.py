@@ -195,18 +195,24 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
     # Loop over each individual species
     # There is not check for species mass diff. since it is only valid for a mixture
     for t in temp:
+        sol.TP = t, ct.one_atm
         mu_pm = ptk.get_species_viscosities(t)
         kappa_pm = ptk.get_species_thermal_conductivities(t)
+        dii_pm = ptk.get_species_self_mass_diffusivities(t, ct.one_atm)
+        dii_ct = usr_np.diag(sol.binary_diff_coeffs)
         # Loop over species, because apparently cannot
         # access species transport directly through Python
         for i, name in enumerate(sol.species_names):
-            sol.TPY = t, ct.one_atm, name + ":1"
+            sol.Y = name + ":1"
             # Viscosity error
             mu_err = np.abs(mu_pm[i] - sol.viscosity)
             assert mu_err < 1.0e-12
             # Conductivity
             kappa_err = np.abs(kappa_pm[i] - sol.thermal_conductivity)
             assert kappa_err < 1.0e-12
+            # Self mass diffusivity
+            dii_err = np.abs(dii_pm[i] - dii_ct[i])
+            assert dii_err < 1.0e-12
 
     # Now test mixture rules, with a reactor
     # to get sensible mass fractions
