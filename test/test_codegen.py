@@ -198,12 +198,13 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
         sol.TP = t, ct.one_atm
         mu_pm = ptk.get_species_viscosities(t)
         kappa_pm = ptk.get_species_thermal_conductivities(t)
-        dii_pm = ptk.get_species_self_mass_diffusivities(t, ct.one_atm)
         dii_ct = usr_np.diag(sol.binary_diff_coeffs)
         # Loop over species, because apparently cannot
         # access species transport directly through Python
         for i, name in enumerate(sol.species_names):
             sol.Y = name + ":1"
+            y = sol.Y
+            dii_pm = ptk.get_species_mass_diffusivities_mixavg(t, ct.one_atm, y)
             # Viscosity error
             mu_err = np.abs(mu_pm[i] - sol.viscosity)
             assert mu_err < 1.0e-12

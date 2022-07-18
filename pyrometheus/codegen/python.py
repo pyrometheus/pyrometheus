@@ -140,7 +140,6 @@ class Thermochemistry:
     .. automethod:: get_species_thermal_conductivities
     .. automethod:: get_mixture_thermal_conductivity_mixavg
     .. automethod:: get_species_binary_mass_diffusivities
-    .. automethod:: get_species_self_mass_diffusivities
     .. automethod:: get_species_mass_diffusivities_mixavg
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
@@ -339,29 +338,21 @@ class Thermochemistry:
                 % endfor
                 ]).reshape((self.num_species, self.num_species))
 
-    def get_species_self_mass_diffusivities(self, temperature, pressure):
-        return self.usr_np.sqrt(temperature)*temperature/pressure\
- * self._pyro_make_array([
-                % for i in range(sol.n_species):
-                ${cgm(ce.transport_polynomial_expr(
-                      sol.get_binary_diff_coeffs_polynomial(i, i), 1,
-                      Variable("temperature")))},
-                % endfor
-                ])
-
-    def get_species_mass_diffusivities_mixavg(self,
- temperature, pressure, mass_fractions):
+    def get_species_mass_diffusivities_mixavg(self, temperature,
+                                              pressure, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fractions = self.iwts * mass_fractions*mmw
         diff_ij = self.get_species_binary_mass_diffusivities(temperature)
-        mix_rule_f = (self.usr_np.sqrt(temperature)*temperature/pressure\
- * self._pyro_make_array([
+        mix_rule_f = self._pyro_make_array([
               % for sp in range(sol.n_species):
+              self.usr_np.where(self.usr_np.greater(mole_fractions[${sp}], 0.9999999),
+              diff_ij[${cgm(sp)},${cgm(sp)}],
               ${cgm(ce.species_mass_diff_mixture_rule_expr(sol, sp, Variable("mmw"),
                 Variable("mole_fractions"), Variable("diff_ij")))},
+              ),
               % endfor
-              ]))
-        return mix_rule_f
+              ])
+        return self.usr_np.sqrt(temperature)*temperature/pressure*mix_rule_f
 
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
