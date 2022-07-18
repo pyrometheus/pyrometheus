@@ -346,10 +346,10 @@ class Thermochemistry:
         mix_rule_f = self._pyro_make_array([
               % for sp in range(sol.n_species):
               self.usr_np.where(
-              self.usr_np.greater(mole_fractions[${sp}], 0.9999999),
-              diff_ij[${cgm(sp)},${cgm(sp)}],
-              ${cgm(ce.species_mass_diff_mixture_rule_expr(sol, sp, Variable("mmw"),
-                Variable("mole_fractions"), Variable("diff_ij")))},
+                  self.usr_np.greater(mole_fractions[${sp}], 0.9999999),
+                  diff_ij[${cgm(sp)}, ${cgm(sp)}],
+                  ${cgm(ce.species_mass_diff_mixture_rule_expr(sol, sp,
+              Variable("mmw"), Variable("mole_fractions"), Variable("diff_ij")))},
               ),
               % endfor
               ])
