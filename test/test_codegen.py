@@ -379,7 +379,8 @@ def test_autodiff_accuracy():
     def chemical_source_term(mass_fractions):
         temperature = pyro_gas.get_temperature(enthalpy, guess_temp, mass_fractions)
         density = pyro_gas.get_density(pyro_gas.one_atm, temperature, mass_fractions)
-        return pyro_gas.get_net_production_rates(density, temperature, mass_fractions)
+        return pyro_gas.get_net_production_rates(
+            density, temperature, mass_fractions)
 
     from jax import jacfwd
     chemical_jacobian = jacfwd(chemical_source_term)
@@ -482,7 +483,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 def test_pyro_on_grids(usr_np):
     """This function tests that pyrometheus-generated code
     computes Cantera-predicted production rates on grids"""
-    sol = ct.Solution(f"mechs/sandiego.yaml", "gas")
+    sol = ct.Solution("mechs/sandiego.yaml", "gas")
     pyro_gas = pyro.codegen.python.get_thermochem_class(sol)()
 
     num_points = 101
@@ -492,17 +493,17 @@ def test_pyro_on_grids(usr_np):
     temp_ox = 1200
     temp_fu = 500
 
-    sol.TPX = temp_ox, pressure, 'O2:0.2, O:0.01, N2:0.79'
+    sol.TPX = temp_ox, pressure, "O2:0.2, O:0.01, N2:0.79"
     y_ox = sol.Y
 
-    sol.TPX = temp_fu, pressure, 'H2:0.49, H:0.01, N2:0.5'
+    sol.TPX = temp_fu, pressure, "H2:0.49, H:0.01, N2:0.5"
     y_fu = sol.Y
 
     mass_frac = (y_ox + (y_fu - y_ox)*grid[:, None]).T
     temperature = temp_ox + (temp_fu - temp_ox)*grid
     density = pyro_gas.get_density(pressure, temperature, mass_frac)
     omega = pyro_gas.get_net_production_rates(density, temperature, mass_frac)
-    
+
     omega_ct = usr_np.array([])
     for i in range(num_points):
         sol.TPY = temperature[i], ct.one_atm, mass_frac[:, i]
