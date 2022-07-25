@@ -235,7 +235,6 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
     reactor = ct.IdealGasConstPressureReactor(sol)
     sim = ct.ReactorNet([reactor])
 
-    dt = 1.0e-7
     time = 0.0
 
     for _ in range(3000):

@@ -339,7 +339,7 @@ class Thermochemistry:
                 ]).reshape((self.num_species, self.num_species))
 
     def get_species_mass_diffusivities_mixavg(self, temperature, pressure,
-                                              mass_fractions, threshold=1e-7):
+                                              mass_fractions, threshold=1.e-7):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fractions = self.iwts * mass_fractions*mmw
         diff_ij = self.get_species_binary_mass_diffusivities(temperature)
