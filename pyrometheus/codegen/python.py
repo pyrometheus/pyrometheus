@@ -338,18 +338,18 @@ class Thermochemistry:
                 % endfor
                 ]).reshape((self.num_species, self.num_species))
 
-    def get_species_mass_diffusivities_mixavg(self, temperature,
-                                              pressure, mass_fractions):
+    def get_species_mass_diffusivities_mixavg(self, temperature, pressure,
+                                              mass_fractions, threshold=1e-7):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fractions = self.iwts * mass_fractions*mmw
         diff_ij = self.get_species_binary_mass_diffusivities(temperature)
         mix_rule_f = self._pyro_make_array([
               % for sp in range(sol.n_species):
               self.usr_np.where(
-                  self.usr_np.greater(mole_fractions[${sp}], 0.9999999),
-                  diff_ij[${cgm(sp)}, ${cgm(sp)}],
+                  self.usr_np.greater(1.0-mole_fractions[${sp}], threshold),
                   ${cgm(ce.species_mass_diff_mixture_rule_expr(sol, sp,
-              Variable("mmw"), Variable("mole_fractions"), Variable("diff_ij")))},
+                    Variable("mmw"), Variable("mole_fractions"), Variable("diff_ij")))},
+                  diff_ij[${cgm(sp)}, ${cgm(sp)}],
               ),
               % endfor
               ])
