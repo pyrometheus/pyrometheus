@@ -144,14 +144,16 @@ class Thermochemistry:
     .. automethod:: __init__
     \"""
 
-    def __init__(self, usr_np=np):
+    def __init__(self, actx=None):
         \"""Initialize thermochemistry object for a mechanism.
 
         Parameters
         ----------
-        usr_np
-            :mod:Array context: a `numpy`-like namespace providing at least
-            the following functions, for any array ``X`` of the bulk array type:
+        actx
+
+            A :class:`arraycontext.ArrayContext`  a `numpy`-like namespace
+            providing at least the following functions, for any array ``X`` of
+            the bulk array type:
 
             - ``usr_np.log(X)`` (like :data:`numpy.log`)
             - ``usr_np.log10(X)`` (like :data:`numpy.log10`)
@@ -168,7 +170,11 @@ class Thermochemistry:
 
         \"""
 
-        self.usr_np = usr_np
+        if actx is None:
+            actx = ...
+            1/0
+
+        self.usr_np = actx.np
         self.model_name = ${repr(sol.source)}
         self.num_elements = ${sol.n_elements}
         self.num_species = ${sol.n_species}
