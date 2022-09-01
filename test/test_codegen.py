@@ -180,15 +180,17 @@ def test_get_pressure(mechname, usr_np):
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
-@pytest.mark.parametrize("usr_np", numpy_list)
-def test_get_thermo_properties(mechname, usr_np):
+#@pytest.mark.parametrize("actx", numpy_list)
+def test_get_thermo_properties(mechname):
     """This function tests that pyrometheus-generated code
     computes thermodynamic properties c_p, s_r, h_rt, and k_eq
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
+    from arraycontext import NumpyArrayContext
+    actx = NumpyArrayContext()
     sol = ct.Solution(f"mechs/{mechname}.yaml")
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
-    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+    ptk = make_jax_pyro_class(ptk_base_cls, actx)
 
     # Loop over temperatures
     temp = np.linspace(500.0, 3000.0, 10)
