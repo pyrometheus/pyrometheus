@@ -30,6 +30,9 @@ import numpy as np  # noqa: F401
 import pyrometheus as pyro
 import pytest
 
+import pytato
+from arraycontext import PytatoPyOpenCLArrayContext, PytatoJAXArrayContext, PyOpenCLArrayContext, EagerJAXArrayContext
+
 try:
     import jax
 except ImportError:
@@ -479,6 +482,81 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     return
 
 
+def test_array_contexts():
+
+    def convert_mole_to_mass_fractions(pyro_gas, x):
+        return pyro_gas.actx.array(x * pyro_gas.wts / sum(x*pyro_gas.wts))
+
+    sol = ct.Solution("mechs/sandiego.yaml")
+    pyro_code = pyro.codegen.python.gen_thermochem_code(sol)
+    pyro_class = pyro.codegen.python.get_thermochem_class(sol)
+
+    # Array contexts
+    jax_eager_actx = EagerJAXArrayContext()
+    jax_lazy_actx = PytatoJAXArrayContext()
+    
+    # Pyro realizations with different NumPys
+    gas_numpy = pyro_class(np)
+    gas_jax_eager = pyro_class(jax_eager_actx.np)
+    gas_jax_lazy = pyro_class(jax_lazy_actx.np)
+
+    # Grid and profiles
+    num_species = gas_numpy.num_species
+    num_points = 101
+    mixture_fraction = np.linspace(0, 1, num_points)
+
+    one_atm = gas_numpy.one_atm
+    temp_ox = 500
+    temp_fu = 300
+
+    x_ox = np.zeros(num_species)
+    x_ox[gas_numpy.species_index("O2")] = 0.21
+    x_ox[gas_numpy.species_index("N2")] = 0.79
+    y_ox = x_ox * gas_numpy.wts / sum(x_ox * gas_numpy.wts)    
+    
+    x_fu = np.zeros(num_species)
+    x_fu[gas_numpy.species_index("H2")] = 0.5
+    x_fu[gas_numpy.species_index("N2")] = 0.5
+    y_fu = x_fu * gas_numpy.wts / sum(x_fu * gas_numpy.wts)
+
+    mass_fractions = (y_ox + (y_fu - y_ox)*mixture_fraction[:, None]).T
+    temperature = temp_ox + (temp_fu - temp_ox)*mixture_fraction
+    
+    # NumPy: Compute 
+    density = gas_numpy.get_density(one_atm, temperature,
+                                    mass_fractions)
+    omega = gas_numpy.get_net_production_rates(density, temperature,
+                                               mass_fractions)
+
+    # Jax: Compute
+    density = gas_jax_eager.get_density(one_atm,
+                                        jax_eager_actx.from_numpy(temperature),
+                                        jax_eager_actx.from_numpy(mass_fractions))
+    omega = gas_jax_eager.get_net_production_rates(
+        density, jax_eager_actx.from_numpy(temperature),
+        jax_eager_actx.from_numpy(mass_fractions))
+
+    # Build computational graph
+    temperature = pytato.make_placeholder("temperature", shape=(num_points,),
+                                          dtype="float64")
+    mass_fractions = pytato.make_placeholder("mass_frac", shape=(num_species, num_points,),
+                                             dtype="float64")
+
+    density = gas_jax_lazy.get_density(one_atm, temperature, mass_fractions)
+    omega = gas_jax_lazy.get_net_production_rates(density, temperature, mass_fractions)
+
+    GRAPH_DOT = "graph.dot"
+    GRAPH_SVG = "graph.svg"
+    dot_code = pytato.get_dot_graph(omega)
+    with open(GRAPH_DOT, "w") as outf:
+        outf.write(dot_code)
+        
+    import shutil
+    import subprocess
+    dot_path = shutil.which("dot")
+    subprocess.run([dot_path, "-Tsvg", GRAPH_DOT, "-o", GRAPH_SVG], check=True)
+    return
+    
 # run single tests using
 # $ python test_codegen.py 'test_sandiego()'
 if __name__ == "__main__":

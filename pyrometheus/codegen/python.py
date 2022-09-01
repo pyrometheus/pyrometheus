@@ -107,7 +107,8 @@ code_tpl = Template(
 \"""
 
 
-import numpy as np
+import numpy as np    
+from arraycontext import ArrayContext
 
 
 class Thermochemistry:
@@ -149,8 +150,8 @@ class Thermochemistry:
         Parameters
         ----------
         usr_np
-            :mod:`numpy`-like namespace providing at least the following functions,
-            for any array ``X`` of the bulk array type:
+            :mod:Array context: a `numpy`-like namespace providing at least
+            the following functions, for any array ``X`` of the bulk array type:
 
             - ``usr_np.log(X)`` (like :data:`numpy.log`)
             - ``usr_np.log10(X)`` (like :data:`numpy.log10`)
@@ -260,7 +261,11 @@ class Thermochemistry:
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.iwts * rho * mass_fractions
+        return self.usr_np.stack([
+            % for i in range(sol.n_species):
+            self.iwts[${i}] * mass_fractions[${i}] * rho,
+            % endfor
+                ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
@@ -317,7 +322,7 @@ class Thermochemistry:
         c0 = self.usr_np.log(self.one_atm / rt)
 
         g0_rt = self.get_species_gibbs_rt(temperature)
-        return self._pyro_make_array([
+        return self.usr_np.stack([
             %for i, react in enumerate(sol.reactions()):
                 %if react.reversible:
                     ${cgm(ce.equilibrium_constants_expr(
@@ -338,8 +343,7 @@ class Thermochemistry:
 
         num_iter = 500
         tol = 1.0e-6
-        ones = self._pyro_zeros_like(enthalpy_or_energy) + 1.0
-        t_i = t_guess * ones
+        t_i = t_guess * self.usr_np.ones_like(enthalpy_or_energy)
 
         for _ in range(num_iter):
             f = enthalpy_or_energy - he_fun(t_i, y)
@@ -353,8 +357,7 @@ class Thermochemistry:
 
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
-        ones = self._pyro_zeros_like(temperature) + 1.0
-        k_high = self._pyro_make_array([
+        k_high = self.usr_np.stack([
         %for _, react in falloff_reactions:
             %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
@@ -366,7 +369,7 @@ class Thermochemistry:
         %endfor
                 ])
 
-        k_low = self._pyro_make_array([
+        k_low = self.usr_np.stack([
         %for _, react in falloff_reactions:
             %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
@@ -378,20 +381,20 @@ class Thermochemistry:
         %endfor
                 ])
 
-        reduced_pressure = self._pyro_make_array([
+        reduced_pressure = self.usr_np.stack([
         %for i, (_, react) in enumerate(falloff_reactions):
             (${cgm(ce.third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
                             ])
 
-        falloff_center = self._pyro_make_array([
+        falloff_center = self.usr_np.stack([
         %for _, react in falloff_reactions:
             ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))},
         %endfor
                         ])
 
-        falloff_function = self._pyro_make_array([
+        falloff_function = self.usr_np.stack([
         %for i, (_, react) in enumerate(falloff_reactions):
             ${cgm(ce.falloff_function_expr(
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
@@ -400,7 +403,7 @@ class Thermochemistry:
                             ])*reduced_pressure/(1+reduced_pressure)
 
         %for j, (i, react) in enumerate(falloff_reactions):
-        k_fwd[${i}] = k_high[${j}]*falloff_function[${j}]*ones
+        k_fwd[${i}] = k_high[${j}]*falloff_function[${j}]*self.usr_np.ones_like(temperature)
         %endfor
         return
 
@@ -425,12 +428,12 @@ class Thermochemistry:
         k_fwd[${i}] *= (${cgm(ce.third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
-        return self._pyro_make_array(k_fwd)
+        return self.usr_np.stack(k_fwd)
 
     def get_net_rates_of_progress(self, temperature, concentrations):
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
-        return self._pyro_make_array([
+        return self.usr_np.stack([
                 %for i in range(sol.n_reactions):
                     ${cgm(ce.rate_of_progress_expr(sol, i,
                         Variable("concentrations"),
@@ -442,7 +445,7 @@ class Thermochemistry:
         c = self.get_concentrations(rho, mass_fractions)
         r_net = self.get_net_rates_of_progress(temperature, c)
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
-        return self._pyro_make_array([
+        return self.usr_np.stack([
             %for sp in sol.species():
                 ${cgm(ce.production_rate_expr(
                     sol, sp.name, Variable("r_net")))} * ones,
