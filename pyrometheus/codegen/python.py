@@ -93,7 +93,7 @@ def str_np_inner(ary):
 
 
 def str_np(ary):
-    return "np.array(%s)" % str_np_inner(ary)
+    return "self.usr_np.stack(%s)" % str_np_inner(ary)
 
 
 # }}}
@@ -106,8 +106,6 @@ code_tpl = Template(
 .. autoclass:: Thermochemistry
 \"""
 
-
-import numpy as np    
 from arraycontext import ArrayContext
 
 
@@ -144,14 +142,14 @@ class Thermochemistry:
     .. automethod:: __init__
     \"""
 
-    def __init__(self, actx=None):
+    def __init__(self, actx: ArrayContext):
         \"""Initialize thermochemistry object for a mechanism.
 
         Parameters
         ----------
         actx
 
-            A :class:`arraycontext.ArrayContext`  a `numpy`-like namespace
+            A :class:`arraycontext.ArrayContext` a `numpy`-like namespace
             providing at least the following functions, for any array ``X`` of
             the bulk array type:
 
@@ -169,10 +167,6 @@ class Thermochemistry:
             GPU processing or automatic differentiation).
 
         \"""
-
-        if actx is None:
-            actx = ...
-            1/0
 
         self.usr_np = actx.np
         self.model_name = ${repr(sol.source)}
@@ -233,8 +227,8 @@ class Thermochemistry:
         from numbers import Number
 
         if isinstance(argument, Number):
-            return np.abs(argument)
-        return self.usr_np.linalg.norm(argument, normord)
+            return self.usr_np.abs(argument)
+        return self.usr_np.linalg.norm(argument)  #, normord)
 
     def species_name(self, species_index):
         return self.species_name[species_index]
@@ -298,21 +292,21 @@ class Thermochemistry:
         return self.gas_constant * temperature * emix
 
     def get_species_specific_heats_r(self, temperature):
-        return self._pyro_make_array([
+        return self.usr_np.stack([
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
                 ])
 
     def get_species_enthalpies_rt(self, temperature):
-        return self._pyro_make_array([
+        return self.usr_np.stack([
             % for sp in sol.species():
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
                 ])
 
     def get_species_entropies_r(self, temperature):
-        return self._pyro_make_array([
+        return self.usr_np.stack([
             % for sp in sol.species():
                 ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
@@ -356,7 +350,7 @@ class Thermochemistry:
             j = -pv_fun(t_i, y)
             dt = -f / j
             t_i += dt
-            if self._pyro_norm(dt, np.inf) < tol:
+            if self._pyro_norm(dt, self.usr_np.inf) < tol:
                 return t_i
 
         raise RuntimeError("Temperature iteration failed to converge")
