@@ -175,7 +175,7 @@ def transport_polynomial_expr(c, n, t):
 
     :returns: Transport polynomial expression with coefficients c in terms of
     the temperature t as a :class:`pymbolic.primitives.Expression`. For
-    `thermal_conductivity`, `n = 1`, while for `viscosity` `n = 2`
+    `thermal_conductivity` and `species_mass_diffusivities`, `n = 1`, while for `viscosity` `n = 2`
     """
     assert len(c) == 5
     return (
@@ -190,9 +190,7 @@ def transport_polynomial_expr(c, n, t):
 
 
 def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
-    """Generate code for species mixture rule.
-       See Robert J. Kee, Michael E. Coltrin and Peter Glarborg
-       "Chemically Reacting Flow" book, chapter 12.
+    """Generate code for species mixture rule. See [Kee_2003]_, chapter 12.
 
     :returns: Expression for the Wilke viscosity mixture rule
         for species *sp* in terms of species mole fractions *w*
@@ -208,9 +206,7 @@ def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
 
 
 def species_mass_diff_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, diff_ij):
-    """Generate code for species mixture rule.
-       See Robert J. Kee, Michael E. Coltrin and Peter Glarborg
-       "Chemically Reacting Flow" book, chapter 12.
+    """Generate code for species mixture rule. See [Kee_2003]_, chapter 12.
 
     :returns: Expression for the species mass diffusion mixture rule
         for species *sp* in terms of species mole fractions *w*
