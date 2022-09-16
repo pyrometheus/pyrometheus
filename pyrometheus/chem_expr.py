@@ -175,7 +175,8 @@ def transport_polynomial_expr(c, n, t):
 
     :returns: Transport polynomial expression with coefficients c in terms of
     the temperature t as a :class:`pymbolic.primitives.Expression`. For
-    `thermal_conductivity` and `species_mass_diffusivities`, `n = 1`, while for `viscosity` `n = 2`
+    `thermal_conductivity` and `species_mass_diffusivities`, `n = 1`, while
+    for `viscosity` `n = 2`
     """
     assert len(c) == 5
     return (
