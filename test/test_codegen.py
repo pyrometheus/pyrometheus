@@ -39,7 +39,7 @@ from arraycontext import NumpyArrayContext, EagerJAXArrayContext
 from arraycontext import pytest_generate_tests_for_array_contexts
 
 pytest_generate_tests = pytest_generate_tests_for_array_contexts(
-    ["numpy", "eagerjax"])
+    ["numpy"])  #, "eagerjax"])
 
 numpy_list = []
 
@@ -392,10 +392,9 @@ def test_autodiff_accuracy():
 
     guess_temp = 1400
 
-    def chemical_source_term(mass_fractions):
-        temperature = pyro_gas.get_temperature(enthalpy, guess_temp, mass_fractions)
-        density = pyro_gas.get_density(pyro_gas.one_atm, temperature, mass_fractions)
-        return pyro_gas.get_net_production_rates(density, temperature, mass_fractions)
+    def chemical_source_term(state):
+        density = pyro_gas.get_density(pyro_gas.one_atm, state[0], state[1:])
+        return pyro_gas.get_net_production_rates(density, state[0], state[1:])
 
     from jax import jacfwd
     chemical_jacobian = jacfwd(chemical_source_term)

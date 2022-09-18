@@ -93,7 +93,7 @@ def str_np_inner(ary):
 
 
 def str_np(ary):
-    return "self.usr_np.stack(%s)" % str_np_inner(ary)
+    return f"self.actx.from_numpy(np.array({str_np_inner(ary)}))"
 
 
 # }}}
@@ -105,7 +105,7 @@ code_tpl = Template(
     """\"""
 .. autoclass:: Thermochemistry
 \"""
-
+import numpy as np
 from arraycontext import ArrayContext
 
 
@@ -168,7 +168,8 @@ class Thermochemistry:
 
         \"""
 
-        self.usr_np = actx.np
+        self.actx = actx
+        self.usr_np = self.actx.np
         self.model_name = ${repr(sol.source)}
         self.num_elements = ${sol.n_elements}
         self.num_species = ${sol.n_species}
@@ -228,7 +229,9 @@ class Thermochemistry:
 
         if isinstance(argument, Number):
             return self.usr_np.abs(argument)
-        return self.usr_np.linalg.norm(argument)  #, normord)
+        if argument.ndim == 0:
+            return self.usr_np.abs(argument)
+        return self.usr_np.linalg.norm(argument, normord)
 
     def species_name(self, species_index):
         return self.species_name[species_index]
@@ -350,7 +353,7 @@ class Thermochemistry:
             j = -pv_fun(t_i, y)
             dt = -f / j
             t_i += dt
-            if self._pyro_norm(dt, self.usr_np.inf) < tol:
+            if self.actx.to_numpy(self._pyro_norm(dt, np.inf)) < tol:
                 return t_i
 
         raise RuntimeError("Temperature iteration failed to converge")
