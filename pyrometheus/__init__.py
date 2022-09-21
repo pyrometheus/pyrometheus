@@ -31,7 +31,7 @@ THE SOFTWARE.
 
 import pyrometheus.codegen.python  # noqa: F401
 import pyrometheus.codegen.python as _py
-
+import pyrometheus.make_array
 
 # {{{ handle deprecations
 
