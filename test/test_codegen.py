@@ -194,7 +194,8 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
     temp = np.linspace(200.0, 3000.0, ntemp)
 
     # Loop over each individual species
-    # There is not check for species mass diff. since it is only valid for a mixture
+    # Note: There is no check for species mass diffusivities
+    #       since these are only valid for a mixture
     for t in temp:
         sol.TP = t, ct.one_atm
         mu_pm = ptk.get_species_viscosities(t)

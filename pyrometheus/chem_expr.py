@@ -26,9 +26,10 @@ THE SOFTWARE.
 """
 Internal Functionality
 ^^^^^^^^^^^^^^^^^^^^^^
-.. autofunction:: transport_polynomial_expr
+.. autofunction:: viscosity_polynomial_expr
+.. autofunction:: conductivity_polynomial_expr
+.. autofunction:: diffusivity_polynomial_expr
 .. autofunction:: viscosity_mixture_rule_wilke_expr
-.. autofunction:: species_mass_diff_mixture_rule_expr
 .. autofunction:: equilibrium_constants_expr
 .. autofunction:: rate_coefficient_expr
 .. autofunction:: third_body_efficiencies_expr
@@ -170,23 +171,57 @@ def _zeros_like(argument):
 
 # {{{ Transport polynomials & mixture rules
 
-def transport_polynomial_expr(c, n, t):
-    """Generate code for transport polynomials
+def viscosity_polynomial_expr(c, t):
+    """Generate code for viscosity polynomials
 
-    :returns: Transport polynomial expression with coefficients c in terms of
-    the temperature t as a :class:`pymbolic.primitives.Expression`. For
-    `thermal_conductivity` and `species_mass_diffusivities`, `n = 1`, while
-    for `viscosity` `n = 2`
+    :returns: Viscosity polynomial expression with coefficients c in terms of
+    the temperature t as a :class:`pymbolic.primitives.Expression`.
     """
     assert len(c) == 5
     return (
-        (
+        p.Variable("sqrt")(t) * (
             c[0]
             + c[1] * p.Variable("log")(t)
             + c[2] * p.Variable("log")(t) ** 2
             + c[3] * p.Variable("log")(t) ** 3
             + c[4] * p.Variable("log")(t) ** 4
-        )**n
+        )**2
+    )
+
+
+def conductivity_polynomial_expr(c, t):
+    """Generate code for conductivity polynomials
+
+    :returns: Conductivity polynomial expression with coefficients c in terms of
+    the temperature t as a :class:`pymbolic.primitives.Expression`.
+    """
+    assert len(c) == 5
+    return (
+        p.Variable("sqrt")(t) * (
+            c[0]
+            + c[1] * p.Variable("log")(t)
+            + c[2] * p.Variable("log")(t) ** 2
+            + c[3] * p.Variable("log")(t) ** 3
+            + c[4] * p.Variable("log")(t) ** 4
+        )
+    )
+
+
+def diffusivity_polynomial_expr(c, t):
+    """Generate code for diffusivity polynomials
+
+    :returns: Diffusivity polynomial expression with coefficients c in terms of
+    the temperature t as a :class:`pymbolic.primitives.Expression`.
+    """
+    assert len(c) == 5
+    return (
+        p.Variable("sqrt")(t) * t * (
+            c[0]
+            + c[1] * p.Variable("log")(t)
+            + c[2] * p.Variable("log")(t) ** 2
+            + c[3] * p.Variable("log")(t) ** 3
+            + c[4] * p.Variable("log")(t) ** 4
+        )
     )
 
 
@@ -205,17 +240,14 @@ def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
         8*(1 + (w[sp]/w[j]))
     ) for j in range(sol.n_species)])
 
-
-def species_mass_diff_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, diff_ij):
-    """Generate code for species mixture rule. See [Kee_2003]_, chapter 12.
-
-    :returns: Expression for the species mass diffusion mixture rule
-        for species *sp* in terms of species mole fractions *w*
-        and binary diffusivity *diff_ij* as a :class:`pymbolic.primitives.Expression`
+def diffusivity_mixture_rule_denom_expr(sol: ct.Solution, j_sp, x, bdiff):
+    """ See [Kee_2003]_, chapter 12 for details.
+    :returns: The denominator expression to the mixture rule
+    for mixture-averaged species diffusivities in terms
+    of the species mole fractions *x* and binary diffusivities *bdiff* as a
+    :class:`pymbolic.primitives.Expression`
     """
-    w = sol.molecular_weights
-    return (1.0 - x[sp]*w[sp]/mmw)/(sum([x[j]/diff_ij[sp, j]
-     for j in range(sol.n_species)]) - x[sp]/diff_ij[sp, sp])
+    return sum(x[i_sp] / bdiff[i_sp][j_sp] for i_sp in range(sol.n_species))
 
 # }}}
 
