@@ -30,6 +30,7 @@ Internal Functionality
 .. autofunction:: conductivity_polynomial_expr
 .. autofunction:: diffusivity_polynomial_expr
 .. autofunction:: viscosity_mixture_rule_wilke_expr
+.. autofunction:: diffusivity_mixture_rule_denom_expr
 .. autofunction:: equilibrium_constants_expr
 .. autofunction:: rate_coefficient_expr
 .. autofunction:: third_body_efficiencies_expr
