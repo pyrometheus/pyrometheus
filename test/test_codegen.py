@@ -207,7 +207,7 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
             sol.Y = name + ":1"
             y = sol.Y
             dii_pm = ptk.get_species_mass_diffusivities_mixavg(
-                 t, ct.one_atm, y, threshold=1.0e-15)
+                pressure=ct.one_atm, temperature=t, mass_fractions=y)
             # Viscosity error
             mu_err = np.abs(mu_pm[i] - sol.viscosity)
             assert mu_err < 1.0e-12
@@ -257,8 +257,8 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
         # Pyrometheus transport
         mu = ptk.get_mixture_viscosity_mixavg(temp, y)
         kappa = ptk.get_mixture_thermal_conductivity_mixavg(temp, y)
-        diff = ptk.get_species_mass_diffusivities_mixavg(temp, ct.one_atm, y,
-                                                         threshold=1.0e-15)
+        diff = ptk.get_species_mass_diffusivities_mixavg(pressure=ct.one_atm,
+            temperature=temp, mass_fractions=y)
 
         err_mu = np.abs(mu - mu_ct)
         assert err_mu < 1.0e-13
