@@ -241,6 +241,7 @@ def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
         8*(1 + (w[sp]/w[j]))
     ) for j in range(sol.n_species)])
 
+
 def diffusivity_mixture_rule_denom_expr(sol: ct.Solution, j_sp, x, bdiff):
     """ See [Kee_2003]_, chapter 12 for details.
     :returns: The denominator expression to the mixture rule

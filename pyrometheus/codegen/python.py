@@ -267,7 +267,7 @@ class Thermochemistry:
                 %endfor
                 )
 
-    def get_concentrations(self, rho, mass_fractions):    
+    def get_concentrations(self, rho, mass_fractions):
         return self._pyro_make_array([
             %for i in range(sol.n_species):
             self.iwts[${i}] * mass_fractions[${i}] * rho,
@@ -354,11 +354,12 @@ class Thermochemistry:
         return 0.5*(self.usr_np.sum(mole_fractions*conductivities)
             + 1/self.usr_np.sum(mole_fractions/conductivities))
 
-    def get_species_mass_diffusivities_mixavg(self, pressure, temperature, mass_fractions):
+    def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
+            mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
         bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
-    
+
         x_sum = self._pyro_make_array([
             %for sp in range(sol.n_species):
             ${cgm(ce.diffusivity_mixture_rule_denom_expr(
@@ -372,11 +373,12 @@ class Thermochemistry:
             ])
 
         return self._pyro_make_array([
-              % for sp in range(sol.n_species):
-              self.usr_np.where(
-                  denom[${sp}] > 0,
-                  (mmw - mole_fractions[${sp}] * self.wts[${sp}])/(pressure * mmw * denom[${sp}]),
-                  bdiff_ij[${sp}][${sp}] / pressure
+            %for sp in range(sol.n_species):
+            self.usr_np.where(
+                denom[${sp}] > 0,
+                (mmw - mole_fractions[${sp}] * self.wts[${sp}])/(
+                    pressure * mmw * denom[${sp}]),
+                bdiff_ij[${sp}][${sp}] / pressure
               ),
               % endfor
               ])
