@@ -479,6 +479,99 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     return
 
 
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt", [("uiuc", "C2H4", 1.0,
+                                                               1e-7)])
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
+    """This function tests that pyrometheus-generated code
+    computes transport properties (viscosity, thermal conductivity and species mass
+    diffusivity) correctly by comparing against Cantera"""
+    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    ptk_base_cls = pyro.get_thermochem_class(sol)
+    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
+
+    # Loop over temperatures
+    ntemp = 22
+    temp = np.linspace(300.0, 2400.0, ntemp)
+
+    # Loop over each individual species
+    # There is not check for species mass diff. since it is only valid for a mixture
+    for t in temp:
+        sol.TP = t, ct.one_atm
+        mu_pm = ptk.get_species_viscosities(t)
+        kappa_pm = ptk.get_species_thermal_conductivities(t)
+        dii_ct = usr_np.diag(sol.binary_diff_coeffs)
+        # Loop over species, because apparently cannot
+        # access species transport directly through Python
+        for i, name in enumerate(sol.species_names):
+            sol.Y = name + ":1"
+            y = sol.Y
+            dii_pm = ptk.get_species_mass_diffusivities_mixavg(
+                 t, ct.one_atm, y)
+            # Viscosity error
+            mu_err = np.abs(mu_pm[i] - sol.viscosity)
+            assert mu_err < 1.0e-12
+
+            # Conductivity
+            kappa_err = np.abs(kappa_pm[i] - sol.thermal_conductivity)
+            assert kappa_err < 1.0e-12
+
+            # Self mass diffusivity
+            dii_err = np.abs(dii_pm[i] - dii_ct[i])
+            assert dii_err < 1.0e-12
+
+    # Now test mixture rules, with a reactor
+    # to get sensible mass fractions
+    init_temperature = 1200.0
+    equiv_ratio = 1.0
+    ox_di_ratio = 0.21
+
+    air = "O2:1.0,N2:3.76"
+    sol.set_equivalence_ratio(phi=stoich_ratio, fuel=fuel+":1", oxidizer=air)
+
+    sol.TP = init_temperature, ct.one_atm
+    reactor = ct.IdealGasConstPressureReactor(sol)
+    sim = ct.ReactorNet([reactor])
+
+    time = 0.0
+
+    for _ in range(100):
+        time += dt
+        sim.advance(time)
+
+        # Cantera transport
+        sol.TPY = reactor.T, ct.one_atm, reactor.Y
+
+        mu_ct = sol.viscosity
+        kappa_ct = sol.thermal_conductivity
+        diff_ct = sol.mix_diff_coeffs
+
+        # Get state from Cantera
+        temp = reactor.T
+        y = np.where(reactor.Y > 0, reactor.Y, 0)
+
+        # Pyrometheus transport
+        mu = ptk.get_mixture_viscosity_mixavg(temp, y)
+        kappa = ptk.get_mixture_thermal_conductivity_mixavg(temp, y)
+        diff = ptk.get_species_mass_diffusivities_mixavg(temp, ct.one_atm, y,
+                                                         threshold=1.0e-15)
+
+        err_mu = np.abs(mu - mu_ct)
+        assert err_mu < 1.0e-13
+
+        err_kappa = np.abs(kappa - kappa_ct)
+        print(kappa)
+        assert err_kappa < 1.0e-13
+
+        for i in range(sol.n_species):
+            err_diff = np.abs(diff[i] - diff_ct[i])
+            assert err_diff < 1.0e-12
+
+#    assert 1 < 0
+
+    return
+
+
 # run single tests using
 # $ python test_codegen.py 'test_sandiego()'
 if __name__ == "__main__":

@@ -26,6 +26,9 @@ THE SOFTWARE.
 """
 Internal Functionality
 ^^^^^^^^^^^^^^^^^^^^^^
+.. autofunction:: transport_polynomial_expr
+.. autofunction:: viscosity_mixture_rule_wilke_expr
+.. autofunction:: species_mass_diff_mixture_rule_expr
 .. autofunction:: equilibrium_constants_expr
 .. autofunction:: rate_coefficient_expr
 .. autofunction:: third_body_efficiencies_expr
@@ -164,6 +167,58 @@ def _zeros_like(argument):
 
 # }}}
 
+
+# {{{ Transport polynomials & mixture rules
+
+def transport_polynomial_expr(c, n, t):
+    """Generate code for transport polynomials
+
+    :returns: Transport polynomial expression with coefficients c in terms of
+    the temperature t as a :class:`pymbolic.primitives.Expression`. For
+    `thermal_conductivity` and `species_mass_diffusivities`, `n = 1`, while for `viscosity` `n = 2`
+    """
+    assert len(c) == 5
+    return (
+        (
+            c[0]
+            + c[1] * p.Variable("log")(t)
+            + c[2] * p.Variable("log")(t) ** 2
+            + c[3] * p.Variable("log")(t) ** 3
+            + c[4] * p.Variable("log")(t) ** 4
+        )**n
+    )
+
+
+def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
+    """Generate code for species mixture rule. See [Kee_2003]_, chapter 12.
+
+    :returns: Expression for the Wilke viscosity mixture rule
+        for species *sp* in terms of species mole fractions *w*
+        and viscosities *mu* as a :class:`pymbolic.primitives.Expression`
+    """
+    w = sol.molecular_weights
+    sqrt = p.Variable("sqrt")
+    return sum([x[j]*(
+        1 + sqrt((mu[sp]/mu[j])*sqrt(w[j]/w[sp]))
+    )**2 / sqrt(
+        8*(1 + (w[sp]/w[j]))
+    ) for j in range(sol.n_species)])
+
+
+def species_mass_diff_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, diff_ij):
+    """Generate code for species mixture rule. See [Kee_2003]_, chapter 12.
+
+    :returns: Expression for the species mass diffusion mixture rule
+        for species *sp* in terms of species mole fractions *w*
+        and binary diffusivity *diff_ij* as a :class:`pymbolic.primitives.Expression`
+    """
+    w = sol.molecular_weights
+    return (1.0 - x[sp]*w[sp]/mmw)/(sum([x[j]/diff_ij[sp, j]
+     for j in range(sol.n_species)]) - x[sp]/diff_ij[sp, sp])
+
+# }}}
+
+
 # {{{ Equilibrium constants
 
 
@@ -174,7 +229,6 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
         index *reaction_index* in terms of the species Gibbs
         functions *gibbs_rt* as a :class:`pymbolic.primitives.Expression`
     """
-
     indices_reac = [sol.species_index(sp)
                     for sp in sol.reaction(reaction_index).reactants]
     indices_prod = [sol.species_index(sp)

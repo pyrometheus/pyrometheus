@@ -44,6 +44,7 @@ import numpy as np  # noqa: F401
 from mako.template import Template
 import pyrometheus.chem_expr
 
+from itertools import product
 
 file_extension = "py"
 
@@ -134,6 +135,12 @@ class Thermochemistry:
     .. automethod:: get_mixture_specific_heat_cv_mass
     .. automethod:: get_mixture_enthalpy_mass
     .. automethod:: get_mixture_internal_energy_mass
+    .. automethod:: get_species_viscosities
+    .. automethod:: get_mixture_viscosity_mixavg
+    .. automethod:: get_species_thermal_conductivities
+    .. automethod:: get_mixture_thermal_conductivity_mixavg
+    .. automethod:: get_species_binary_mass_diffusivities
+    .. automethod:: get_species_mass_diffusivities_mixavg
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
     .. automethod:: get_species_entropies_r
@@ -285,6 +292,69 @@ class Thermochemistry:
         e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
+
+    def get_species_viscosities(self, temperature):
+        return self.usr_np.sqrt(temperature)*self._pyro_make_array([
+                % for sp in range(sol.n_species):
+                ${cgm(ce.transport_polynomial_expr(sol.get_viscosity_polynomial(sp),
+                                                    2, Variable("temperature")))},
+                % endfor
+                ])
+
+    def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
+        mole_fractions = self.iwts * mass_fractions\
+ * self.get_mix_molecular_weight(mass_fractions)
+        viscosities = self.get_species_viscosities(temperature)
+        mix_rule_f = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.viscosity_mixture_rule_wilke_expr(sol, sp,
+                 Variable("mole_fractions"), Variable("viscosities")))},
+            %endfor
+            ])
+        return sum(mole_fractions*viscosities/mix_rule_f)
+
+    def get_species_thermal_conductivities(self, temperature):
+        return self.usr_np.sqrt(temperature)*self._pyro_make_array([
+                % for sp in range(sol.n_species):
+                ${cgm(ce.transport_polynomial_expr(
+                    sol.get_thermal_conductivity_polynomial(sp), 1,
+                    Variable("temperature")))},
+                % endfor
+                ])
+
+    def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
+        mole_fractions = self.iwts * mass_fractions\
+ * self.get_mix_molecular_weight(mass_fractions)
+        conductivities = self.get_species_thermal_conductivities(temperature)
+        return 0.5*(sum(mole_fractions*conductivities)
+            + 1/sum(mole_fractions/conductivities))
+
+    def get_species_binary_mass_diffusivities(self, temperature):
+        return self._pyro_make_array([
+                % for i, j, in product(range(sol.n_species), range(sol.n_species)):
+                ${cgm(ce.transport_polynomial_expr(
+                      sol.get_binary_diff_coeffs_polynomial(i, j), 1,
+                      Variable("temperature")))},
+                % endfor
+                ]).reshape((self.num_species, self.num_species))
+
+    def get_species_mass_diffusivities_mixavg(self, temperature, pressure,
+                                              mass_fractions, threshold=1.e-7):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fractions = self.iwts * mass_fractions * mmw
+        diff_ij = self.get_species_binary_mass_diffusivities(temperature)
+        mix_rule_f = self._pyro_make_array([
+              % for sp in range(sol.n_species):
+              self.usr_np.where(
+                  self.usr_np.greater(1.0-mole_fractions[${sp}], threshold),
+                  ${cgm(ce.species_mass_diff_mixture_rule_expr(sol, sp,
+                      Variable("mmw"), Variable("mole_fractions"),
+                      Variable("diff_ij")))},
+                  diff_ij[${cgm(sp)}, ${cgm(sp)}],
+              ),
+              % endfor
+              ])
+        return (self.usr_np.sqrt(temperature)*temperature/pressure)*mix_rule_f
 
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
@@ -461,6 +531,8 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     return code_tpl.render(
         ct=ct,
         sol=sol,
+
+        product=product,
 
         str_np=str_np,
         cgm=CodeGenerationMapper(),
