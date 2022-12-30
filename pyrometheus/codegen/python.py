@@ -297,9 +297,9 @@ class Thermochemistry:
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
 
-    def get_mole_fractions(mass_fractions):
+    def get_mole_fractions(self, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
-        mole_fractions = self._pyro_make_array([
+        return self._pyro_make_array([
             %for i in range(sol.n_species):
                 self.iwts[${i}] * mass_fractions[${i}] * mmw,
             %endfor
