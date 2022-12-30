@@ -1,7 +1,7 @@
 generator: cti2yaml
-cantera-version: 2.5.1
-date: Thu, 02 Jun 2022 10:11:41 -0400
-input-files: [sandiego.cti]
+cantera-version: 2.6.0
+date: Tue, 21 Jun 2022 15:14:08 -0500
+input-files: [sanDiego.cti]
 
 units: {length: cm, quantity: mol, activation-energy: kJ/mol}
 
@@ -12,6 +12,7 @@ phases:
   species: [H2, H, O2, O, OH, HO2, H2O2, H2O, N2]
   kinetics: gas
   reactions: all
+  transport: mixture-averaged
   state:
     T: 300.0
     P: 1.01325e+05
@@ -27,6 +28,13 @@ species:
       -917.935173, 0.683010238]
     - [3.3372792, -4.94024731e-05, 4.99456778e-07, -1.79566394e-10, 2.00255376e-14,
       -950.158922, -3.20502331]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 2.92
+    well-depth: 38.0
+    polarizability: 0.79
+    rotational-relaxation: 280.0
   note: '000000'
 - name: H
   composition: {H: 1}
@@ -38,6 +46,11 @@ species:
       2.54736599e+04, -0.446682853]
     - [2.50000001, -2.30842973e-11, 1.61561948e-14, -4.73515235e-18, 4.98197357e-22,
       2.54736599e+04, -0.446682914]
+  transport:
+    model: gas
+    geometry: atom
+    diameter: 2.05
+    well-depth: 145.0
   note: '000000'
 - name: O2
   composition: {O: 2}
@@ -49,6 +62,13 @@ species:
       -1063.94356, 3.65767573]
     - [3.28253784, 1.48308754e-03, -7.57966669e-07, 2.09470555e-10, -2.16717794e-14,
       -1088.45772, 5.45323129]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.458
+    well-depth: 107.4
+    polarizability: 1.6
+    rotational-relaxation: 3.8
   note: '000000'
 - name: O
   composition: {O: 1}
@@ -60,6 +80,11 @@ species:
       2.91222592e+04, 2.05193346]
     - [2.56942078, -8.59741137e-05, 4.19484589e-08, -1.00177799e-11, 1.22833691e-15,
       2.92175791e+04, 4.78433864]
+  transport:
+    model: gas
+    geometry: atom
+    diameter: 2.75
+    well-depth: 80.0
   note: '000000'
 - name: OH
   composition: {H: 1, O: 1}
@@ -71,6 +96,11 @@ species:
       3381.53812, -0.69043296]
     - [2.86472886, 1.05650448e-03, -2.59082758e-07, 3.05218674e-11, -1.33195876e-15,
       3718.85774, 5.70164073]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 2.75
+    well-depth: 80.0
   note: '000000'
 - name: HO2
   composition: {H: 1, O: 2}
@@ -82,6 +112,12 @@ species:
       294.80804, 3.71666245]
     - [4.0172109, 2.23982013e-03, -6.3365815e-07, 1.1424637e-10, -1.07908535e-14,
       111.856713, 3.78510215]
+  transport:
+    model: gas
+    geometry: nonlinear
+    diameter: 3.458
+    well-depth: 107.4
+    rotational-relaxation: 1.0
   note: '000000'
 - name: H2O2
   composition: {H: 2, O: 2}
@@ -93,6 +129,12 @@ species:
       -1.77025821e+04, 3.43505074]
     - [4.16500285, 4.90831694e-03, -1.90139225e-06, 3.71185986e-10, -2.87908305e-14,
       -1.78617877e+04, 2.91615662]
+  transport:
+    model: gas
+    geometry: nonlinear
+    diameter: 3.458
+    well-depth: 107.4
+    rotational-relaxation: 3.8
   note: '000000'
 - name: H2O
   composition: {H: 2, O: 1}
@@ -104,6 +146,13 @@ species:
       -3.02937267e+04, -0.849032208]
     - [3.03399249, 2.17691804e-03, -1.64072518e-07, -9.7041987e-11, 1.68200992e-14,
       -3.00042971e+04, 4.9667701]
+  transport:
+    model: gas
+    geometry: nonlinear
+    diameter: 2.605
+    well-depth: 572.4
+    dipole: 1.844
+    rotational-relaxation: 4.0
   note: '000000'
 - name: CO
   composition: {C: 1, O: 1}
@@ -115,6 +164,13 @@ species:
       -1.4344086e+04, 3.50840928]
     - [2.71518561, 2.06252743e-03, -9.98825771e-07, 2.30053008e-10, -2.03647716e-14,
       -1.41518724e+04, 7.81868772]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.65
+    well-depth: 98.1
+    polarizability: 1.95
+    rotational-relaxation: 1.8
   note: '000000'
 - name: CO2
   composition: {C: 1, O: 2}
@@ -126,6 +182,13 @@ species:
       -4.83719697e+04, 9.90105222]
     - [3.85746029, 4.41437026e-03, -2.21481404e-06, 5.23490188e-10, -4.72084164e-14,
       -4.8759166e+04, 2.27163806]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.763
+    well-depth: 244.0
+    polarizability: 2.65
+    rotational-relaxation: 2.1
   note: '000000'
 - name: HCO
   composition: {H: 1, C: 1, O: 1}
@@ -137,6 +200,11 @@ species:
       3839.56496, 3.39437243]
     - [2.77217438, 4.95695526e-03, -2.48445613e-06, 5.89161778e-10, -5.33508711e-14,
       4011.91815, 9.79834492]
+  transport:
+    model: gas
+    geometry: nonlinear
+    diameter: 3.59
+    well-depth: 498.0
   note: '000000'
 - name: N2
   composition: {N: 2}
@@ -148,6 +216,13 @@ species:
       -1020.8999, 3.950372]
     - [2.92664, 1.4879768e-03, -5.68476e-07, 1.0097038e-10, -6.753351e-15,
       -922.7977, 5.980528]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.621
+    well-depth: 97.53
+    polarizability: 1.76
+    rotational-relaxation: 4.0
   note: '000000'
 
 reactions:
