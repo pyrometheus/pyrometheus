@@ -174,8 +174,9 @@ def transport_polynomial_expr(c, n, t):
     """Generate code for transport polynomials
 
     :returns: Transport polynomial expression with coefficients c in terms of
-    the temperature t as a :class:`pymbolic.primitives.Expression`. For
-    `thermal_conductivity` and `species_mass_diffusivities`, `n = 1`, while for `viscosity` `n = 2`
+    the temperature t as a :class:`pymbolic.primitives.Expression`.
+    For `thermal_conductivity` and `species_mass_diffusivities`, `n = 1`,
+    while `n = 2` for `viscosity`.
     """
     assert len(c) == 5
     return (
@@ -205,16 +206,14 @@ def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
     ) for j in range(sol.n_species)])
 
 
-def species_mass_diff_mixture_rule_expr(sol: ct.Solution, sp, mmw, x, diff_ij):
-    """Generate code for species mixture rule. See [Kee_2003]_, chapter 12.
-
-    :returns: Expression for the species mass diffusion mixture rule
-        for species *sp* in terms of species mole fractions *w*
-        and binary diffusivity *diff_ij* as a :class:`pymbolic.primitives.Expression`
+def diffusivity_mixture_rule_denom_expr(sol: ct.Solution, j_sp, x, bdiff):
+    """ See [Kee_2003]_, chapter 12 for details.
+    :returns: The denominator expression to the mixture rule
+    for mixture-averaged species diffusivities in terms
+    of the species mole fractions *x* and binary diffusivities *bdiff* as a
+    :class:`pymbolic.primitives.Expression`
     """
-    w = sol.molecular_weights
-    return (1.0 - x[sp]*w[sp]/mmw)/(sum([x[j]/diff_ij[sp, j]
-     for j in range(sol.n_species)]) - x[sp]/diff_ij[sp, sp])
+    return sum(x[i_sp] / bdiff[i_sp, j_sp] for i_sp in range(sol.n_species))
 
 # }}}
 

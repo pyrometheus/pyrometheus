@@ -183,7 +183,7 @@ def test_get_thermo_properties(mechname, usr_np):
     computes thermodynamic properties c_p, s_r, h_rt, and k_eq
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution(f"mechs/{mechname}.yaml")
+    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
@@ -486,7 +486,7 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
     """This function tests that pyrometheus-generated code
     computes transport properties (viscosity, thermal conductivity and species mass
     diffusivity) correctly by comparing against Cantera"""
-    sol = ct.Solution(f"mechs/{mechname}.cti", "gas")
+    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
@@ -507,7 +507,7 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
             sol.Y = name + ":1"
             y = sol.Y
             dii_pm = ptk.get_species_mass_diffusivities_mixavg(
-                 t, ct.one_atm, y)
+                 ct.one_atm, t, y)
             # Viscosity error
             mu_err = np.abs(mu_pm[i] - sol.viscosity)
             assert mu_err < 1.0e-12
@@ -518,13 +518,11 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
 
             # Self mass diffusivity
             dii_err = np.abs(dii_pm[i] - dii_ct[i])
+            print(dii_pm[i])
             assert dii_err < 1.0e-12
 
-    # Now test mixture rules, with a reactor
-    # to get sensible mass fractions
+    # Now test mixture rules, with a reactor to get sensible mass fractions
     init_temperature = 1200.0
-    equiv_ratio = 1.0
-    ox_di_ratio = 0.21
 
     air = "O2:1.0,N2:3.76"
     sol.set_equivalence_ratio(phi=stoich_ratio, fuel=fuel+":1", oxidizer=air)
@@ -553,21 +551,17 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
         # Pyrometheus transport
         mu = ptk.get_mixture_viscosity_mixavg(temp, y)
         kappa = ptk.get_mixture_thermal_conductivity_mixavg(temp, y)
-        diff = ptk.get_species_mass_diffusivities_mixavg(temp, ct.one_atm, y,
-                                                         threshold=1.0e-15)
+        diff = ptk.get_species_mass_diffusivities_mixavg(ct.one_atm, temp, y)
 
         err_mu = np.abs(mu - mu_ct)
         assert err_mu < 1.0e-13
 
         err_kappa = np.abs(kappa - kappa_ct)
-        print(kappa)
         assert err_kappa < 1.0e-13
 
         for i in range(sol.n_species):
             err_diff = np.abs(diff[i] - diff_ct[i])
             assert err_diff < 1.0e-12
-
-#    assert 1 < 0
 
     return
 
