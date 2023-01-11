@@ -309,7 +309,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     pyro_diff_equil = pyro_gas.get_species_mass_diffusivities_mixavg(
         pres, temp_equil, y_equil)
 
-    for i in range(sol.species_names):
+    for i in range(sol.n_species):
         err_cold = usr_np.linalg.norm(
             ct_diff_cold[i] - pyro_diff_cold[i])
 
@@ -361,7 +361,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
         pres, temp_equil, y_equil)
 
     # Compare
-    for i in range(sol.species_names):
+    for i in range(sol.n_species):
         err_cold = usr_np.linalg.norm(
             ct_diff_cold[i] - pyro_diff_cold[i], "fro")
 
@@ -404,7 +404,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
 
     ct_diff = pyro_gas._pyro_make_array(ct_diff)
 
-    for i in range(sol.species_names):
+    for i in range(sol.n_species):
         err = usr_np.linalg.norm(
             ct_diff[i] - pyro_diff[i])
 
