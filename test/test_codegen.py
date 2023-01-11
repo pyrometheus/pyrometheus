@@ -193,7 +193,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     Tests are pointwise compositions and over object arrays that
     represent grids.
     """
-    
+
     sol = ct.Solution(f"mechs/{mechname}.yaml")
     pyro_class = pyro.codegen.python.get_thermochem_class(sol)
     pyro_gas = make_jax_pyro_class(pyro_class, usr_np)
@@ -265,12 +265,12 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
 
         assert err_visc < 1e-12
         assert err_cond < 1e-12
-        assert err_diff < 1e-12        
+        assert err_diff < 1e-12
 
     """Test on object, multi-dim arrays that represent 1D grids.
     """
     t_mix = 300
-    
+
     num_points = 51
     z = usr_np.linspace(0, 1, num_points)
 
@@ -285,13 +285,13 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     temp = t_mix * usr_np.ones(num_points)
     pyro_diff_cold = pyro_gas.get_species_mass_diffusivities_mixavg(
         pres, temp, y)
-    
+
     ct_diff_cold = np.zeros([sol.n_species, num_points])
     ct_diff_equil = np.zeros([sol.n_species, num_points])
 
     temp_equil = np.zeros(num_points)
     y_equil = np.zeros([sol.n_species, num_points])
-    
+
     for i in range(num_points):
         mf = np.array([y[s][i] for s in range(sol.n_species)])
         sol.TPY = t_mix, pres, mf
@@ -302,21 +302,20 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
         y_equil[:, i] = sol.Y
         ct_diff_equil[:, i] = sol.mix_diff_coeffs
 
-        
     ct_diff_cold = pyro_gas._pyro_make_array(ct_diff_cold)
     ct_diff_equil = pyro_gas._pyro_make_array(ct_diff_equil)
     y_equil = pyro_gas._pyro_make_array(y_equil)
 
     pyro_diff_equil = pyro_gas.get_species_mass_diffusivities_mixavg(
         pres, temp_equil, y_equil)
-    
-    for i, s in enumerate(sol.species_names):
+
+    for i in range(sol.species_names):
         err_cold = usr_np.linalg.norm(
             ct_diff_cold[i] - pyro_diff_cold[i])
-        
+
         err_equil = usr_np.linalg.norm(
             ct_diff_equil[i] - pyro_diff_equil[i], np.inf)
-        
+
         # print(f"Species: {s}\t... Norm(c): {err_cold}\t ... "
         #       f"Norm(e): {err_equil}")
         assert err_cold < 1e-11 and err_equil < 1e-11
@@ -408,9 +407,9 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     for i in range(sol.species_names):
         err = usr_np.linalg.norm(
             ct_diff[i] - pyro_diff[i])
-        
+
         assert err < 1e-10
-        
+
     return
 
 
@@ -498,7 +497,7 @@ def test_get_temperature(mechname, usr_np):
             t_guess = 0.9 * t
             t_pm = ptk.get_temperature(e, t_guess, y, True)
             assert np.abs(t - t_pm) < tol
-            
+
         y[sp] = 0.0
 
     # Now test a mixture with fully-populated composition
