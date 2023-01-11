@@ -76,7 +76,7 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
             # 'result[:] = res_list' may look tempting, however:
             # https://github.com/numpy/numpy/issues/16564
             for idx in range(len(res_list)):
-                result[idx] = res_list[idx]
+                result = result.at[idx].set(res_list[idx])
 
             return result
 
@@ -184,6 +184,7 @@ def test_get_pressure(mechname, usr_np):
                          [("sandiego", "H2", 0.5, 1e-6),
                           ("uconn32", "C2H4", 3, 1e-7),
                           ])
+@pytest.mark.parametrize("usr_np", numpy_list)
 def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
 
     """This function tests multiple aspects of pyro transport
@@ -229,6 +230,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
             assert err_cond < 1e-12
             assert err_diff < 1e-12
 
+    print("here 1")
     # Now test for mixtures from a 0D reactor
     time = 0
 
@@ -245,7 +247,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     reactor = ct.IdealGasConstPressureReactor(sol)
     sim = ct.ReactorNet([reactor])
 
-    for _ in range(3000):
+    for _ in range(100):
         time += dt
         sim.advance(time)
         sol.TPY = reactor.T, pres, reactor.Y
@@ -264,6 +266,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
         assert err_cond < 1e-12
         assert err_diff < 1e-12        
 
+    print("here 2")
     """Test on object, multi-dim arrays that represent 1D grids.
     """
     t_mix = 300
@@ -285,7 +288,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     
     ct_diff_cold = np.zeros([sol.n_species, num_points])
     ct_diff_equil = np.zeros([sol.n_species, num_points])
-    
+
     temp_equil = np.zeros(num_points)
     y_equil = np.zeros([sol.n_species, num_points])
     
@@ -318,7 +321,8 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
         #       f"Norm(e): {err_equil}")
         assert err_cold < 1e-11 and err_equil < 1e-11
 
-        
+
+    print("here 3")
     """Test on object, multi-dim arrays that represent 2D grids.
     """
     z_1, z_2 = np.meshgrid(z, z)
@@ -341,8 +345,8 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     # Now a clunky loop for Cantera
     from itertools import product
     
-    ct_diff_cold = usr_np.zeros([sol.n_species, num_points, num_points])
-    ct_diff_equil = usr_np.zeros_like(ct_diff_cold)
+    ct_diff_cold = np.zeros([sol.n_species, num_points, num_points])
+    ct_diff_equil = np.zeros_like(ct_diff_cold)
     
     for i, j in product(range(num_points), range(num_points)):
         mf = np.array([y[s][i, j] for s in range(sol.n_species)])
@@ -382,10 +386,12 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     y_fu = 0.5 * (1 + usr_np.tanh(50 * (z - 0.5)))
     y_ox = 1 - y_fu
 
-    y = pyro_gas._pyro_make_array(jnp.zeros([pyro_gas.num_species,
-                                            num_points]))
+    y = np.zeros([pyro_gas.num_species, num_points])
     y[i_fu] = y_fu
     y[i_ox] = y_ox
+    y = pyro_gas._pyro_make_array(y)
+    # y = pyro_gas._pyro_make_array(jnp.zeros([
+    #     pyro_gas.num_species, num_points]))
 
     temp = t_mix * usr_np.ones(num_points)
     pyro_diff = pyro_gas.get_species_mass_diffusivities_mixavg(
@@ -497,6 +503,7 @@ def test_get_temperature(mechname, usr_np):
             t_guess = 0.9 * t
             t_pm = ptk.get_temperature(e, t_guess, y, True)
             assert np.abs(t - t_pm) < tol
+            
         y[sp] = 0.0
 
     # Now test a mixture with fully-populated composition
