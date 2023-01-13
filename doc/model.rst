@@ -41,7 +41,7 @@ where
 .. math:: W = \sum_{i = 1}^{N}W_{i}y_{i}
 
 is the mixture molecular weight, :math:`R` the universal gas constant
-(in :math:`\mathrm{J/kmol-K}`), and :math:`T` the temperature (in
+(in :math:`\mathrm{J/kmol\cdot K}`), and :math:`T` the temperature (in
 :math:`\mathrm{K}`). We explain how to obtain the mixture temperature in
 detail in Section `1.2 <#subsec:energy>`__.
 
@@ -128,33 +128,23 @@ from other state variables.
 Transport coefficients
 ======================
 
-Pyrometheus generates code to evaluate transport coefficients of single species and mixtures based on the kinetic theory of gases where the electrical potential between the atoms and molecules dictates the macroscopic properties of the flow. A complete overview and description of the formulation is presented in chapter 12 of [Kee_2003]_.
+Pyrometheus-generated code provides routines to evaluate species and mixture transport properties. The formulation follows most closely the Cantera implementation, which is based on polynomial fits to collision integrals. This approach is based on the kinetic theory of gases; a complete overview can be found in chapter 12 of [Kee_2003]_.
 
 .. _subsec:Viscosity:
 
-The fluid viscosity depends on the mixture composition given by :math:`X_k` mole fraction and pure species viscosity :math:`\mu_k` of the individual species. The latter are obtained according to 
+The viscosity of the :math:`n^{\mathrm{th}}` species in the mixture is:
 
 .. math::
 
-    \mu_k = 2.6693 \times 10^{-6} \frac{[T W_k]^{\frac{1}{2}}}{\sigma_{i}^2 \Omega^{(2,2)}_{i}(T, \epsilon, k_B, \delta_k)}
+    \mu_n = \sqrt{T} [\sum_{m = 0}^{4} a_{m, n} (log T)^{m}]^2,
 
-with units :math:`\frac{kg}{m-s}`. In this equation, :math:`W` is the molecular weight, :math:`\sigma` is the net collision diameter according to Lennard-Jones potential, :math:`\Omega^{(2,2)}` is the collision integral as a function of temperature :math:`T`, dipole moment :math:`\delta`, well-depth :math:`\epsilon` and the Boltzmann constant :math:`k_B`. In practice, the atom or molecule geometrical properties are given in the mechanism file in the variables ``geometry``, ``diameter``, ``well-depth``, ``polarizability`` and ``rotational-relaxation``.
-
-Finally, the collision integral is tabulated for fast evaluation of the transport coefficients. Thus, with all these variables, an interpolation function can be obtained, yielding the respective species viscosities:
+where the coefficients :math:`a_{m, n}` are provided by Cantera. The viscosity of the mixture is then obtained via the mixture rule
 
 .. math::
 
-    \mu_k(T) = \sqrt{T} (A + B \, log(T) + C \, log(T)^2 + D \, log(T)^3 + E \, log(T)^4)^n
+    \mu = \sum_{n = 1}^{N} \frac{X_n \mu_n}{\sum_{j = 1}^{N} X_j\phi_{nj}}
 
-The coefficients :math:`A` to :math:`E` depends on the respective species as a function of all the aforementioned variables. For the viscosity, the exponent is :math:`n=2`. 
-
-Then, a mixture rule is employed to weight the contribution of the individual species to the fluid viscosity and it is given by
-
-.. math::
-
-    \mu^{(m)} = \sum_{k=1}^{K} \frac{X_k \mu_k}{\sum_{j=1}^{K} X_j\phi_{kj}}
-
-where
+where :math:`\{ X_{n} \}_{n = 1}^{N}` are the mole fractions, and
 
 .. math::
 
@@ -165,25 +155,13 @@ where
 
 .. _subsec:Thermal conductivity:
 
-The thermal conductivity of the indidividual species can be obtained from the viscosity according to
+The thermal conductivity of species :math:`n` is
 
 .. math::
 
-    \lambda = \mu c_v
+    \lambda_n = \sqrt{T} \sum_{m = 0}^{0} b_{m, n} (log T)^{m},
 
-where :math:`cv` is the specific heat at constant volume. Assuming that the individual species conductivities are composed of translational, rotational, and vibrational contributions, the thermal conductivity is evaluated as
-
-.. math::
-
-    \lambda = \mu (f_{trans} c_{v_{trans}} + f_{rot} c_{v_{rot}} + f_{vib} c_{v_{vib}})
-
-The reader is referred to [Kee_2003]_ for the exact expression of each one of the above arguments. The interpolating function with an the exponent is :math:`n=1` is given by
-
-.. math::
-
-    \lambda_k(T) = \sqrt{T} (A + B \, log(T) + C \, log(T)^2 + D \, log(T)^3 + E \, log(T)^4)^n
-
-Using a mixture averaged rule based on its composition in terms of mole fractions is given by
+The mixture viscosity is then obtained via the mixture rule
 
 .. math::
 
