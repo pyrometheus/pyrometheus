@@ -1,6 +1,6 @@
-.. _sec:kinetics:
+.. _sec:thermochemistry:
 
-Chemical Kinetics
+Thermochemistry and Transport
 =================
 
 Pyrometheus generates code to evaluate chemical source terms.
@@ -10,9 +10,9 @@ We focus on a homogeneous adiabatic reactor for simplicify. Yet, the
 systems explained here can easily be adapted to other configurations
 (e.g., isochoric or inhomogeneous reactors).
 
-.. _subsec:species:
+.. _subsec:thermokinetics:
 
-Species Conservation and Chemical Source Terms
+Chemical Kinetics and Thermodynamics
 ----------------------------------------------
 
 Our goal is to express, in as much detail, the chemical kinetics of
@@ -123,12 +123,12 @@ progress `[reaction_rates] <#reaction_rates>`__, we need the
 temperature. Yet, we have defered any discussion on how to compute it
 from other state variables.
 
-.. _sec:transport:
+.. _subsec:transport:
 
-Transport coefficients
-======================
+Transport Properties
+----------------------------------------------
 
-Pyrometheus-generated code provides routines to evaluate species and mixture transport properties. The formulation follows most closely the Cantera implementation, which is based on polynomial fits to collision integrals. This approach is based on the kinetic theory of gases; a complete overview can be found in chapter 12 of [Kee_2003]_.
+Pyrometheus-generated code provides routines to evaluate species and mixture transport properties. These follow most closely the Cantera implementation, which is based on polynomial fits to collision integrals. This approach is based on the kinetic theory of gases, for which a complete overview can be found in chapter 12 of [Kee_2003]_.
 
 .. _subsec:Viscosity:
 
@@ -136,22 +136,22 @@ The viscosity of the :math:`n^{\mathrm{th}}` species in the mixture is:
 
 .. math::
 
-    \mu_n = \sqrt{T} [\sum_{m = 0}^{4} a_{m, n} (log T)^{m}]^2,
+    \mu_n = \sqrt{T} \lef[\sum_{m = 0}^{4} a_{m, n}\, (\log\, T)^{m}\right]^2,
 
 where the coefficients :math:`a_{m, n}` are provided by Cantera. The viscosity of the mixture is then obtained via the mixture rule
 
 .. math::
 
-    \mu = \sum_{n = 1}^{N} \frac{X_n \mu_n}{\sum_{j = 1}^{N} X_j\phi_{nj}}
+    \mu = \sum_{n = 1}^{N} \frac{X_n \mu_n}{\sum_{j = 1}^{N} X_j\Phi_{nj}}
 
-where :math:`\{ X_{n} \}_{n = 1}^{N}` are the mole fractions, and
+where :math:`X_{n} = W Y_{n} / W_{(n)}` is the mole fraction of species :math:`n`, and
 
 .. math::
 
-    \phi_{kj} = \frac{1}{\sqrt{8}}
-    \left( 1 + \frac{W_k}{W_j} \right)^{-\frac{1}{2}}
-    \left( 1 + \left[ \frac{\mu_k}{\mu_j} \right]^{\frac{1}{2}}
-    \left[ \frac{W_j}{W_k} \right]^{\frac{1}{4}} \right)^2
+    \Phi_{nj} = \frac{1}{\sqrt{8}}
+    \left( 1 + \frac{W_n}{W_j} \right)^{-\frac{1}{2}}
+    \left( 1 + \left[ \frac{\mu_n}{\mu_j} \right]^{\frac{1}{2}}
+    \left[ \frac{W_j}{W_n} \right]^{\frac{1}{4}} \right)^2.
 
 .. _subsec:Thermal conductivity:
 
@@ -159,36 +159,33 @@ The thermal conductivity of species :math:`n` is
 
 .. math::
 
-    \lambda_n = \sqrt{T} \sum_{m = 0}^{0} b_{m, n} (log T)^{m},
+    \lambda_n = \sqrt{T} \sum_{m = 0}^{0} b_{m, n}\, (\log\, T)^{m}.
 
-The mixture viscosity is then obtained via the mixture rule
+The mixture viscosity is
 
 .. math::
 
-    \lambda^{(m)} = \frac{1}{2} \left( \sum_{k=1}^{K} X_k \lambda_k +
-       \frac{1}{\sum_{k=1}^{K} \frac{X_k}{\lambda_k} }\right)
+    \lambda = \frac{1}{2} \left( \sum_{n = 1}^{N} X_n \lambda_n +
+       \frac{1}{\sum_{n = 1}^{N} \frac{X_n}{\lambda_n} } \right).
 
 .. _subsec:Species mass diffusivities:
 
-The species mass diffusivities in :math:`\frac{m^2}{s}` are evaluated according to 
+The binary mass diffusivities, in :math:`\frac{m^2}{s}`, for species $i$ and $j$ are
 
 .. math::
 
-    D_{ij} = 1.8583 \times 10^{-7} \frac{[T^3 W_ij]^{\frac{1}{2}}}{P \sigma_{ij}^2 \Omega^{(1,1)}_{ij}(T, \epsilon, k_B, \delta_i)}
+     D_{i,j}(T) = \frac{T^{3/2}}{p} \sum_{m = 0}^{4}c_{i,j,m}\, (\log\, T)^m
 
-In this equation, :math:`P` is the pressure and :math:`\Omega^{(1,1)}` is another collision integral. Similarly to the viscosity and thermal conductivity, a interpolating function is used:
-
-.. math::
-
-     D_{ij}(T) = \frac{T^{3/2}}{P} (A + B \, log(T) + C \, log(T)^2 + D \, log(T)^3 + E \, log(T)^4)^n
-
-Here, the exponent is :math:`n=1`. 
-
-Each species has a respective mass diffusivity relative to the mixture, which is given by a weighting rule considering the species binary mass diffusivities
-:math:`D_{ij}` and the mass fractions :math:`Y_i`
+The mixture-averaged diffusivity of species :math:`n` is
 
 .. math::
 
-    D_{i}^{(m)} = \frac{1 - Y_i}{\sum_{j\ne i} \frac{X_j}{D_{ij}}}
+    \mathscr{D}_{n} = \frac{W - X_{(n)}W_{n}}{W}\pp{ \sum_{m \neq n}\frac{X_{m}}{D_{nm}}  }^{-1}
 
-This mixture rule becomes singular in regions of a single species, when :math:`1 - Y_i \to 0` and :math:`\sum_{j\ne i} X_j \to 0`. In this case, the species self-diffusivity :math:`D_{ii}` is used instead as the limit value.
+This expression becomes singular for :math:`X_n = 1` (for any :math:`n`, so :math:`\sum_{m \neq n} X_m/D_{nm} = 0`). Thus, following Cantera, :func:`get_species_mass_diffusivities_mixavg` only returns the mixture-averaged diffusivity if
+
+.. math::
+
+   \sum_{m \neq n} \frac{X_{m}}{D_nm} > 0,
+
+and :math:`D_{nn}` otherwise. The conditional is implemented using :func:`where` and, of course, it is difficult to satisfy in finite-precision calculations. It can lead to round-off errors in :math:`\mathscr{D}_{n}` but, like Cantera, Pyrometheus does not attempt to correct this behavior to avoid the use of arbitrary thresholds.
