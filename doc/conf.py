@@ -84,3 +84,5 @@ mathjax3_config = {
         "displayMath": [["\\[", "\\]"]],
     },
 }
+
+nitpicky = True
