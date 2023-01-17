@@ -32,10 +32,7 @@ jobs:
                 curl -L -O https://tiker.net/ci-support-v0
                 . ./ci-support-v0
                 build_py_project_in_conda_env
-
-                # 'flake8<6' because of
-                # https://github.com/zheller/flake8-quotes/issues/110
-                python -m pip install 'flake8<6' pep8-naming flake8-quotes flake8-bugbear
+                python -m pip install flake8 pep8-naming flake8-quotes flake8-bugbear
                 python .ci/generate-test-mech.py
                 flake8 --extend-ignore E501,Q000 test/mechs
 
