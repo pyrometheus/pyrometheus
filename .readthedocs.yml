@@ -8,6 +8,9 @@ python:
     - method: pip
       path: .
 
+sphinx:
+  fail_on_warning: true
+
 build:
   os: ubuntu-22.04
   tools:
@@ -15,4 +18,4 @@ build:
   jobs:
     pre_build:
       # Generate the thermochem example and reinstall pyrometheus as editable
-      - which python && python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py && python -m pip install --editable --no-cache-dir .
+      - python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py && python -m pip install --editable --no-cache-dir .
