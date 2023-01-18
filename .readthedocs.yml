@@ -10,6 +10,8 @@ python:
 
 build:
     os: ubuntu-22.04
+    tools:
+        python
     jobs:
         pre_build:
             - python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
