@@ -14,7 +14,5 @@ build:
     python: "miniconda3-4.7"
   jobs:
     pre_build:
-    # Generate the thermochem example and reinstall pyrometheus as editable
-      - |
-        python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
-        python -m pip install --editable .
+      # Generate the thermochem example and reinstall pyrometheus as editable
+      - python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py && python -m pip install --editable .
