@@ -15,5 +15,6 @@ build:
     jobs:
         pre_build:
             - |
-                python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
-                python -m pip install --editable .
+              # Generate the thermochem example and reinstall pyrometheus as editable
+              python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
+              python -m pip install --editable .
