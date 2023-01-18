@@ -14,4 +14,4 @@ build:
         python: "miniconda3-4.7"
     jobs:
         pre_build:
-            - pwd && python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py && ls pyrometheus
+            - pwd && ls && python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py && ls pyrometheus
