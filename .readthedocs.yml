@@ -18,4 +18,4 @@ build:
   jobs:
     pre_build:
       # Generate the thermochem example and reinstall pyrometheus as editable
-      - conda activate $READTHEDOCS_VERSION && python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py && python -m pip install --editable .
+      - conda init bash && conda activate $READTHEDOCS_VERSION && python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py && python -m pip install --editable .
