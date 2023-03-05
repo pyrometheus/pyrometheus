@@ -483,8 +483,8 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
                                                                1e-7)])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
-    """This function tests that pyrometheus-generated code
-    computes transport properties (viscosity, thermal conductivity and species mass
+    """This function tests that pyrometheus-generated code computes
+    transport properties (viscosity, thermal conductivity and species mass
     diffusivity) correctly by comparing against Cantera"""
     sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
     ptk_base_cls = pyro.get_thermochem_class(sol)
@@ -494,20 +494,17 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
     ntemp = 22
     temp = np.linspace(300.0, 2400.0, ntemp)
 
-    # Loop over each individual species
-    # There is not check for species mass diff. since it is only valid for a mixture
     for t in temp:
         sol.TP = t, ct.one_atm
         mu_pm = ptk.get_species_viscosities(t)
         kappa_pm = ptk.get_species_thermal_conductivities(t)
         dii_ct = usr_np.diag(sol.binary_diff_coeffs)
-        # Loop over species, because apparently cannot
-        # access species transport directly through Python
+        # Loop over each individual species by making a single-species mixture
         for i, name in enumerate(sol.species_names):
             sol.Y = name + ":1"
             y = sol.Y
             dii_pm = ptk.get_species_mass_diffusivities_mixavg(
-                 ct.one_atm, t, y)
+                 pressure=ct.one_atm, temperature=t, mass_fractions=y)
             # Viscosity error
             mu_err = np.abs(mu_pm[i] - sol.viscosity)
             assert mu_err < 1.0e-12
@@ -518,7 +515,6 @@ def test_get_transport_properties(mechname, fuel, stoich_ratio, dt, usr_np):
 
             # Self mass diffusivity
             dii_err = np.abs(dii_pm[i] - dii_ct[i])
-            print(dii_pm[i])
             assert dii_err < 1.0e-12
 
     # Now test mixture rules, with a reactor to get sensible mass fractions

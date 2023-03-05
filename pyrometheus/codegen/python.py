@@ -355,6 +355,8 @@ class Thermochemistry:
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fracs = self.get_mole_fractions(mmw, mass_fractions)
         bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
+        temp_pres = temperature**(3/2)/pressure
+        zeros = self._pyro_zeros_like(temperature)
 
         x_sum = self._pyro_make_array([
             %for sp in range(sol.n_species):
@@ -369,7 +371,7 @@ class Thermochemistry:
             ])
         return self._pyro_make_array([
               % for sp in range(sol.n_species):
-              temperature**(3/2)/pressure*self.usr_np.where(denom[${sp}] > 0,
+              temp_pres*self.usr_np.where(self.usr_np.greater(denom[${sp}], zeros),
                   (mmw - mole_fracs[${sp}] * self.wts[${sp}])/(mmw * denom[${sp}]),
                   bdiff_ij[${sp}, ${sp}]
               ),
