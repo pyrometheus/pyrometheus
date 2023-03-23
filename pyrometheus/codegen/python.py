@@ -356,28 +356,32 @@ class Thermochemistry:
         raise RuntimeError("Temperature iteration failed to converge")
 
     %if falloff_reactions:
-    def get_falloff_rates(self, temperature, concentrations, k_fwd):
+    def get_falloff_rates(self, troe_high, troe_low, temperature, concentrations, k_fwd):
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
-        %for _, react in falloff_reactions:
+        %for j, (i, react) in enumerate(falloff_reactions):
             %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.high_rate, Variable("temperature")))},
+            ${cgm(ce.rate_coefficient_expr(j,
+                react.high_rate, Variable("troe_high"),
+                Variable("temperature")))},
             %else:
-            ${cgm(ce.rate_coefficient_expr(
-                react.rate.high_rate, Variable("temperature")))},
+            ${cgm(ce.rate_coefficient_expr(j,
+                react.rate.high_rate, Variable("troe_high"),
+                Variable("temperature")))},
             %endif
         %endfor
                 ])
 
         k_low = self._pyro_make_array([
-        %for _, react in falloff_reactions:
+        %for j, (i, react) in enumerate(falloff_reactions):
             %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.low_rate, Variable("temperature")))},
+            ${cgm(ce.rate_coefficient_expr(j,
+                react.low_rate, Variable("troe_high"),
+                Variable("temperature")))},
             %else:
-            ${cgm(ce.rate_coefficient_expr(
-                react.rate.low_rate, Variable("temperature")))},
+            ${cgm(ce.rate_coefficient_expr(j,
+                react.rate.low_rate, Variable("troe_high"),
+                Variable("temperature")))},
             %endif
         %endfor
                 ])
@@ -409,20 +413,21 @@ class Thermochemistry:
         return
 
     %endif
-    def get_fwd_rate_coefficients(self, temperature, concentrations):
+    def get_fwd_rate_coefficients(self, rate_params, troe_high, troe_low, temperature, concentrations):
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
-        %for react in sol.reactions():
-        %if isinstance(react, ct.FalloffReaction):
+        %for i in range(sol.n_reactions):
+        %if isinstance(sol.reaction(i), ct.FalloffReaction):
             0*temperature,
         %else:
-            ${cgm(ce.rate_coefficient_expr(react.rate,
+            ${cgm(ce.rate_coefficient_expr(i, sol.reaction(i).rate,
+                                        Variable("rate_params"),
                                         Variable("temperature")))} * ones,
         %endif
         %endfor
                 ]
         %if falloff_reactions:
-        self.get_falloff_rates(temperature, concentrations, k_fwd)
+        self.get_falloff_rates(troe_high, troe_low, temperature, concentrations, k_fwd)
         %endif
 
         %for i, react in three_body_reactions:
@@ -431,8 +436,8 @@ class Thermochemistry:
         %endfor
         return self._pyro_make_array(k_fwd)
 
-    def get_net_rates_of_progress(self, temperature, concentrations):
-        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
+    def get_net_rates_of_progress(self, rate_params, troe_high, troe_low, temperature, concentrations):
+        k_fwd = self.get_fwd_rate_coefficients(rate_params, troe_high, troe_low, temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
         return self._pyro_make_array([
                 %for i in range(sol.n_reactions):
@@ -442,9 +447,9 @@ class Thermochemistry:
                 %endfor
                ])
 
-    def get_net_production_rates(self, rho, temperature, mass_fractions):
+    def get_net_production_rates(self, rate_params, troe_high, troe_low, rho, temperature, mass_fractions):
         c = self.get_concentrations(rho, mass_fractions)
-        r_net = self.get_net_rates_of_progress(temperature, c)
+        r_net = self.get_net_rates_of_progress(rate_params, troe_high, troe_low, temperature, c)
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():

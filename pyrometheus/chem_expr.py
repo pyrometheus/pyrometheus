@@ -206,21 +206,22 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
 
 # {{{ Rate coefficients
 
-def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
+def rate_coefficient_expr(reaction_index, rate_coeff: ct.Arrhenius, a, t):
     """
     :returns: The rate coefficient expression for *rate_coeff* in terms
         of the temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
     # Rate parameters
-    a = rate_coeff.pre_exponential_factor
+    # a = rate_coeff.pre_exponential_factor    
     b = rate_coeff.temperature_exponent
     t_a = rate_coeff.activation_energy/ct.gas_constant
     if t_a == 0:
         # Weakly temperature-dependent rate
-        return a * t**b
+        return a[reaction_index] * t**b
     else:
         # Modified Arrhenius
-        return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
+        return p.Variable("exp")(p.Variable("log")(a[reaction_index]) +
+                                 b*p.Variable("log")(t)-t_a/t)
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
