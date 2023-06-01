@@ -479,6 +479,76 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     return
 
 
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio",
+                         [("gri30", "CH4", 2),
+                          ("uconn32", "C2H4", 3),
+                          ("sandiego", "H2", 0.5)])
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_external_rate_params(mechname, fuel, stoich_ratio, usr_np):
+    """
+    This function tests that pyrometheus-generated code
+    computes Cantera-predicted rates of progress"""
+
+    # Cantera
+    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
+
+    # Need pre-exponentials from Cantera
+    a = usr_np.array([])
+    b = usr_np.array([])
+    t_a = usr_np.array([])
+
+    for i, r in enumerate(sol.reactions()):
+        if not isinstance(r, ct.FalloffReaction):
+            a = usr_np.append(a, r.rate.pre_exponential_factor)
+            b = usr_np.append(b, r.rate.temperature_exponent)
+            t_a = usr_np.append(t_a,
+                                r.rate.activation_energy / ct.gas_constant)
+        else:
+            # Falloff coefficients are hard-coded
+            a = usr_np.append(a, 0)
+            b = usr_np.append(b, 0)
+            t_a = usr_np.append(t_a, 0)
+
+    rate_params = (a, b, t_a)
+
+    # Pyro code
+    pyro_class = pyro.codegen.python.get_thermochem_class(
+        sol, fixed_coeffs=False)
+    pyro_code = pyro.codegen.python.gen_thermochem_code(
+        sol, fixed_coeffs=False)
+    pyro_gas = make_jax_pyro_class(pyro_class, usr_np)
+
+    # print("\n")
+    # print(pyro_code)
+    # print("\n")
+    
+    # Set state and compute rates
+    temp = 1500
+    fu = fuel + ":1"
+    ox = "O2:0.21, N2:0.79"
+
+    sol.TP = temp, ct.one_atm
+    sol.set_equivalence_ratio(phi=1, fuel=fu, oxidizer=ox)
+
+    rho = sol.density
+    y = sol.Y
+
+    k_ct = sol.forward_rate_constants
+    r_ct = sol.net_rates_of_progress
+    omega_ct = sol.net_production_rates
+
+    c = pyro_gas.get_concentrations(rho, y)
+    k = pyro_gas.get_fwd_rate_coefficients(temp, c, rate_params)
+    r = pyro_gas.get_net_rates_of_progress(temp, c, rate_params)
+    omega = pyro_gas.get_net_production_rates(rho, temp, y, rate_params)
+
+    assert np.linalg.norm((k - k_ct)/k_ct, np.inf) < 1e-14
+    assert np.linalg.norm(r - r_ct, np.inf) < 1e-10
+    assert np.linalg.norm(omega - omega_ct, np.inf) < 1e-10
+
+    return
+
+
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_pyro_on_grids(usr_np):
     """This function tests that pyrometheus-generated code

@@ -356,18 +356,22 @@ class Thermochemistry:
         raise RuntimeError("Temperature iteration failed to converge")
 
     %if falloff_reactions:
-    def get_falloff_rates(self, troe_high, troe_low, temperature, concentrations, k_fwd):
+    def get_falloff_rates(self, temperature, concentrations, k_fwd):
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
         %for j, (i, react) in enumerate(falloff_reactions):
             %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(j,
-                react.high_rate, Variable("troe_high"),
-                Variable("temperature")))},
+            ${cgm(ce.ArrheniusMapper().fixed_coeffs(
+                ce.ArrheniusExpression(Variable("a"),
+                Variable("b"), Variable("t_act"),
+                Variable("temperature")),
+                react.high_rate))} * ones,
             %else:
-            ${cgm(ce.rate_coefficient_expr(j,
-                react.rate.high_rate, Variable("troe_high"),
-                Variable("temperature")))},
+            ${cgm(ce.ArrheniusMapper().fixed_coeffs(
+                ce.ArrheniusExpression(Variable("a"),
+                Variable("b"), Variable("t_act"),
+                Variable("temperature")),
+                react.rate.high_rate))} * ones,
             %endif
         %endfor
                 ])
@@ -375,13 +379,17 @@ class Thermochemistry:
         k_low = self._pyro_make_array([
         %for j, (i, react) in enumerate(falloff_reactions):
             %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(j,
-                react.low_rate, Variable("troe_high"),
-                Variable("temperature")))},
+            ${cgm(ce.ArrheniusMapper().fixed_coeffs(
+                ce.ArrheniusExpression(Variable("a"),
+                Variable("b"), Variable("t_act"),
+                Variable("temperature")),
+                react.low_rate))} * ones,
             %else:
-            ${cgm(ce.rate_coefficient_expr(j,
-                react.rate.low_rate, Variable("troe_high"),
-                Variable("temperature")))},
+            ${cgm(ce.ArrheniusMapper().fixed_coeffs(
+                ce.ArrheniusExpression(Variable("a"),
+                Variable("b"), Variable("t_act"),
+                Variable("temperature")),
+                react.rate.low_rate))} * ones,
             %endif
         %endfor
                 ])
@@ -413,21 +421,37 @@ class Thermochemistry:
         return
 
     %endif
-    def get_fwd_rate_coefficients(self, rate_params, troe_high, troe_low, temperature, concentrations):
+    %if fixed_coeffs:
+    def get_fwd_rate_coefficients(self, temperature, concentrations):
+    %else:
+    def get_fwd_rate_coefficients(self, temperature, concentrations, rate_params):
+        a = rate_params[0]
+        b = rate_params[1]
+        t_act = rate_params[2]
+    %endif
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
         %for i in range(sol.n_reactions):
         %if isinstance(sol.reaction(i), ct.FalloffReaction):
             0*temperature,
         %else:
-            ${cgm(ce.rate_coefficient_expr(i, sol.reaction(i).rate,
-                                        Variable("rate_params"),
-                                        Variable("temperature")))} * ones,
+            %if fixed_coeffs:
+                ${cgm(ce.ArrheniusMapper().fixed_coeffs(
+                    ce.ArrheniusExpression(Variable("a"),
+                    Variable("b"), Variable("t_act"),
+                    Variable("temperature")),
+                    sol.reaction(i).rate))} * ones,
+            %else:
+                ${cgm(ce.ArrheniusMapper()(
+                    ce.ArrheniusExpression(Variable("a"),
+                    Variable("b"), Variable("t_act"),
+                    Variable("temperature")), i))} * ones,
+            %endif
         %endif
         %endfor
                 ]
         %if falloff_reactions:
-        self.get_falloff_rates(troe_high, troe_low, temperature, concentrations, k_fwd)
+        self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
 
         %for i, react in three_body_reactions:
@@ -436,8 +460,13 @@ class Thermochemistry:
         %endfor
         return self._pyro_make_array(k_fwd)
 
-    def get_net_rates_of_progress(self, rate_params, troe_high, troe_low, temperature, concentrations):
-        k_fwd = self.get_fwd_rate_coefficients(rate_params, troe_high, troe_low, temperature, concentrations)
+    %if fixed_coeffs:
+    def get_net_rates_of_progress(self, temperature, concentrations):
+        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
+    %else:
+    def get_net_rates_of_progress(self,temperature, concentrations, rate_params):
+        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations, rate_params)
+    %endif
         log_k_eq = self.get_equilibrium_constants(temperature)
         return self._pyro_make_array([
                 %for i in range(sol.n_reactions):
@@ -447,9 +476,15 @@ class Thermochemistry:
                 %endfor
                ])
 
-    def get_net_production_rates(self, rate_params, troe_high, troe_low, rho, temperature, mass_fractions):
+    %if fixed_coeffs:
+    def get_net_production_rates(self, rho, temperature, mass_fractions):
         c = self.get_concentrations(rho, mass_fractions)
-        r_net = self.get_net_rates_of_progress(rate_params, troe_high, troe_low, temperature, c)
+        r_net = self.get_net_rates_of_progress(temperature, c)
+    %else:
+    def get_net_production_rates(self, rho, temperature, mass_fractions, rate_params):
+        c = self.get_concentrations(rho, mass_fractions)
+        r_net = self.get_net_rates_of_progress(temperature, c, rate_params)
+    %endif
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
@@ -461,7 +496,7 @@ class Thermochemistry:
 # }}}
 
 
-def gen_thermochem_code(sol: ct.Solution) -> str:
+def gen_thermochem_code(sol: ct.Solution, fixed_coeffs=True) -> str:
     """For the mechanism given by *sol*, return Python source code for a class conforming
     to a module containing a class called ``Thermochemistry`` adhering to the
     :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
@@ -474,6 +509,7 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
         cgm=CodeGenerationMapper(),
         Variable=p.Variable,
 
+        fixed_coeffs=fixed_coeffs,
         ce=pyrometheus.chem_expr,
 
         falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
@@ -491,11 +527,12 @@ def compile_class(code_str, class_name="Thermochemistry"):
     return exec_dict[class_name]
 
 
-def get_thermochem_class(sol: ct.Solution):
+def get_thermochem_class(sol: ct.Solution, fixed_coeffs=True):
     """For the mechanism given by *sol*, return a class conforming to the
     :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
     """
-    return compile_class(gen_thermochem_code(sol))
+    return compile_class(
+        gen_thermochem_code(sol, fixed_coeffs=fixed_coeffs))
 
 
 def cti_to_mech_file(cti_file_name, mech_file_name):
