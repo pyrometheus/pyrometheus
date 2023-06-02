@@ -52,7 +52,6 @@ def make_jax_pyro_class(pyro_gas_base_cls, usr_np):
             arrays of :mod:`numpy` scalars. It defaults to making object arrays,
             however if an array consists of all scalars, it makes a "plain old"
             :class:`numpy.ndarray`.
-
             See ``this numpy bug <https://github.com/numpy/numpy/issues/18004>`__
             for more context.
             """
@@ -515,14 +514,8 @@ def test_external_rate_params(mechname, fuel, stoich_ratio, usr_np):
     # Pyro code
     pyro_class = pyro.codegen.python.get_thermochem_class(
         sol, fixed_coeffs=False)
-    pyro_code = pyro.codegen.python.gen_thermochem_code(
-        sol, fixed_coeffs=False)
     pyro_gas = make_jax_pyro_class(pyro_class, usr_np)
 
-    # print("\n")
-    # print(pyro_code)
-    # print("\n")
-    
     # Set state and compute rates
     temp = 1500
     fu = fuel + ":1"

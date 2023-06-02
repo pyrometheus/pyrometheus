@@ -483,7 +483,8 @@ class Thermochemistry:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
     %else:
     def get_net_rates_of_progress(self,temperature, concentrations, rate_params):
-        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations, rate_params)
+        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations,
+                                               rate_params)
     %endif
         log_k_eq = self.get_equilibrium_constants(temperature)
         return self._pyro_make_array([
@@ -499,7 +500,8 @@ class Thermochemistry:
         c = self.get_concentrations(rho, mass_fractions)
         r_net = self.get_net_rates_of_progress(temperature, c)
     %else:
-    def get_net_production_rates(self, rho, temperature, mass_fractions, rate_params):
+    def get_net_production_rates(self, rho, temperature, mass_fractions,
+                                 rate_params):
         c = self.get_concentrations(rho, mass_fractions)
         r_net = self.get_net_rates_of_progress(temperature, c, rate_params)
     %endif
@@ -515,9 +517,10 @@ class Thermochemistry:
 
 
 def gen_thermochem_code(sol: ct.Solution, fixed_coeffs=True) -> str:
-    """For the mechanism given by *sol*, return Python source code for a class conforming
-    to a module containing a class called ``Thermochemistry`` adhering to the
-    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
+    """For the mechanism given by *sol*, return Python source code for
+    a class conforming to a module containing a class called ``Thermochemistry``
+    adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
+    interface.
     """
     return code_tpl.render(
         ct=ct,

@@ -213,9 +213,9 @@ class ArrheniusExpression(p.Expression):
                  t: p.Variable):
         j = p.Variable("j")
         self.children = (p.subscript(a, j),
-                         p.subscript(b, j),  
+                         p.subscript(b, j),
                          p.Subscript(t_act, j), t)
-        
+
     mapper_method = "map_arrhenius"
 
 
@@ -223,23 +223,23 @@ class ArrheniusMapper(mapper.IdentityMapper):
 
     def _pre_exponential(self, expr):
         return expr.children[0]
-    
+
     def _temp_exponent(self, expr):
         return expr.children[1]
-    
+
     def _activation_temp(self, expr):
         return expr.children[2]
-    
+
     def _temperature(self, expr):
         return expr.children[3]
-    
+
     def _map_arrhenius(self, expr):
         log = p.Variable("log")
-        exp = p.Variable("exp")        
+        exp = p.Variable("exp")
         t = self._temperature(expr)
-        return exp(log(self._pre_exponential(expr)) + 
-                   self._temp_exponent(expr) * log(t) - 
-                   self._activation_temp(expr) / t)
+        return exp(log(self._pre_exponential(expr))
+                   + self._temp_exponent(expr) * log(t)
+                   - self._activation_temp(expr) / t)
 
     def map_arrhenius(self, expr, rxn_index):
         from pymbolic import substitute
@@ -257,7 +257,7 @@ class ArrheniusMapper(mapper.IdentityMapper):
             b: params.temperature_exponent,
             t_act: params.activation_energy/ct.gas_constant
         })
-    
+
 
 def rate_coefficient_expr(reaction_index, rate_coeff: ct.Arrhenius, a, t):
     """
@@ -265,7 +265,7 @@ def rate_coefficient_expr(reaction_index, rate_coeff: ct.Arrhenius, a, t):
         of the temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
     # Rate parameters
-    # a = rate_coeff.pre_exponential_factor    
+    # a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
     t_a = rate_coeff.activation_energy/ct.gas_constant
     if t_a == 0:
@@ -273,8 +273,8 @@ def rate_coefficient_expr(reaction_index, rate_coeff: ct.Arrhenius, a, t):
         return a[reaction_index] * t**b
     else:
         # Modified Arrhenius
-        return p.Variable("exp")(p.Variable("log")(a[reaction_index]) +
-                                 b*p.Variable("log")(t)-t_a/t)
+        return p.Variable("exp")(p.Variable("log")(a[reaction_index])
+                                 + b*p.Variable("log")(t)-t_a/t)
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
