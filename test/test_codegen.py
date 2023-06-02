@@ -48,9 +48,10 @@ def make_jax_pyro_class(pyro_gas_base_cls, usr_np):
     class PyroJaxNumpy(pyro_gas_base_cls):
 
         def _pyro_make_array(self, res_list):
-            """This works around (e.g.) numpy.exp not working with object arrays of numpy
-            scalars. It defaults to making object arrays, however if an array
-            consists of all scalars, it makes a "plain old" :class:`numpy.ndarray`.
+            """This works around (e.g.) numpy.exp not working with object
+            arrays of :mod:`numpy` scalars. It defaults to making object arrays,
+            however if an array consists of all scalars, it makes a "plain old"
+            :class:`numpy.ndarray`.
 
             See ``this numpy bug <https://github.com/numpy/numpy/issues/18004>`__
             for more context.
