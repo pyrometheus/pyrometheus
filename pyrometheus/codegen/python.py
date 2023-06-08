@@ -141,6 +141,7 @@ class Thermochemistry:
     .. automethod:: get_species_gibbs_rt
     .. automethod:: get_equilibrium_constants
     .. automethod:: get_temperature
+    .. automethod:: get_temperature_RPY
     .. automethod:: __init__
     \"""
 
@@ -347,6 +348,9 @@ class Thermochemistry:
             %endfor
                 ])
 
+    def get_temperature_RPY(self, rho, p, Y):
+        return p / (rho * self.get_specific_gas_constant(Y))
+
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
         if do_energy is False:
             pv_fun = self.get_mixture_specific_heat_cp_mass
@@ -377,10 +381,10 @@ class Thermochemistry:
         %for _, react in falloff_reactions:
             %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
-                react.high_rate, Variable("temperature")))},
+                react.high_rate, Variable("temperature")))} * ones,
             %else:
             ${cgm(ce.rate_coefficient_expr(
-                react.rate.high_rate, Variable("temperature")))},
+                react.rate.high_rate, Variable("temperature")))} * ones,
             %endif
         %endfor
                 ])
@@ -389,10 +393,10 @@ class Thermochemistry:
         %for _, react in falloff_reactions:
             %if react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
-                react.low_rate, Variable("temperature")))},
+                react.low_rate, Variable("temperature")))} * ones,
             %else:
             ${cgm(ce.rate_coefficient_expr(
-                react.rate.low_rate, Variable("temperature")))},
+                react.rate.low_rate, Variable("temperature")))} * ones,
             %endif
         %endfor
                 ])
@@ -406,7 +410,7 @@ class Thermochemistry:
 
         falloff_center = self._pyro_make_tensor([
         %for _, react in falloff_reactions:
-            ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))},
+            ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))} * ones,
         %endfor
                         ])
 
@@ -414,7 +418,7 @@ class Thermochemistry:
         %for i, (_, react) in enumerate(falloff_reactions):
             ${cgm(ce.falloff_function_expr(
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
-                Variable("falloff_center")))},
+                Variable("falloff_center")))} * ones,
         %endfor
                             ])*reduced_pressure/(1+reduced_pressure)
 
