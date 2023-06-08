@@ -216,6 +216,9 @@ class ArrheniusExpression(p.Expression):
                          p.subscript(b, j),
                          p.Subscript(t_act, j), t)
 
+    def __getinitargs__(self):
+        return self.children
+
     mapper_method = "map_arrhenius"
 
 
