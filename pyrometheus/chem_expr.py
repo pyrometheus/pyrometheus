@@ -153,6 +153,15 @@ def _(poly: ct.NasaPoly2, arg_name):
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
+
+def constant_cp_enthalpy_expr(sp_thermo: ct.ConstantCp, arg_name):
+    return sp_thermo[1] + sp_thermo[3] * (arg_name - sp_thermo[0])
+
+
+def constant_cp_entropy_expr(sp_thermo: ct.ConstantCp, arg_name):
+    log = p.Variable("log")
+    return sp_thermo[2] + sp_thermo[3] * (log(arg_name) - log(sp_thermo[0]))
+
 # }}}
 
 

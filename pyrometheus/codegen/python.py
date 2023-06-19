@@ -260,7 +260,11 @@ class Thermochemistry:
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.iwts * rho * mass_fractions
+        return self._pyro_make_array([
+            % for i in range(sol.n_species):
+            self.iwts[${i}] * mass_fractions[${i}] * rho,
+            % endfor
+                ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
@@ -289,21 +293,37 @@ class Thermochemistry:
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
-            ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
+            %if isinstance(sp.thermo, ct.ConstantCp):
+                ${sp.thermo.coeffs[3]} * self.usr_np.ones_like(temperature),
+            %elif isinstance(sp.thermo, ct.NasaPoly2):
+                ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
+            %else:
+                self.usr_np.zeros_like(temperature),
             % endfor
                 ])
 
     def get_species_enthalpies_rt(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
-            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
+            %if isinstance(sp.thermo, ct.ConstantCp):
+                ${cgm(ce.constant_cp_enthalpy_expr(sp.thermo, "temperature"))},
+            %elif isinstance(sp.thermo, ct.NasaPoly2):
+                ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
+            %else
+                self.usr_np.zeros_like(temperature),
+            %endif
             % endfor
                 ])
 
     def get_species_entropies_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
+            %if isinstance(sp.thermo, ct.ConstantCp):
+                ${cgm(ce.constant_cp_entropy_expr(sp.thermo, "temperature"))},
+            %elif isinstance(sp.thermo, ct.NasaPoly2):
                 ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+            %else:
+                self.usr_np.zeros_like(temperature),
             % endfor
                 ])
 
