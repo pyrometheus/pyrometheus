@@ -109,7 +109,8 @@ def test_generate_mechfile(lang_module, mechname):
         print(code, file=mech_file)
 
 
-@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml", "uiuc.cti"])
+@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml",
+                                      "uiuc.cti"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_rate_coefficients(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -536,7 +537,8 @@ def test_external_rate_params(mechname, fuel, stoich_ratio, usr_np):
     r = pyro_gas.get_net_rates_of_progress(temp, c, rate_params)
     omega = pyro_gas.get_net_production_rates(rho, temp, y, rate_params)
 
-    assert np.linalg.norm((k - k_ct)/k_ct, np.inf) < 1e-14
+    assert (np.linalg.norm((k - k_ct), np.inf)
+            / np.linalg.norm(k_ct, np.inf)) < 1e-14
     assert np.linalg.norm(r - r_ct, np.inf) < 1e-10
     assert np.linalg.norm(omega - omega_ct, np.inf) < 1e-10
 
