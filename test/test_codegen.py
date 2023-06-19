@@ -497,7 +497,7 @@ def test_external_rate_params(mechname, fuel, stoich_ratio, usr_np):
     b = usr_np.array([])
     t_a = usr_np.array([])
 
-    for r in enumerate(sol.reactions()):
+    for r in sol.reactions():
         if not isinstance(r, ct.FalloffReaction):
             a = usr_np.append(a, r.rate.pre_exponential_factor)
             b = usr_np.append(b, r.rate.temperature_exponent)
