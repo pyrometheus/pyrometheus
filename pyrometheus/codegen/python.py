@@ -106,7 +106,6 @@ code_tpl = Template(
 .. autoclass:: Thermochemistry
 \"""
 
-
 import numpy as np
 
 
@@ -293,37 +292,39 @@ class Thermochemistry:
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
-            %if isinstance(sp.thermo, ct.ConstantCp):
-                ${sp.thermo.coeffs[3]} * self.usr_np.ones_like(temperature),
-            %elif isinstance(sp.thermo, ct.NasaPoly2):
+            % if isinstance(sp.thermo, ct.ConstantCp):
+                ${sp.thermo.coeffs[3]/ct.gas_constant}*self.usr_np.ones_like(temperature),
+            % elif isinstance(sp.thermo, ct.NasaPoly2):
                 ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
-            %else:
+            % else:
                 self.usr_np.zeros_like(temperature),
+            % endif
             % endfor
                 ])
 
     def get_species_enthalpies_rt(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
-            %if isinstance(sp.thermo, ct.ConstantCp):
+            % if isinstance(sp.thermo, ct.ConstantCp):
                 ${cgm(ce.constant_cp_enthalpy_expr(sp.thermo, "temperature"))},
-            %elif isinstance(sp.thermo, ct.NasaPoly2):
+            % elif isinstance(sp.thermo, ct.NasaPoly2):
                 ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
-            %else
+            % else:
                 self.usr_np.zeros_like(temperature),
-            %endif
+            % endif
             % endfor
                 ])
 
     def get_species_entropies_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
-            %if isinstance(sp.thermo, ct.ConstantCp):
+            % if isinstance(sp.thermo, ct.ConstantCp):
                 ${cgm(ce.constant_cp_entropy_expr(sp.thermo, "temperature"))},
-            %elif isinstance(sp.thermo, ct.NasaPoly2):
+            % elif isinstance(sp.thermo, ct.NasaPoly2):
                 ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
-            %else:
+            % else:
                 self.usr_np.zeros_like(temperature),
+            % endif
             % endfor
                 ])
 
@@ -346,7 +347,7 @@ class Thermochemistry:
                     -0.17364695002734*temperature,
                 %endif
             %endfor
-                ])
+            ])
 
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
         if do_energy is False:

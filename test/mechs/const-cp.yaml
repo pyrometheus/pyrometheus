@@ -1,0 +1,79 @@
+units: {length: cm, quantity: mol, activation-energy: cal/mol}
+
+phases:
+- name: gas
+  thermo: ideal-gas
+  elements: [O, H, C, N]
+  species: [C2H4, O2, CO2, CO, H2O, H2, N2]
+  kinetics: gas
+  reactions: all
+  state:
+    T: 300.0
+    P: 1.01325e+05
+
+species:
+- name: C2H4
+  composition: {C: 2, H: 4}
+  thermo:
+    model: constant-cp
+    T0: 300.0
+    h0: 175.264
+    s0: 219.587
+    cp0: 43.055
+- name: O2
+  composition: {O: 2}
+  thermo:
+    model: constant-cp
+    T0: 300.0
+    h0: 0.0
+    s0: 205.33
+    cp0: 29.143
+- name: CO2
+  composition: {C: 1, O: 2}
+  thermo:
+    model: constant-cp
+    T0: 300.0
+    h0: -1311.463
+    s0: 214.016
+    cp0: 37.218
+- name: CO
+  composition: {C: 1, O: 1}
+  thermo:
+    model: constant-cp
+    T0: 300.0
+    h0: -368.525
+    s0: 197.837
+    cp0: 29.143
+- name: H2O
+  composition: {H: 2, O: 1}
+  thermo:
+    model: constant-cp
+    T0: 300.0
+    h0: -805.875
+    s0: 189.036
+    cp0: 33.596
+- name: H2
+  composition: {H: 2}
+  thermo:
+    model: constant-cp
+    T0: 300.0
+    h0: 0.0
+    s0: 130.859
+    cp0: 29.143
+- name: N2
+  composition: {N: 2}
+  thermo:
+    model: constant-cp
+    T0: 300.0
+    h0: 0.0
+    s0: 191.692
+    cp0: 29.143
+
+reactions:
+- equation: C2H4 + O2 => 2 CO + 2 H2  # Reaction 1
+  rate-constant: {A: 1.0e+12, b: 0.0, Ea: 35500}
+  orders: {C2H4: 0.5, O2: 0.65}
+- equation: ' CO + 0.5 O2 <=> CO2'  # Reaction 2
+  rate-constant: {A: 1.03e+07, b: 0.7, Ea: 12000}
+- equation: ' H2 + 0.5 O2 <=> H2O'  # Reaction 3
+  rate-constant: {A: 2.81e+09, b: 0.0, Ea: 3.5e+04}

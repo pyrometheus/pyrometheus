@@ -176,7 +176,8 @@ def test_get_pressure(mechname, usr_np):
     assert abs(p_ct - p_pm) / p_ct < 1.0e-12
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
+@pytest.mark.parametrize("mechname", ["const-cp", "uiuc",
+                                      "sandiego", "uconn32", "gri30"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_thermo_properties(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -221,7 +222,7 @@ def test_get_thermo_properties(mechname, usr_np):
         print(f"keq_pm = {keq_pm}")
         print(f"keq_cnt = {keq_ct}")
         print(f"temperature = {t}")
-        # xclude meaningless check on equilibrium constants for irreversible reaction
+        # exclude meaningless check on equilibrium constants for irreversible reaction
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:
                 keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
