@@ -36,6 +36,7 @@ Internal Functionality
 """
 
 import pymbolic.primitives as p
+from pymbolic import mapper
 from functools import singledispatch
 import cantera as ct
 import numpy as np
@@ -206,21 +207,77 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
 
 # {{{ Rate coefficients
 
-def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
+class ArrheniusExpression(p.Expression):
+
+    def __init__(self, a: p.Variable, b: p.Variable, t_act: p.Variable,
+                 t: p.Variable):
+        j = p.Variable("j")
+        self.children = (p.subscript(a, j),
+                         p.subscript(b, j),
+                         p.Subscript(t_act, j), t)
+
+    def __getinitargs__(self):
+        return self.children
+
+    mapper_method = "map_arrhenius"
+
+
+class ArrheniusMapper(mapper.IdentityMapper):
+
+    def _pre_exponential(self, expr):
+        return expr.children[0]
+
+    def _temp_exponent(self, expr):
+        return expr.children[1]
+
+    def _activation_temp(self, expr):
+        return expr.children[2]
+
+    def _temperature(self, expr):
+        return expr.children[3]
+
+    def _map_arrhenius(self, expr):
+        log = p.Variable("log")
+        exp = p.Variable("exp")
+        t = self._temperature(expr)
+        return exp(log(self._pre_exponential(expr))
+                   + self._temp_exponent(expr) * log(t)
+                   - self._activation_temp(expr) / t)
+
+    def map_arrhenius(self, expr, rxn_index):
+        from pymbolic import substitute
+        return substitute(
+            self._map_arrhenius(expr), {p.Variable("j"): rxn_index}
+        )
+
+    def fixed_coeffs(self, expr, params: ct.Arrhenius):
+        from pymbolic import substitute
+        a = self._pre_exponential(expr)
+        b = self._temp_exponent(expr)
+        t_act = self._activation_temp(expr)
+        return substitute(self._map_arrhenius(expr), {
+            a: params.pre_exponential_factor,
+            b: params.temperature_exponent,
+            t_act: params.activation_energy/ct.gas_constant
+        })
+
+
+def rate_coefficient_expr(reaction_index, rate_coeff: ct.Arrhenius, a, t):
     """
     :returns: The rate coefficient expression for *rate_coeff* in terms
         of the temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
     # Rate parameters
-    a = rate_coeff.pre_exponential_factor
+    # a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
     t_a = rate_coeff.activation_energy/ct.gas_constant
     if t_a == 0:
         # Weakly temperature-dependent rate
-        return a * t**b
+        return a[reaction_index] * t**b
     else:
         # Modified Arrhenius
-        return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
+        return p.Variable("exp")(p.Variable("log")(a[reaction_index])
+                                 + b*p.Variable("log")(t)-t_a/t)
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):

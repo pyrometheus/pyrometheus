@@ -12,9 +12,9 @@ jobs:
         name: Flake8
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v2
+        -   uses: actions/checkout@v3
         -
-            uses: actions/setup-python@v1
+            uses: actions/setup-python@v4
             with:
                 python-version: '3.x'
         -   name: "Main Script"
@@ -26,7 +26,7 @@ jobs:
         name: Flake8 on Generated Code
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v2
+        -   uses: actions/checkout@v3
         -   name: "Main Script"
             run: |
                 curl -L -O https://tiker.net/ci-support-v0
@@ -48,7 +48,7 @@ jobs:
         env:
             PYTHON_VERSION: ${{ matrix.python_version }}
         steps:
-        -   uses: actions/checkout@v2
+        -   uses: actions/checkout@v3
         -   name: "Main Script"
             run: |
                 CONDA_ENVIRONMENT=.test-conda-env-py3.yml
@@ -63,7 +63,7 @@ jobs:
     #     name: Examples Conda Py
     #     runs-on: ubuntu-latest
     #     steps:
-    #     -   uses: actions/checkout@v2
+    #     -   uses: actions/checkout@v3
     #     -   name: "Main Script"
     #         run: |
     #            curl -L -O https://tiker.net/ci-support-v0
@@ -75,9 +75,9 @@ jobs:
         name: Documentation
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v2
+        -   uses: actions/checkout@v3
         -
-            uses: actions/setup-python@v1
+            uses: actions/setup-python@v4
             with:
                 python-version: '3.x'
         -   name: "Main Script"
@@ -95,7 +95,7 @@ jobs:
         name: Tests for downstream project ${{ matrix.downstream_project }}
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v2
+        -   uses: actions/checkout@v3
         -   name: "Main Script"
             env:
                 DOWNSTREAM_PROJECT: ${{ matrix.downstream_project }}

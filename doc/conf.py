@@ -69,12 +69,12 @@ html_theme = "furo"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 intersphinx_mapping = {
-    "https://docs.python.org/3/": None,
-    "https://numpy.org/doc/stable/": None,
-    "https://mirgecom.readthedocs.io/en/latest/": None,
-    "https://documen.tician.de/pymbolic": None,
-    "cantera": ("https://cantera.org/documentation/dev/sphinx/html", None),
-    }
+        "python": ("https://docs.python.org/3/", None),
+        "numpy": ("https://numpy.org/doc/stable/", None),
+        "mirgecom": ("https://mirgecom.readthedocs.io/en/latest/", None),
+        "pymbolic": ("https://documen.tician.de/pymbolic", None),
+        "cantera": ("https://cantera.org/documentation/dev/sphinx/html", None),
+        }
 
 autoclass_content = "class"
 
@@ -84,3 +84,5 @@ mathjax3_config = {
         "displayMath": [["\\[", "\\]"]],
     },
 }
+
+nitpicky = True

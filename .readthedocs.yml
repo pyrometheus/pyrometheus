@@ -1,9 +1,21 @@
 version: 2
 
-conda:
-  environment: .rtd-env-py3.yml
-
 python:
   install:
     - method: pip
       path: .
+
+sphinx:
+  fail_on_warning: true
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.10"
+  jobs:
+    post_install:
+      - pip install sphinx-math-dollar sphinx-copybutton furo
+      # Generate the thermochem example
+      - python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
+      # Reinstall pyrometheus as editable to take into account the generated file
+      - python -m pip install --editable .
