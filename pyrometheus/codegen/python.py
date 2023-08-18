@@ -136,6 +136,8 @@ class Thermochemistry:
     .. automethod:: get_mixture_specific_heat_cv_mass
     .. automethod:: get_mixture_enthalpy_mass
     .. automethod:: get_mixture_internal_energy_mass
+    .. automethod:: get_specific_heat_ratio
+    .. automethod:: get_soundspeed
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
     .. automethod:: get_species_entropies_r
@@ -321,6 +323,20 @@ class Thermochemistry:
         e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
+
+    def get_specific_heat_ratio(self, temperature, mass_fractions):
+        cp0_r = self.get_species_specific_heats_r(temperature)
+        cpmix = self.get_mass_average_property(mass_fractions, cp0_r)
+        sum_Yk_Wk = sum([
+            mass_fractions[i]
+            * self.inv_molecular_weights[i]
+            for i in range(self.num_species)])
+        return cpmix / (cpmix - sum_Yk_Wk)
+
+    def get_soundspeed(self, temperature, mass_fractions):
+        gamma = self.get_specific_heat_ratio(temperature, mass_fractions)
+        R = self.get_specific_gas_constant(mass_fractions)
+        return self.usr_np.sqrt(gamma * R * temperature)
 
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_tensor([
