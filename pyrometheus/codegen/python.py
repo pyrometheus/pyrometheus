@@ -220,8 +220,8 @@ class Thermochemistry:
         from numbers import Number
         all_numbers = all(isinstance(e, Number) for e in res_list)
 
-        dtype = np.float64 if all_numbers else object
-        result = np.empty((len(res_list),), dtype=dtype)
+        dtype = self.usr_np.float64 if all_numbers else object
+        result = self.usr_np.empty((len(res_list),), dtype=dtype)
 
         # 'result[:] = res_list' may look tempting, however:
         # https://github.com/numpy/numpy/issues/16564
@@ -277,7 +277,7 @@ class Thermochemistry:
     def get_concentrations(self, rho, mass_fractions):
         return self._pyro_make_array([
             % for i in range(sol.n_species):
-            self.iwts[${i}] * mass_fractions[${i}] * rho,
+            self.inv_molecular_weights[${i}] * mass_fractions[${i}] * rho,
             % endfor
                 ])
 
