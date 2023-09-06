@@ -157,8 +157,8 @@ def _(poly: ct.NasaPoly2, arg_name):
 def constant_cp_enthalpy_expr(sp_thermo: ct.ConstantCp,
                               arg_name) -> p.Expression:
     t = p.Variable(arg_name)
-    c = sp_thermo.coeffs
-    c[1:] /= ct.gas_constant
+c = sp_thermo.coeffs / ct.gas_constant
+return c[1] / t + c[3] * (1 - c[0]*ct.gas_constant / t)
     return c[1] / t + c[3] * (1 - c[0] / t)
 
 
