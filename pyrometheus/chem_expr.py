@@ -96,12 +96,12 @@ def poly_to_entropy_expr(poly, arg_name):
 
 @poly_to_entropy_expr.register
 def _(poly: ct.NasaPoly2, arg_name):
-    log = p.Variable("log")
+    log_t = p.Variable("log_temperature")
 
     def gen(c, t):
         assert len(c) == 7
         return (
-            c[0] * log(t)
+            c[0] * log_t
             + c[1] * t
             + c[2] / 2 * t ** 2
             + c[3] / 3 * t ** 3
@@ -214,13 +214,14 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
     # Rate parameters
     a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
-    t_a = rate_coeff.activation_energy/ct.gas_constant
+    t_a = rate_coeff.activation_energy/ct.gas_constant    
     if t_a == 0:
         # Weakly temperature-dependent rate
         return a * t**b
     else:
         # Modified Arrhenius
-        return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
+        log_t = p.Variable("log_temperature")
+        return p.Variable("exp")(np.log(a)+b*log_t-t_a/t)
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):

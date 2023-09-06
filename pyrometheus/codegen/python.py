@@ -318,23 +318,23 @@ class Thermochemistry:
             % endfor
                 ])
 
-    def get_species_entropies_r(self, temperature):
+    def get_species_entropies_r(self, log_temperature, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
                 ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
                 ])
 
-    def get_species_gibbs_rt(self, temperature):
+    def get_species_gibbs_rt(self, log_temperature, temperature):
         h0_rt = self.get_species_enthalpies_rt(temperature)
         s0_r = self.get_species_entropies_r(temperature)
         return h0_rt - s0_r
 
-    def get_equilibrium_constants(self, temperature):
+    def get_equilibrium_constants(self, log_temperature, temperature):
         rt = self.gas_constant * temperature
         c0 = self.usr_np.log(self.one_atm / rt)
 
-        g0_rt = self.get_species_gibbs_rt(temperature)
+        g0_rt = self.get_species_gibbs_rt(log_temperature, temperature)
         return self._pyro_make_array([
             %for i, react in enumerate(sol.reactions()):
                 %if react.reversible:
@@ -370,7 +370,7 @@ class Thermochemistry:
         raise RuntimeError("Temperature iteration failed to converge")
 
     %if falloff_reactions:
-    def get_falloff_rates(self, temperature, concentrations, k_fwd):
+    def get_falloff_rates(self, log_temperature, temperature, concentrations, k_fwd):
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
@@ -423,20 +423,21 @@ class Thermochemistry:
         return
 
     %endif
-    def get_fwd_rate_coefficients(self, temperature, concentrations):
+    def get_fwd_rate_coefficients(self, log_temperature, temperature, concentrations):
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
         %for react in sol.reactions():
         %if isinstance(react, ct.FalloffReaction):
             0*temperature,
         %else:
-            ${cgm(ce.rate_coefficient_expr(react.rate,
-                                        Variable("temperature")))} * ones,
+            ${cgm(ce.rate_coefficient_expr(
+                    react.rate, Variable("temperature")
+                ))} * ones,
         %endif
         %endfor
                 ]
         %if falloff_reactions:
-        self.get_falloff_rates(temperature, concentrations, k_fwd)
+        self.get_falloff_rates(log_temperature, temperature, concentrations, k_fwd)
         %endif
 
         %for i, react in three_body_reactions:
@@ -446,8 +447,9 @@ class Thermochemistry:
         return self._pyro_make_array(k_fwd)
 
     def get_net_rates_of_progress(self, temperature, concentrations):
-        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
-        log_k_eq = self.get_equilibrium_constants(temperature)
+        log_temperature = self.usr_np.log(temperature)
+        k_fwd = self.get_fwd_rate_coefficients(log_temperature, temperature, concentrations)
+        log_k_eq = self.get_equilibrium_constants(log_temp, temperature)
         return self._pyro_make_array([
                 %for i in range(sol.n_reactions):
                     ${cgm(ce.rate_of_progress_expr(sol, i,
