@@ -83,6 +83,11 @@ def eager_jax(res_list, actx: EagerJAXArrayContext):
     return array
 
 
+def pytato_jax(res_list, actx: PytatoJAXArrayContext):
+    """This returns a :class:`pytato.array.Stack`"""
+    return actx.np.stack(res_list)
+
+
 def torch(res_list, actx: TorchArrayContext):
     """This returns a :class:`torch.Tensor`"""
     
