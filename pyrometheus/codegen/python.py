@@ -476,7 +476,7 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
     interface.
     """
-    if not all([isinstance(r, ct.Reaction) for r in sol.reactions()]):
+    if not all((isinstance(r, ct.Reaction) for r in sol.reactions())):
         # Cantera version < 3.0
         from warnings import warn
         warn("Specific reaction types (e.g., ct.FalloffReaction) are "
@@ -490,9 +490,9 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     else:
         # Cantera version == 3.0
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                       if r.reaction_type.startswith('falloff')]
+                       if r.reaction_type.startswith("falloff")]
         three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                          if r.reaction_type == 'three-body-Arrhenius']
+                          if r.reaction_type == "three-body-Arrhenius"]
 
     return code_tpl.render(
         ct=ct,
