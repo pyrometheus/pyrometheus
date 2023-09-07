@@ -483,7 +483,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     sim = ct.ReactorNet([reactor])
 
     # Falloff reactions
-    if not all((isinstance(r, ct.Reaction) for r in sol.reactions())):
+    if not all([isinstance(r, ct.Reaction) for r in sol.reactions()]):
         i_falloff = [i for i, r in enumerate(sol.reactions())
                      if isinstance(r, ct.FalloffReaction)]
     else:
