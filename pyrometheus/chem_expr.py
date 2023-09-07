@@ -240,7 +240,7 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
                            if i not in indices_nondef]
     else:
         efficiencies = [react.third_body.efficiencies[sp]
-                        for sp in react.third_body_efficiencies]
+                        for sp in react.third_body.efficiencies]
         indices_nondef = [sol.species_index(sp) for sp
                           in react.third_body.efficiencies]
         indices_default = [i for i in range(sol.n_species)

@@ -122,7 +122,7 @@ def test_get_rate_coefficients(mechname, usr_np):
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
     three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
-                            if r.reaction_type == 'three-body-Arrhenius']
+                            if r.reaction_type == "three-body-Arrhenius"]
 
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
