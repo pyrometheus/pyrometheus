@@ -409,6 +409,7 @@ class Thermochemistry:
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
         ones = self._pyro_zeros_like(temperature) + 1.0
+<<<<<<< HEAD
         k_high = self._pyro_make_tensor([
         %for j, (i, react) in enumerate(falloff_reactions):
             %if react.uses_legacy:
@@ -417,6 +418,13 @@ class Thermochemistry:
                 Variable("b"), Variable("t_act"),
                 Variable("temperature")),
                 react.high_rate))} * ones,
+=======
+        k_high = self._pyro_make_array([
+        %for _, react in falloff_reactions:
+            %if 'uses_legacy' in dir(react) and react.uses_legacy:
+            ${cgm(ce.rate_coefficient_expr(
+                react.high_rate, Variable("temperature")))},
+>>>>>>> get-soundspeed
             %else:
             ${cgm(ce.ArrheniusMapper().fixed_coeffs(
                 ce.ArrheniusExpression(Variable("a"),
@@ -427,6 +435,7 @@ class Thermochemistry:
         %endfor
                 ])
 
+<<<<<<< HEAD
         k_low = self._pyro_make_tensor([
         %for j, (i, react) in enumerate(falloff_reactions):
             %if react.uses_legacy:
@@ -435,6 +444,13 @@ class Thermochemistry:
                 Variable("b"), Variable("t_act"),
                 Variable("temperature")),
                 react.low_rate))} * ones,
+=======
+        k_low = self._pyro_make_array([
+        %for _, react in falloff_reactions:
+            %if 'uses_legacy' in dir(react) and react.uses_legacy:
+            ${cgm(ce.rate_coefficient_expr(
+                react.low_rate, Variable("temperature")))},
+>>>>>>> get-soundspeed
             %else:
             ${cgm(ce.ArrheniusMapper().fixed_coeffs(
                 ce.ArrheniusExpression(Variable("a"),
@@ -481,9 +497,15 @@ class Thermochemistry:
         t_act = rate_params[2]
     %endif
         ones = self._pyro_zeros_like(temperature) + 1.0
+<<<<<<< HEAD
         k_fwd = self._pyro_make_tensor([
         %for i in range(sol.n_reactions):
         %if isinstance(sol.reaction(i), ct.FalloffReaction):
+=======
+        k_fwd = [
+        %for react in sol.reactions():
+        %if react.equation in [r.equation for _, r in falloff_reactions]:
+>>>>>>> get-soundspeed
             0*temperature,
         %else:
             %if fixed_coeffs:
@@ -555,6 +577,24 @@ def gen_thermochem_code(sol: ct.Solution, fixed_coeffs=True) -> str:
     adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
     interface.
     """
+    if not all((isinstance(r, ct.Reaction) for r in sol.reactions())):
+        # Cantera version < 3.0
+        from warnings import warn
+        warn("Specific reaction types (e.g., ct.FalloffReaction) are "
+             "deprecated in Cantera 3, where all in a 'ct.Solution' "
+             "object are of generic 'ct.Reaction' type. "
+             "Identify reactions using 'ct.Reaction.reaction_type' insteady")
+        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                       if isinstance(r, ct.FalloffReaction)]
+        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                          if isinstance(r, ct.ThreeBodyReaction)]
+    else:
+        # Cantera version == 3.0
+        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                       if r.reaction_type.startswith("falloff")]
+        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                          if r.reaction_type == "three-body-Arrhenius"]
+
     return code_tpl.render(
         ct=ct,
         sol=sol,
@@ -567,10 +607,8 @@ def gen_thermochem_code(sol: ct.Solution, fixed_coeffs=True) -> str:
         fixed_coeffs=fixed_coeffs,
         ce=pyrometheus.chem_expr,
 
-        falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                           if isinstance(react, ct.FalloffReaction)],
-        three_body_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                             if isinstance(react, ct.ThreeBodyReaction)],
+        falloff_reactions=falloff_rxn,
+        three_body_reactions=three_body_rxn,
     )
 
 
