@@ -262,7 +262,7 @@ def troe_falloff_center_expr(react: ct.Reaction, t):
     :returns: The Troe falloff center expression for reaction *react* in terms of the
         temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
-    
+
     if isinstance(react.rate, ct.TroeRate):
         troe_params = react.rate.falloff_coeffs
     elif isinstance(react.rate, ct.LindemannRate):
@@ -293,7 +293,6 @@ def troe_falloff_factor_expr(react: ct.Reaction, i,
     :class:`pymbolic.primitives.Expression`
 
     """
-
     if isinstance(react.rate, ct.TroeRate):
         log_rp = p.Variable("log10")(red_pressure[i])
         c = -0.4 - 0.67 * falloff_center[i]
