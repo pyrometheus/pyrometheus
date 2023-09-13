@@ -258,7 +258,7 @@ def troe_falloff_expr(react: ct.Reaction, t):
     :returns: The Troe falloff center expression for reaction *react* in terms of the
         temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
-    if hasattr("uses_legacy", react) or not react.uses_legacy:
+    if "uses_legacy" not in dir(react) or not react.uses_legacy:
         if isinstance(react.rate, ct.TroeRate):
             troe_params = react.rate.falloff_coeffs
         elif isinstance(react.rate, ct.LindemannRate):
@@ -303,7 +303,6 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
         of the temperature *t*, reduced pressure *red_pressure*, and falloff center
         *falloff_center* as a :class:`pymbolic.primitives.Expression`
     """
-    print(react.uses_legacy)
     if "uses_legacy" not in dir(react) or not react.uses_legacy:
         # Assume Cantera 3.0
         falloff_type = react.reaction_type.split("-")[1]
