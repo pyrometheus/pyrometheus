@@ -275,7 +275,11 @@ class Thermochemistry:
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.inv_molecular_weights * rho * mass_fractions
+        return self.self._pyro_make_array([
+            %for i_sp in range(sol.n_species):
+            self.inv_molecular_weights[i_sp] * rho * mass_fractions[i_sp],
+            %endfor
+        ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([
