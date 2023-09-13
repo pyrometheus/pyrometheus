@@ -378,25 +378,15 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            %if 'uses_legacy' in dir(react) and react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.high_rate, Variable("temperature")))},
-            %else:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.high_rate, Variable("temperature")))},
-            %endif
         %endfor
                 ])
 
         k_low = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            %if 'uses_legacy' in dir(react) and react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.low_rate, Variable("temperature")))},
-            %else:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.low_rate, Variable("temperature")))},
-            %endif
         %endfor
                 ])
 
@@ -480,23 +470,11 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
     interface.
     """
-    if not all((isinstance(r, ct.Reaction) for r in sol.reactions())):
-        # Cantera version < 3.0
-        from warnings import warn
-        warn("Specific reaction types (e.g., ct.FalloffReaction) are "
-             "deprecated in Cantera 3, where all in a 'ct.Solution' "
-             "object are of generic 'ct.Reaction' type. "
-             "Identify reactions using 'ct.Reaction.reaction_type' insteady")
-        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                       if isinstance(r, ct.FalloffReaction)]
-        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                          if isinstance(r, ct.ThreeBodyReaction)]
-    else:
-        # Cantera version == 3.0
-        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                       if r.reaction_type.startswith("falloff")]
-        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                          if r.reaction_type == "three-body-Arrhenius"]
+
+    falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                   if r.reaction_type.startswith("falloff")]
+    three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                      if r.reaction_type == "three-body-Arrhenius"]
 
     return code_tpl.render(
         ct=ct,
