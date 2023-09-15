@@ -36,6 +36,7 @@ Internal Functionality
 from arraycontext import (ArrayContext,
                           NumpyArrayContext,
                           EagerJAXArrayContext,
+                          PytatoJAXArrayContext,
                           TorchArrayContext)
 
 
