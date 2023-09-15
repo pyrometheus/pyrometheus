@@ -31,7 +31,7 @@ setup(name="pyrometheus",
       python_requires="~=3.6",
 
       install_requires=[
-          "cantera>=3.0",
+          "cantera",
           "pymbolic",
           "mako",
           ],
