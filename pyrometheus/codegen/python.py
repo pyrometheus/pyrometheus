@@ -205,7 +205,7 @@ class Thermochemistry:
 
     def _pyro_zeros_like(self, argument):
         # FIXME: This is imperfect, as a NaN will stay a NaN.
-        return 0 * argument
+        return self.usr_np.zeros_like(argument)
 
     def _pyro_make_array(self, res_list):
         \"""This works around (e.g.) numpy.exp not working with object
@@ -379,14 +379,14 @@ class Thermochemistry:
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
             ${cgm(ce.rate_coefficient_expr(
-                react.rate.high_rate, Variable("temperature")))},
+                react.rate.high_rate, Variable("temperature")))} * ones,
         %endfor
                 ])
 
         k_low = self._pyro_make_array([
         %for _, react in falloff_reactions:
             ${cgm(ce.rate_coefficient_expr(
-                react.rate.low_rate, Variable("temperature")))},
+                react.rate.low_rate, Variable("temperature")))} * ones,
         %endfor
                 ])
 
@@ -399,7 +399,7 @@ class Thermochemistry:
 
         falloff_center = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))},
+            ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))} * ones,
         %endfor
                         ])
 
@@ -407,7 +407,7 @@ class Thermochemistry:
         %for i, (_, react) in enumerate(falloff_reactions):
             ${cgm(ce.falloff_function_expr(
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
-                Variable("falloff_center")))},
+                Variable("falloff_center")))} * ones,
         %endfor
                             ])*reduced_pressure/(1+reduced_pressure)
 
