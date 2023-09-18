@@ -227,7 +227,6 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
         of the species concentrations *c* as a
         :class:`pymbolic.primitives.Expression`
     """
- 
     efficiencies = [react.third_body.efficiencies[sp]
                     for sp in react.third_body.efficiencies]
     indices_nondef = [sol.species_index(sp) for sp
@@ -246,10 +245,10 @@ def troe_falloff_expr(react: ct.Reaction, t):
     :returns: The Troe falloff center expression for reaction *react* in terms of the
         temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
-    print(react.equation, react.ID)
+
     if isinstance(react.rate, ct.TroeRate):
         troe_params = react.rate.falloff_coeffs
-    elif isinstance(react.rate, ct.LindemannRate):
+    elif isinstance(react.rate, (ct.LindemannRate, ct.SriRate)):
         return 1
     else:
         raise ValueError("Unexpected value of 'rate.type': "
@@ -277,14 +276,21 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
 
     falloff_type = react.reaction_type.split("-")[1]
 
+    exp = p.Variable("exp")
+    log_rp = p.Variable("log10")(red_pressure[i])
+
     if falloff_type == "Troe":
-        log_rp = p.Variable("log10")(red_pressure[i])
         c = -0.4-0.67*falloff_center[i]
         n = 0.75-1.27*falloff_center[i]
         f = (log_rp+c)/(n-0.14*(log_rp+c))
         return 10**((falloff_center[i])/(1+f**2))
     elif falloff_type == "Lindemann":
         return 1
+    elif falloff_type == "SRI":
+        a = react.rate.falloff_coeffs[0]
+        b = react.rate.falloff_coeffs[1]
+        c = react.rate.falloff_coeffs[2]
+        return (a * exp(-b / t) + exp(-t / c)) ** (1 / (1 + log_rp ** 2))
     else:
         raise ValueError("Unexpected value of 'falloff_type': "
                          f" '{falloff_type}'")

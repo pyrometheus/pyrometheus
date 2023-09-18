@@ -253,7 +253,7 @@ class Thermochemistry:
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
                 %for i in range(sol.n_species):
-                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+                    + ${1/sol.molecular_weights[i]}*mass_fractions[${i}]
                 %endfor
                 )
 
@@ -270,14 +270,14 @@ class Thermochemistry:
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/(
                 %for i in range(sol.n_species):
-                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+                    + ${1/sol.molecular_weights[i]}*mass_fractions[${i}]
                 %endfor
                 )
 
     def get_concentrations(self, rho, mass_fractions):
         return self._pyro_make_array([
             %for i in range(sol.n_species):
-            self.inv_molecular_weights[${i}] * rho * mass_fractions[${i}],
+            ${1/sol.molecular_weights[i]} * rho * mass_fractions[${i}],
             %endfor
         ])
 
