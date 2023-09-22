@@ -227,7 +227,7 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
         of the species concentrations *c* as a
         :class:`pymbolic.primitives.Expression`
     """
- 
+
     efficiencies = [react.third_body.efficiencies[sp]
                     for sp in react.third_body.efficiencies]
     indices_nondef = [sol.species_index(sp) for sp
