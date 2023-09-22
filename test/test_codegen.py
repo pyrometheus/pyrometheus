@@ -113,8 +113,10 @@ def test_generate_mechfile(lang_module, mechname):
         print(code, file=mech_file)
 
 
-@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml", "uiuc.cti"])
-def test_get_rate_coefficients(actx_factory, mechname):
+@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml",
+                                      "uiuc.yaml"])
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_get_rate_coefficients(mechname, usr_np):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
@@ -124,6 +126,9 @@ def test_get_rate_coefficients(actx_factory, mechname):
     sol = ct.Solution(f"mechs/{mechname}", "gas")
     pyro_class = pyro.codegen.python.get_thermochem_class(sol)
     pyro_gas = pyro_class(actx)
+
+    three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
+                            if r.reaction_type == "three-body-Arrhenius"]
 
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
@@ -136,8 +141,25 @@ def test_get_rate_coefficients(actx_factory, mechname):
         c = pyro_gas.get_concentrations(rho, y)
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
-        k_pm = pyro_gas.get_fwd_rate_coefficients(t, c)
+
+        k_pm = ptk.get_fwd_rate_coefficients(t, c)
+
+        # It seems like Cantera 3.0 has bumped the third-body efficiency
+        # factor from the rate coefficient to the rate of progress
+        for i, r in three_body_reactions:
+            eff = np.sum([c[sol.species_index(sp)]
+                          * r.third_body.efficiencies[sp]
+                          for sp in r.third_body.efficiencies])
+            eff += np.sum([c[sp] for sp in range(sol.n_species)
+                           if sol.species_name(sp) not in
+                           r.third_body.efficiencies])
+            k_ct[i] *= eff
+
+>>>>>>> cantera-3-compatibility
         print(k_ct)
+        print()
+        print(k_pm)
+        print()
         print(np.abs((k_ct-k_pm)/k_ct))
         assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-14
     return
@@ -465,8 +487,12 @@ def test_falloff_kinetics(actx_factory, mechname, fuel, stoich_ratio):
     sim = ct.ReactorNet([reactor])
 
     # Falloff reactions
-    i_falloff = [i for i, r in enumerate(sol.reactions())
-            if isinstance(r, ct.FalloffReaction)]
+    if not all((isinstance(r, ct.Reaction) for r in sol.reactions())):
+        i_falloff = [i for i, r in enumerate(sol.reactions())
+                     if isinstance(r, ct.FalloffReaction)]
+    else:
+        i_falloff = [i for i, r in enumerate(sol.reactions())
+                     if r.reaction_type.startswith("falloff")]
 
     dt = 1e-6
     time = 0

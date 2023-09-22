@@ -105,9 +105,10 @@ code_tpl = Template(
     """\"""
 .. autoclass:: Thermochemistry
 \"""
+from warnings import warn
 import numpy as np
 import arraycontext
-from arraycontext import (ArrayContext, NumpyArrayContext, 
+from arraycontext import (ArrayContext, NumpyArrayContext,
                           EagerJAXArrayContext, TorchArrayContext)
 from pyrometheus import make_array
 
@@ -189,8 +190,22 @@ class Thermochemistry:
             dict([[sol.species_name(i), i]
                 for i in range(sol.n_species)])}
 
-        self.wts = ${str_np(sol.molecular_weights)}
-        self.iwts = 1/self.wts
+        self.molecular_weights = ${str_np(sol.molecular_weights)}
+        self.inv_molecular_weights = 1/self.molecular_weights
+
+    @property
+    def wts(self):
+        warn("Thermochemistry.wts is deprecated and will go away in 2024. "
+             "Use molecular_weights instead.", DeprecationWarning, stacklevel=2)
+
+        return self.molecular_weights
+
+    @property
+    def iwts(self):
+        warn("Thermochemistry.iwts is deprecated and will go away in 2024. "
+             "Use inv_molecular_weights instead.", DeprecationWarning, stacklevel=2)
+
+        return self.inv_molecular_weights
 
         if isinstance(self.actx, NumpyArrayContext):
             self.pyro_make_array = make_array.numpy
@@ -233,7 +248,7 @@ class Thermochemistry:
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
                 %for i in range(sol.n_species):
-                    + self.iwts[${i}]*mass_fractions[${i}]
+                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
                 %endfor
                 )
 
@@ -250,20 +265,23 @@ class Thermochemistry:
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/(
                 %for i in range(sol.n_species):
-                    + self.iwts[${i}]*mass_fractions[${i}]
+                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
                 %endfor
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.pyro_make_array([
-            % for i in range(sol.n_species):
-            self.iwts[${i}] * mass_fractions[${i}] * rho,
-            % endfor
-                ], self.actx)
+        return self._pyro_make_array([
+            %for i in range(sol.n_species):
+            self.inv_molecular_weights[${i}] * rho * mass_fractions[${i}],
+            %endfor
+        ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
-        return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
-                    for i in range(self.num_species)])
+        return sum([
+            mass_fractions[i]
+            * spec_property[i]
+            * self.inv_molecular_weights[i]
+            for i in range(self.num_species)])
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
         cp0_r = self.get_species_specific_heats_r(temperature)
@@ -353,25 +371,15 @@ class Thermochemistry:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
         k_high = self.pyro_make_array([
         %for _, react in falloff_reactions:
-            %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.high_rate, Variable("temperature")))},
-            %else:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.high_rate, Variable("temperature")))},
-            %endif
         %endfor
                 ], self.actx)
 
         k_low = self.pyro_make_array([
         %for _, react in falloff_reactions:
-            %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.low_rate, Variable("temperature")))},
-            %else:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.low_rate, Variable("temperature")))},
-            %endif
         %endfor
                 ], self.actx)
 
@@ -406,7 +414,7 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
         %for react in sol.reactions():
-        %if isinstance(react, ct.FalloffReaction):
+        %if react.equation in [r.equation for _, r in falloff_reactions]:
             0*temperature,
         %else:
             ${cgm(ce.rate_coefficient_expr(react.rate,
@@ -455,6 +463,12 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
     interface.
     """
+
+    falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                   if r.reaction_type.startswith("falloff")]
+    three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                      if r.reaction_type == "three-body-Arrhenius"]
+
     return code_tpl.render(
         ct=ct,
         sol=sol,
@@ -465,10 +479,8 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
 
         ce=pyrometheus.chem_expr,
 
-        falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                           if isinstance(react, ct.FalloffReaction)],
-        three_body_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                             if isinstance(react, ct.ThreeBodyReaction)],
+        falloff_reactions=falloff_rxn,
+        three_body_reactions=three_body_rxn,
     )
 
 
