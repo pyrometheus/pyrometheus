@@ -193,6 +193,17 @@ class Thermochemistry:
         self.molecular_weights = ${str_np(sol.molecular_weights)}
         self.inv_molecular_weights = 1/self.molecular_weights
 
+        if isinstance(self.actx, NumpyArrayContext):
+            self.pyro_make_array = make_array.numpy
+        elif isinstance(self.actx, EagerJAXArrayContext):
+            self.pyro_make_array = make_array.eager_jax
+        elif isinstance(self.actx, TorchArrayContext):
+            self.pyro_make_array = make_array.torch
+        else:
+            raise TypeError(f"Unsupported arraycontext type: "
+                            f"got '{type(actx)}', "
+                            f"but expected one of Numpy, EagerJAX, or Torch")
+
     @property
     def wts(self):
         warn("Thermochemistry.wts is deprecated and will go away in 2024. "
@@ -206,18 +217,6 @@ class Thermochemistry:
              "Use inv_molecular_weights instead.", DeprecationWarning, stacklevel=2)
 
         return self.inv_molecular_weights
-
-        if isinstance(self.actx, NumpyArrayContext):
-            self.pyro_make_array = make_array.numpy
-        elif isinstance(self.actx, EagerJAXArrayContext):
-            self.pyro_make_array = make_array.eager_jax
-        elif isinstance(self.actx, TorchArrayContext):
-            self.pyro_make_array = make_array.torch
-        else:
-            raise TypeError(f"Unsupported arraycontext type: "
-                            f"got '{type(actx)}', "
-                            f"but expected one of Numpy, EagerJAX, or Torch")
-        return
 
     def _pyro_zeros_like(self, argument):
         # FIXME: This is imperfect, as a NaN will stay a NaN.
@@ -270,11 +269,11 @@ class Thermochemistry:
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self._pyro_make_array([
+        return self.pyro_make_array([
             %for i in range(sol.n_species):
             self.inv_molecular_weights[${i}] * rho * mass_fractions[${i}],
             %endfor
-        ])
+        ], self.actx)
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([
@@ -405,7 +404,9 @@ class Thermochemistry:
                             ], self.actx)*reduced_pressure/(1+reduced_pressure)
 
         %for j, (i, react) in enumerate(falloff_reactions):
-        k_fwd[${i}] = k_high[${j}]*falloff_function[${j}]*self.usr_np.ones_like(temperature)
+        k_fwd[${i}] = k_high[${j}]*falloff_function[${j}]*self.usr_np.ones_like(
+            temperature
+        )
         %endfor
         return
 

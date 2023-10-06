@@ -39,7 +39,8 @@ from arraycontext import NumpyArrayContext, EagerJAXArrayContext
 from arraycontext import pytest_generate_tests_for_array_contexts
 
 pytest_generate_tests = pytest_generate_tests_for_array_contexts(
-    ["numpy"])  #, "eagerjax"])
+    ["numpy"]
+)
 
 numpy_list = []
 
@@ -122,7 +123,7 @@ def test_get_rate_coefficients(mechname, usr_np):
     for given temperature and composition"""
 
     actx = actx_factory()
-    
+
     sol = ct.Solution(f"mechs/{mechname}", "gas")
     pyro_class = pyro.codegen.python.get_thermochem_class(sol)
     pyro_gas = pyro_class(actx)
@@ -142,7 +143,7 @@ def test_get_rate_coefficients(mechname, usr_np):
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
 
-        k_pm = ptk.get_fwd_rate_coefficients(t, c)
+        k_pm = pyro_gas.get_fwd_rate_coefficients(t, c)
 
         # It seems like Cantera 3.0 has bumped the third-body efficiency
         # factor from the rate coefficient to the rate of progress
@@ -155,7 +156,6 @@ def test_get_rate_coefficients(mechname, usr_np):
                            r.third_body.efficiencies])
             k_ct[i] *= eff
 
->>>>>>> cantera-3-compatibility
         print(k_ct)
         print()
         print(k_pm)
@@ -173,7 +173,7 @@ def test_get_pressure(actx_factory, mechname):
     """
 
     actx = actx_factory()
-    
+
     # Create Cantera and pyrometheus objects
     sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
     pyro_class = pyro.codegen.python.get_thermochem_class(sol)
@@ -253,7 +253,8 @@ def test_get_thermo_properties(actx_factory, mechname):
         print(f"keq_pm = {keq_pm}")
         print(f"keq_cnt = {keq_ct}")
         print(f"temperature = {t}")
-        # exclude meaningless check on equilibrium constants for irreversible reaction
+        # exclude meaningless check on equilibrium constants for
+        # irreversible reaction
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:
                 keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
@@ -395,24 +396,26 @@ def test_autodiff_accuracy():
     i_fu = pyro_gas.species_index("H2")
     i_ox = pyro_gas.species_index("O2")
     i_di = pyro_gas.species_index("N2")
-    
+
     # mole fractions
     x = actx.zeros(pyro_gas.num_species, dtype="float64")
-    x = x.at[i_fu].set((ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio))
+    x = x.at[i_fu].set(
+        (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
+    )
     x = x.at[i_ox].set(stoich_ratio*x[i_fu]/equiv_ratio)
     x = x.at[i_di].set((1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio)
     # mass fractions
     y = x * pyro_gas.wts / sum(x*pyro_gas.wts)
     # energy
     temperature = 1500
-    enthalpy = pyro_gas.get_mixture_enthalpy_mass(temperature, y)
+    # enthalpy = pyro_gas.get_mixture_enthalpy_mass(temperature, y)
 
     # get equilibrium temperature
     sol.TPX = temperature, ct.one_atm, actx.to_numpy(x)
     y = sol.Y
     mass_fractions = actx.from_numpy(y)
 
-    guess_temp = 1400
+    # guess_temp = 1400
 
     def chemical_source_term(state):
         density = pyro_gas.get_density(pyro_gas.one_atm, state[0], state[1:])

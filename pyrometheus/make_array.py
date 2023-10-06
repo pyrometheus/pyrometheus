@@ -45,7 +45,7 @@ from arraycontext import (ArrayContext,
 def all_numbers(res_list, actx: ArrayContext):
     """This function checks whether the elements of `res_list`
     are all numbers, or otherwise arrays allowed by `actx`"""
-    
+
     from numbers import Number
     from itertools import product
     return all(isinstance(e, Number)
@@ -59,20 +59,20 @@ def all_numbers(res_list, actx: ArrayContext):
 
 def numpy(res_list, actx: NumpyArrayContext):
     """This returns a :mod:`numpy.ndarray`"""
-    
+
     if all_numbers(res_list, actx):
         return actx.np.stack(res_list)
 
     array = actx.empty((len(res_list),), dtype=object)
     for idx in range(len(res_list)):
         array[idx] = res_list[idx]
-        
+
     return array
 
 
 def eager_jax(res_list, actx: EagerJAXArrayContext):
     """This returns a :class:`jaxlib.xla_extensions.DeviceArrayBase`"""
-    
+
     if all_numbers(res_list, actx):
         return actx.np.stack(res_list)
 
@@ -80,7 +80,7 @@ def eager_jax(res_list, actx: EagerJAXArrayContext):
 
     for idx in range(len(res_list)):
         array = array.at[idx].set(res_list[idx])
-        
+
     return array
 
 
@@ -91,13 +91,13 @@ def pytato_jax(res_list, actx: PytatoJAXArrayContext):
 
 def torch(res_list, actx: TorchArrayContext):
     """This returns a :class:`torch.Tensor`"""
-    
+
     if all_numbers(res_list, actx):
         return actx.np.stack(res_list)
 
     for idx in range(len(res_list)):
         res_list[idx] = res_list[idx].squeeze()
-    
+
     return actx.np.stack(res_list, 0)
 
 # }}}
