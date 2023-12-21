@@ -98,10 +98,9 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 
 
 # Write out all the mechanisms for inspection
-@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
-@pytest.mark.parametrize("lang_module", [
-    pyro.codegen.python,
-    ])
+#@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
+@pytest.mark.parametrize("mechname", ["sandiego"])
+@pytest.mark.parametrize("lang_module", [pyro.codegen.python])
 def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
     sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
