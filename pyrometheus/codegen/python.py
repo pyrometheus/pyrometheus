@@ -109,6 +109,7 @@ code_tpl = Template(
 \"""
 
 
+from warnings import warn
 import numpy as np
 
 
@@ -199,8 +200,22 @@ class Thermochemistry:
             dict([[sol.species_name(i), i]
                 for i in range(sol.n_species)])}
 
-        self.wts = ${str_np(sol.molecular_weights)}
-        self.iwts = 1/self.wts
+        self.molecular_weights = ${str_np(sol.molecular_weights)}
+        self.inv_molecular_weights = 1/self.molecular_weights
+
+    @property
+    def wts(self):
+        warn("Thermochemistry.wts is deprecated and will go away in 2024. "
+             "Use molecular_weights instead.", DeprecationWarning, stacklevel=2)
+
+        return self.molecular_weights
+
+    @property
+    def iwts(self):
+        warn("Thermochemistry.iwts is deprecated and will go away in 2024. "
+             "Use inv_molecular_weights instead.", DeprecationWarning, stacklevel=2)
+
+        return self.inv_molecular_weights
 
     def _pyro_zeros_like(self, argument):
         # FIXME: This is imperfect, as a NaN will stay a NaN.
@@ -252,7 +267,7 @@ class Thermochemistry:
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
         %for i in range(sol.n_species):
-            + self.iwts[${i}]*mass_fractions[${i}]
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
         %endfor
         )
 
