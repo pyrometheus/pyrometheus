@@ -109,6 +109,7 @@ code_tpl = Template(
 \"""
 
 
+from warnings import warn
 import numpy as np
 
 
@@ -193,8 +194,22 @@ class Thermochemistry:
             dict([[sol.species_name(i), i]
                 for i in range(sol.n_species)])}
 
-        self.wts = ${str_np(sol.molecular_weights)}
-        self.iwts = 1/self.wts
+        self.molecular_weights = ${str_np(sol.molecular_weights)}
+        self.inv_molecular_weights = 1/self.molecular_weights
+
+    @property
+    def wts(self):
+        warn("Thermochemistry.wts is deprecated and will go away in 2024. "
+             "Use molecular_weights instead.", DeprecationWarning, stacklevel=2)
+
+        return self.molecular_weights
+
+    @property
+    def iwts(self):
+        warn("Thermochemistry.iwts is deprecated and will go away in 2024. "
+             "Use inv_molecular_weights instead.", DeprecationWarning, stacklevel=2)
+
+        return self.inv_molecular_weights
 
     def _pyro_zeros_like(self, argument):
         # FIXME: This is imperfect, as a NaN will stay a NaN.
@@ -246,7 +261,7 @@ class Thermochemistry:
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
         %for i in range(sol.n_species):
-            + self.iwts[${i}]*mass_fractions[${i}]
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
         %endfor
         )
 
@@ -263,16 +278,12 @@ class Thermochemistry:
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/(
         %for i in range(sol.n_species):
-            + self.iwts[${i}]*mass_fractions[${i}]
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
         %endfor
         )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self._pyro_make_array([
-        %for i in range(sol.n_species):
-            self.iwts[${i}] * rho * mass_fractions[${i}],
-        %endfor
-        ])
+        return self.inv_molecular_weights * rho * mass_fractions
 
     def get_mole_fractions(self, mix_mol_weight, mass_fractions):
         return self._pyro_make_array([
@@ -282,8 +293,11 @@ class Thermochemistry:
         ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
-        return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
-                    for i in range(self.num_species)])
+        return sum([
+            mass_fractions[i]
+            * spec_property[i]
+            * self.inv_molecular_weights[i]
+            for i in range(self.num_species)])
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
         cp0_r = self.get_species_specific_heats_r(temperature)
