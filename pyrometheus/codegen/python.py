@@ -132,9 +132,15 @@ class Thermochemistry:
     .. automethod:: get_pressure
     .. automethod:: get_mix_molecular_weight
     .. automethod:: get_concentrations
+    .. automethod:: get_mole_fractions
+    .. automethod:: get_mass_average_property
+    .. automethod:: get_mole_average_property
     .. automethod:: get_mixture_specific_heat_cp_mass
     .. automethod:: get_mixture_specific_heat_cv_mass
     .. automethod:: get_mixture_enthalpy_mass
+    .. automethod:: get_mixture_enthalpy_mole
+    .. automethod:: get_mixture_entropy_mass
+    .. automethod:: get_mixture_entropy_mole
     .. automethod:: get_mixture_internal_energy_mass
     .. automethod:: get_species_viscosities
     .. automethod:: get_mixture_viscosity_mixavg
@@ -563,7 +569,7 @@ class Thermochemistry:
     def get_net_production_rates(self, rho, temperature, mass_fractions):
         pressure = self.get_pressure(rho, temperature, mass_fractions)
         c = self.get_concentrations(rho, mass_fractions)
-        r_net = self.get_net_rates_of_progress(pressure,temperature, c)
+        r_net = self.get_net_rates_of_progress(pressure, temperature, c)
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
         %for sp in sol.species():
