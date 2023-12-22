@@ -364,26 +364,26 @@ class Thermochemistry:
                                               mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fracs = self.get_mole_fractions(mmw, mass_fractions)
-        bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
+        diff_ij = self.get_species_binary_mass_diffusivities(temperature)
         temp_pres = temperature**(3/2)/pressure
         zeros = self._pyro_zeros_like(temperature)
 
         x_sum = self._pyro_make_array([
             %for sp in range(sol.n_species):
             ${cgm(ce.diffusivity_mixture_rule_denom_expr(
-                sol, sp, Variable("mole_fracs"), Variable("bdiff_ij")))},
+                sol, sp, Variable("mole_fracs"), Variable("diff_ij")))},
             %endfor
             ])
         denom = self._pyro_make_array([
             %for s in range(sol.n_species):
-            x_sum[${s}] - mole_fracs[${s}]/bdiff_ij[${s}, ${s}],
+            x_sum[${s}] - mole_fracs[${s}]/diff_ij[${s}, ${s}],
             %endfor
             ])
         return self._pyro_make_array([
             % for sp in range(sol.n_species):
             temp_pres*self.usr_np.where(self.usr_np.greater(denom[${sp}], zeros),
                 (mmw - mole_fracs[${sp}] * self.wts[${sp}])/(mmw * denom[${sp}]),
-                bdiff_ij[${sp}, ${sp}]
+                diff_ij[${sp}, ${sp}]
             ),
             % endfor
         ])
