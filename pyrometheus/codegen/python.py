@@ -260,10 +260,10 @@ class Thermochemistry:
 
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
-        %for i in range(sol.n_species):
-            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
-        %endfor
-        )
+                %for i in range(sol.n_species):
+                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+                %endfor
+                )
 
     def get_density(self, p, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
@@ -275,35 +275,12 @@ class Thermochemistry:
         rt = self.gas_constant * temperature
         return rho * rt / mmw
 
-    def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
-        if do_energy is False:
-            pv_fun = self.get_mixture_specific_heat_cp_mass
-            he_fun = self.get_mixture_enthalpy_mass
-        else:
-            pv_fun = self.get_mixture_specific_heat_cv_mass
-            he_fun = self.get_mixture_internal_energy_mass
-
-        num_iter = 500
-        tol = 1.0e-6
-        ones = self._pyro_zeros_like(enthalpy_or_energy) + 1.0
-        t_i = t_guess * ones
-
-        for _ in range(num_iter):
-            f = enthalpy_or_energy - he_fun(t_i, y)
-            j = -pv_fun(t_i, y)
-            dt = -f / j
-            t_i += dt
-            if self._pyro_norm(dt, np.inf) < tol:
-                return t_i
-
-        raise RuntimeError("Temperature iteration failed to converge")
-
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/(
-        %for i in range(sol.n_species):
-            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
-        %endfor
-        )
+                %for i in range(sol.n_species):
+                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+                %endfor
+                )
 
     def get_concentrations(self, rho, mass_fractions):
         return self.inv_molecular_weights * rho * mass_fractions
@@ -324,9 +301,9 @@ class Thermochemistry:
         return self.gas_constant * cpmix
 
     def get_mixture_specific_heat_cv_mass(self, temperature, mass_fractions):
-        cv0_r = self.get_species_specific_heats_r(temperature) - 1.0
-        cvmix = self.get_mass_average_property(mass_fractions, cv0_r)
-        return self.gas_constant * cvmix
+        cp0_r = self.get_species_specific_heats_r(temperature) - 1.0
+        cpmix = self.get_mass_average_property(mass_fractions, cp0_r)
+        return self.gas_constant * cpmix
 
     def get_mixture_enthalpy_mass(self, temperature, mass_fractions):
         h0_rt = self.get_species_enthalpies_rt(temperature)
@@ -416,21 +393,21 @@ class Thermochemistry:
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
-        ])
+                ])
 
     def get_species_enthalpies_rt(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
-        ])
+                ])
 
     def get_species_entropies_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
-            ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+                ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
-        ])
+                ])
 
     def get_species_gibbs_rt(self, temperature):
         h0_rt = self.get_species_enthalpies_rt(temperature)
@@ -443,14 +420,38 @@ class Thermochemistry:
 
         g0_rt = self.get_species_gibbs_rt(temperature)
         return self._pyro_make_array([
-        %for i, react in enumerate(sol.reactions()):
-            %if react.reversible:
-            ${cgm(ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))},
-            %else:
-            -0.17364695002734*temperature,
-            %endif
-        %endfor
-        ])
+            %for i, react in enumerate(sol.reactions()):
+                %if react.reversible:
+                    ${cgm(ce.equilibrium_constants_expr(
+                        sol, i, Variable("g0_rt")))},
+                %else:
+                    -0.17364695002734*temperature,
+                %endif
+            %endfor
+                ])
+
+    def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
+        if do_energy is False:
+            pv_fun = self.get_mixture_specific_heat_cp_mass
+            he_fun = self.get_mixture_enthalpy_mass
+        else:
+            pv_fun = self.get_mixture_specific_heat_cv_mass
+            he_fun = self.get_mixture_internal_energy_mass
+
+        num_iter = 500
+        tol = 1.0e-6
+        ones = self._pyro_zeros_like(enthalpy_or_energy) + 1.0
+        t_i = t_guess * ones
+
+        for _ in range(num_iter):
+            f = enthalpy_or_energy - he_fun(t_i, y)
+            j = -pv_fun(t_i, y)
+            dt = -f / j
+            t_i += dt
+            if self._pyro_norm(dt, np.inf) < tol:
+                return t_i
+
+        raise RuntimeError("Temperature iteration failed to converge")
 
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
