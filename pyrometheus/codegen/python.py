@@ -464,7 +464,6 @@ class Thermochemistry:
             %endfor
                 ])
 
-
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
         if do_energy is False:
             pv_fun = self.get_mixture_specific_heat_cp_mass
