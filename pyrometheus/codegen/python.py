@@ -422,7 +422,6 @@ class Thermochemistry:
         ])
 
     def get_species_specific_heats_r(self, temperature):
-        \""" Get individual species Cp/R.\"""
         return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
@@ -430,7 +429,6 @@ class Thermochemistry:
                 ])
 
     def get_species_enthalpies_rt(self, temperature):
-        \""" Get individual species h/RT.\"""
         return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
@@ -438,7 +436,6 @@ class Thermochemistry:
                 ])
 
     def get_species_entropies_r(self, pressure, temperature):
-        \""" Get individual species s/R.\"""
         return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}
@@ -447,7 +444,6 @@ class Thermochemistry:
                 ])
 
     def get_species_gibbs_rt(self, pressure, temperature):
-        \""" Get individual species G/RT.\"""
         h0_rt = self.get_species_enthalpies_rt(temperature)
         s0_r = self.get_species_entropies_r(pressure, temperature)
         return h0_rt - s0_r
