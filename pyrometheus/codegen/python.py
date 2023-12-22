@@ -266,10 +266,10 @@ class Thermochemistry:
 
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
-        %for i in range(sol.n_species):
-            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
-        %endfor
-        )
+                %for i in range(sol.n_species):
+                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+                %endfor
+                )
 
     def get_density(self, p, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
@@ -281,35 +281,12 @@ class Thermochemistry:
         rt = self.gas_constant * temperature
         return rho * rt / mmw
 
-    def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
-        if do_energy is False:
-            pv_fun = self.get_mixture_specific_heat_cp_mass
-            he_fun = self.get_mixture_enthalpy_mass
-        else:
-            pv_fun = self.get_mixture_specific_heat_cv_mass
-            he_fun = self.get_mixture_internal_energy_mass
-
-        num_iter = 500
-        tol = 1.0e-6
-        ones = self._pyro_zeros_like(enthalpy_or_energy) + 1.0
-        t_i = t_guess * ones
-
-        for _ in range(num_iter):
-            f = enthalpy_or_energy - he_fun(t_i, y)
-            j = -pv_fun(t_i, y)
-            dt = -f / j
-            t_i += dt
-            if self._pyro_norm(dt, np.inf) < tol:
-                return t_i
-
-        raise RuntimeError("Temperature iteration failed to converge")
-
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/(
-        %for i in range(sol.n_species):
-            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
-        %endfor
-        )
+                %for i in range(sol.n_species):
+                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+                %endfor
+                )
 
     def get_concentrations(self, rho, mass_fractions):
         return self.inv_molecular_weights * rho * mass_fractions
@@ -323,12 +300,6 @@ class Thermochemistry:
             * spec_property[i]
             * self.inv_molecular_weights[i]
             for i in range(self.num_species)])
-
-    def get_mole_average_property(self, mass_fractions, spec_property):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
-        mole_fracs = self.get_mole_fractions(mmw, mass_fractions)
-        return sum([mole_fracs[i] * spec_property[i]
-                    for i in range(self.num_species)])
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
         cp0_r = self.get_species_specific_heats_r(temperature)
@@ -345,15 +316,26 @@ class Thermochemistry:
         hmix = self.get_mass_average_property(mass_fractions, h0_rt)
         return self.gas_constant * temperature * hmix
 
-    def get_mixture_enthalpy_mole(self, temperature, mass_fractions):
-        h0_rt = self.get_species_enthalpies_rt(temperature)
-        hmix = self.get_mole_average_property(mass_fractions, h0_rt)
-        return self.gas_constant * temperature * hmix
+    def get_mixture_internal_energy_mass(self, temperature, mass_fractions):
+        e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
+        emix = self.get_mass_average_property(mass_fractions, e0_rt)
+        return self.gas_constant * temperature * emix
 
     def get_mixture_entropy_mass(self, pressure, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         return 1.0/mmw * self.get_mixture_entropy_mole(pressure, temperature,
                                                        mass_fractions)
+
+    def get_mole_average_property(self, mass_fractions, spec_property):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fracs = self.get_mole_fractions(mmw, mass_fractions)
+        return sum([mole_fracs[i] * spec_property[i]
+                    for i in range(self.num_species)])
+
+    def get_mixture_enthalpy_mole(self, temperature, mass_fractions):
+        h0_rt = self.get_species_enthalpies_rt(temperature)
+        hmix = self.get_mole_average_property(mass_fractions, h0_rt)
+        return self.gas_constant * temperature * hmix
 
     def get_mixture_entropy_mole(self, pressure, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
@@ -365,11 +347,6 @@ class Thermochemistry:
         smix = self.get_mole_average_property(mass_fractions, s0_r)
         xmix = self.get_mole_average_property(mass_fractions, self.usr_np.log(x))
         return self.gas_constant * (smix - xmix)
-
-    def get_mixture_internal_energy_mass(self, temperature, mass_fractions):
-        e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
-        emix = self.get_mass_average_property(mass_fractions, e0_rt)
-        return self.gas_constant * temperature * emix
 
     def get_species_viscosities(self, temperature):
         return self._pyro_make_array([
@@ -450,7 +427,7 @@ class Thermochemistry:
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
-        ])
+                ])
 
     def get_species_enthalpies_rt(self, temperature):
         \""" Get individual species h/RT.\"""
@@ -458,7 +435,7 @@ class Thermochemistry:
             % for sp in sol.species():
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
-        ])
+                ])
 
     def get_species_entropies_r(self, pressure, temperature):
         \""" Get individual species s/R.\"""
@@ -467,7 +444,7 @@ class Thermochemistry:
             ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}
             - self.usr_np.log(pressure/101325.0),
             % endfor
-        ])
+                ])
 
     def get_species_gibbs_rt(self, pressure, temperature):
         \""" Get individual species G/RT.\"""
@@ -481,14 +458,39 @@ class Thermochemistry:
 
         g0_rt = self.get_species_gibbs_rt(pressure, temperature)
         return self._pyro_make_array([
-        %for i, react in enumerate(sol.reactions()):
-            %if react.reversible:
-            ${cgm(ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))},
-            %else:
-            -0.17364695002734*temperature,
-            %endif
-        %endfor
-        ])
+            %for i, react in enumerate(sol.reactions()):
+                %if react.reversible:
+                    ${cgm(ce.equilibrium_constants_expr(
+                        sol, i, Variable("g0_rt")))},
+                %else:
+                    -0.17364695002734*temperature,
+                %endif
+            %endfor
+                ])
+
+
+    def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
+        if do_energy is False:
+            pv_fun = self.get_mixture_specific_heat_cp_mass
+            he_fun = self.get_mixture_enthalpy_mass
+        else:
+            pv_fun = self.get_mixture_specific_heat_cv_mass
+            he_fun = self.get_mixture_internal_energy_mass
+
+        num_iter = 500
+        tol = 1.0e-6
+        ones = self._pyro_zeros_like(enthalpy_or_energy) + 1.0
+        t_i = t_guess * ones
+
+        for _ in range(num_iter):
+            f = enthalpy_or_energy - he_fun(t_i, y)
+            j = -pv_fun(t_i, y)
+            dt = -f / j
+            t_i += dt
+            if self._pyro_norm(dt, np.inf) < tol:
+                return t_i
+
+        raise RuntimeError("Temperature iteration failed to converge")
 
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
@@ -503,7 +505,7 @@ class Thermochemistry:
                 react.rate.high_rate, Variable("temperature")))},
             %endif
         %endfor
-        ])
+                ])
 
         k_low = self._pyro_make_array([
         %for _, react in falloff_reactions:
@@ -515,20 +517,20 @@ class Thermochemistry:
                 react.rate.low_rate, Variable("temperature")))},
             %endif
         %endfor
-        ])
+                ])
 
         reduced_pressure = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
             (${cgm(ce.third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
-        ])
+                            ])
 
         falloff_center = self._pyro_make_array([
         %for _, react in falloff_reactions:
             ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))},
         %endfor
-        ])
+                        ])
 
         falloff_function = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
@@ -555,7 +557,7 @@ class Thermochemistry:
                                         Variable("temperature")))} * ones,
         %endif
         %endfor
-        ]
+                ]
         %if falloff_reactions:
         self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
@@ -575,11 +577,12 @@ class Thermochemistry:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(pressure, temperature)
         return self._pyro_make_array([
-        %for i in range(sol.n_reactions):
-            ${cgm(ce.rate_of_progress_expr(sol, i, Variable("concentrations"),
-                Variable("k_fwd"), Variable("log_k_eq")))},
-        %endfor
-        ])
+                %for i in range(sol.n_reactions):
+                    ${cgm(ce.rate_of_progress_expr(sol, i,
+                        Variable("concentrations"),
+                        Variable("k_fwd"), Variable("log_k_eq")))},
+                %endfor
+               ])
 
     def get_net_production_rates(self, rho, temperature, mass_fractions):
         pressure = self.get_pressure(rho, temperature, mass_fractions)
@@ -587,11 +590,11 @@ class Thermochemistry:
         r_net = self.get_net_rates_of_progress(pressure, temperature, c)
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
-        %for sp in sol.species():
-            ${cgm(ce.production_rate_expr(
-                sol, sp.name, Variable("r_net")))} * ones,
-        %endfor
-        ])""", strict_undefined=True)
+            %for sp in sol.species():
+                ${cgm(ce.production_rate_expr(
+                    sol, sp.name, Variable("r_net")))} * ones,
+            %endfor
+               ])""", strict_undefined=True)
 
 # }}}
 
