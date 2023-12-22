@@ -307,21 +307,21 @@ class Thermochemistry:
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/(
         %for i in range(sol.n_species):
-            + self.iwts[${i}]*mass_fractions[${i}]
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
         %endfor
         )
 
     def get_concentrations(self, rho, mass_fractions):
         return self._pyro_make_array([
         %for i in range(sol.n_species):
-            self.iwts[${i}] * rho * mass_fractions[${i}],
+            self.inv_molecular_weights[${i}] * rho * mass_fractions[${i}],
         %endfor
         ])
 
     def get_mole_fractions(self, mix_mol_weight, mass_fractions):
         return self._pyro_make_array([
         %for i in range(sol.n_species):
-            self.iwts[${i}] * mass_fractions[${i}] * mix_mol_weight,
+            self.inv_molecular_weights[${i}] * mass_fractions[${i}] * mix_mol_weight,
         %endfor
         ])
 
@@ -357,14 +357,18 @@ class Thermochemistry:
 
     def get_mixture_entropy_mass(self, pressure, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
-        return self.get_mixture_entropy_mole(pressure, temperature, mass_fractions) / mmw
+        return 1.0/mmw * self.get_mixture_entropy_mole(pressure, temperature,
+                                                       mass_fractions)
 
     def get_mixture_entropy_mole(self, pressure, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
-        mole_fracs = self.usr_np.abs(self.get_mole_fractions(mmw, mass_fractions))
+        # necessary to avoid nans in the log function below
+        x = self.usr_np.where(
+            self.usr_np.less(self.get_mole_fractions(mmw, mass_fractions), 1e-16),
+            1e-16, self.get_mole_fractions(mmw, mass_fractions))
         s0_r = self.get_species_entropies_r(pressure, temperature)
         smix = self.get_mole_average_property(mass_fractions, s0_r)
-        xmix = self.get_mole_average_property(mass_fractions, self.usr_np.log(mole_fracs))
+        xmix = self.get_mole_average_property(mass_fractions, self.usr_np.log(x))
         return self.gas_constant * (smix - xmix)
 
     def get_mixture_internal_energy_mass(self, temperature, mass_fractions):
@@ -465,7 +469,8 @@ class Thermochemistry:
         \""" Get individual species s/R.\"""
         return self._pyro_make_array([
             % for sp in sol.species():
-            ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))} - self.usr_np.log(pressure/101325),
+            ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}
+            - self.usr_np.log(pressure/101325.0),
             % endfor
         ])
 
@@ -591,7 +596,7 @@ class Thermochemistry:
             ${cgm(ce.production_rate_expr(
                 sol, sp.name, Variable("r_net")))} * ones,
         %endfor
-           ])""", strict_undefined=True)
+        ])""", strict_undefined=True)
 
 # }}}
 
