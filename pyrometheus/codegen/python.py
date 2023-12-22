@@ -318,8 +318,11 @@ class Thermochemistry:
         return self.inv_molecular_weights * mass_fractions * mix_mol_weight
 
     def get_mass_average_property(self, mass_fractions, spec_property):
-        return sum([mass_fractions[i] * spec_property[i] * self.iwts[i]
-                    for i in range(self.num_species)])
+        return sum([
+            mass_fractions[i]
+            * spec_property[i]
+            * self.inv_molecular_weights[i]
+            for i in range(self.num_species)])
 
     def get_mole_average_property(self, mass_fractions, spec_property):
         mmw = self.get_mix_molecular_weight(mass_fractions)
