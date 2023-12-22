@@ -324,9 +324,9 @@ class Thermochemistry:
         return self.gas_constant * cpmix
 
     def get_mixture_specific_heat_cv_mass(self, temperature, mass_fractions):
-        cp0_r = self.get_species_specific_heats_r(temperature) - 1.0
-        cpmix = self.get_mass_average_property(mass_fractions, cp0_r)
-        return self.gas_constant * cpmix
+        cv0_r = self.get_species_specific_heats_r(temperature) - 1.0
+        cvmix = self.get_mass_average_property(mass_fractions, cv0_r)
+        return self.gas_constant * cvmix
 
     def get_mixture_enthalpy_mass(self, temperature, mass_fractions):
         h0_rt = self.get_species_enthalpies_rt(temperature)
@@ -417,7 +417,7 @@ class Thermochemistry:
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
-                ])
+        ])
 
     def get_species_enthalpies_rt(self, temperature):
         \""" Get individual species h/RT.\"""
@@ -425,7 +425,7 @@ class Thermochemistry:
             % for sp in sol.species():
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
-                ])
+        ])
 
     def get_species_entropies_r(self, temperature):
         \""" Get individual species s/R.\"""
@@ -433,7 +433,7 @@ class Thermochemistry:
             % for sp in sol.species():
                 ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
-                ])
+        ])
 
     def get_species_gibbs_rt(self, temperature):
         \""" Get individual species G/RT.\"""
@@ -447,15 +447,14 @@ class Thermochemistry:
 
         g0_rt = self.get_species_gibbs_rt(temperature)
         return self._pyro_make_array([
-            %for i, react in enumerate(sol.reactions()):
-                %if react.reversible:
-                    ${cgm(ce.equilibrium_constants_expr(
-                        sol, i, Variable("g0_rt")))},
-                %else:
-                    -0.17364695002734*temperature,
-                %endif
-            %endfor
-                ])
+        %for i, react in enumerate(sol.reactions()):
+            %if react.reversible:
+            ${cgm(ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))},
+            %else:
+            -0.17364695002734*temperature,
+            %endif
+        %endfor
+        ])
 
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
