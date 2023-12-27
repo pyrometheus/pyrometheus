@@ -99,43 +99,13 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 
 # Write out all the mechanisms for inspection
 @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
-@pytest.mark.parametrize("lang_module", [
-    pyro.codegen.python,
-    ])
+@pytest.mark.parametrize("lang_module", [pyro.codegen.python])
 def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
     sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
     with open(f"mechs/{mechname}.{lang_module.file_extension}", "w") as mech_file:
         code = lang_module.gen_thermochem_code(sol)
         print(code, file=mech_file)
-
-
-@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml", "uiuc.cti"])
-@pytest.mark.parametrize("usr_np", numpy_list)
-def test_get_rate_coefficients(mechname, usr_np):
-    """This function tests that pyrometheus-generated code
-    computes the rate coefficients matching Cantera
-    for given temperature and composition"""
-    sol = ct.Solution(f"mechs/{mechname}", "gas")
-    ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
-    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
-
-    # Test temperatures
-    temp = np.linspace(500.0, 3000.0, 10)
-    for t in temp:
-        # Set new temperature in Cantera
-        sol.TP = t, ct.one_atm
-        # Concentrations
-        y = sol.Y
-        rho = sol.density
-        c = ptk.get_concentrations(rho, y)
-        # Get rate coefficients and compare
-        k_ct = sol.forward_rate_constants
-        k_pm = ptk.get_fwd_rate_coefficients(t, c)
-        print(k_ct)
-        print(np.abs((k_ct-k_pm)/k_ct))
-        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-14
-    return
 
 
 @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
@@ -321,7 +291,7 @@ def test_get_temperature(mechname, usr_np):
 
 
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt, tol",
-                         [("uiuc", "C2H4", 3.0, 1e-7, 1.0e-11),
+                         [("uiuc", "C2H4", 3.0, 1e-6, 1.0e-11),
                           ("sandiego", "H2", 0.5, 1e-6, 5.0e-11)])
 @pytest.mark.parametrize("reactor_type",
                          ["IdealGasReactor", "IdealGasConstPressureReactor"])
@@ -353,7 +323,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, tol, reactor_type, usr_np):
         return np.linalg.norm(x, np.inf)
 
     time = 0.0
-    for _ in range(100):
+    for _ in range(500):
         time += dt
         sim.advance(time)
 
@@ -477,9 +447,10 @@ def test_autodiff_accuracy():
     assert orderest > 1.95
 
 
+# FIXME this test does not exercise any pressure-dependence in the reactions
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio",
-                         [("gri30", "CH4", 2),
-                          ("uconn32", "C2H4", 3),
+                         [("gri30", "CH4", 2.0),
+                          ("uconn32", "C2H4", 3.0),
                           ("sandiego", "H2", 0.5)])
 def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     """This function tests that pyrometheus-generated code

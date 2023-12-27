@@ -558,7 +558,7 @@ class Thermochemistry:
         %endif
 
         %for i, react in three_body_reactions:
-        k_fwd[${i}] *= (${cgm(ce.third_body_efficiencies_expr(
+        k_fwd[${i}] = k_fwd[${i}]*(${cgm(ce.third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
         return self._pyro_make_array(k_fwd)
