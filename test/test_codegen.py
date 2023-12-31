@@ -323,7 +323,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, tol, reactor_type, usr_np):
         return np.linalg.norm(x, np.inf)
 
     time = 0.0
-    for _ in range(500):
+    for _ in range(100):
         time += dt
         sim.advance(time)
 

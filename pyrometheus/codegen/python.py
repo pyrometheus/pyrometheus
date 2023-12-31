@@ -488,7 +488,7 @@ class Thermochemistry:
         raise RuntimeError("Temperature iteration failed to converge")
 
     %if falloff_reactions:
-    def get_falloff_rates(self, temperature, concentrations, k_fwd):
+    def get_falloff_rates(self, temperature, concentrations):
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
@@ -535,10 +535,7 @@ class Thermochemistry:
         %endfor
                             ])*reduced_pressure/(1+reduced_pressure)
 
-        %for j, (i, react) in enumerate(falloff_reactions):
-        k_fwd[${i}] = k_high[${j}]*falloff_function[${j}]*ones
-        %endfor
-        return
+        return k_high*falloff_function
 
     %endif
     def get_fwd_rate_coefficients(self, temperature, concentrations):
@@ -554,7 +551,10 @@ class Thermochemistry:
         %endfor
                 ]
         %if falloff_reactions:
-        self.get_falloff_rates(temperature, concentrations, k_fwd)
+        k_falloff = self.get_falloff_rates(temperature, concentrations)
+        %for j, (i, react) in enumerate(falloff_reactions):
+        k_fwd[${i}] = k_falloff[${j}]*ones
+        %endfor
         %endif
 
         %for i, react in three_body_reactions:
