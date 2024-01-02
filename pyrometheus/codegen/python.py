@@ -489,7 +489,6 @@ class Thermochemistry:
 
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations):
-        ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
             %if react.uses_legacy:
