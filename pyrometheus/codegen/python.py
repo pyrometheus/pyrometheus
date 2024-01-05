@@ -135,6 +135,8 @@ class Thermochemistry:
     .. automethod:: get_mixture_specific_heat_cv_mass
     .. automethod:: get_mixture_enthalpy_mass
     .. automethod:: get_mixture_internal_energy_mass
+    .. automethod:: get_specific_heat_ratio
+    .. automethod:: get_sound_speed
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
     .. automethod:: get_species_entropies_r
@@ -304,6 +306,20 @@ class Thermochemistry:
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
 
+    def get_specific_heat_ratio(self, temperature, mass_fractions):
+        cp0_r = self.get_species_specific_heats_r(temperature)
+        cpmix = self.get_mass_average_property(mass_fractions, cp0_r)
+        inv_mix_mol_weight = sum([
+            mass_fractions[i]
+            * self.inv_molecular_weights[i]
+            for i in range(self.num_species)])
+        return cpmix / (cpmix - inv_mix_mol_weight)
+
+    def get_sound_speed(self, temperature, mass_fractions):
+        gamma = self.get_specific_heat_ratio(temperature, mass_fractions)
+        mix_gas_constant = self.get_specific_gas_constant(mass_fractions)
+        return self.usr_np.sqrt(gamma * mix_gas_constant * temperature)
+
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
@@ -374,7 +390,7 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            %if react.uses_legacy:
+            %if 'uses_legacy' in dir(react) and react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
                 react.high_rate, Variable("temperature")))},
             %else:
@@ -386,7 +402,7 @@ class Thermochemistry:
 
         k_low = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            %if react.uses_legacy:
+            %if 'uses_legacy' in dir(react) and react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
                 react.low_rate, Variable("temperature")))},
             %else:
@@ -427,7 +443,7 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
         %for react in sol.reactions():
-        %if isinstance(react, ct.FalloffReaction):
+        %if react.equation in [r.equation for _, r in falloff_reactions]:
             0*temperature,
         %else:
             ${cgm(ce.rate_coefficient_expr(react.rate,
@@ -476,6 +492,24 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
     interface.
     """
+    if not all((isinstance(r, ct.Reaction) for r in sol.reactions())):
+        # Cantera version < 3.0
+        from warnings import warn
+        warn("Specific reaction types (e.g., ct.FalloffReaction) are "
+             "deprecated in Cantera 3, where all in a 'ct.Solution' "
+             "object are of generic 'ct.Reaction' type. "
+             "Identify reactions using 'ct.Reaction.reaction_type' insteady")
+        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                       if isinstance(r, ct.FalloffReaction)]
+        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                          if isinstance(r, ct.ThreeBodyReaction)]
+    else:
+        # Cantera version == 3.0
+        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                       if r.reaction_type.startswith("falloff")]
+        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                          if r.reaction_type == "three-body-Arrhenius"]
+
     return code_tpl.render(
         ct=ct,
         sol=sol,
@@ -486,10 +520,8 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
 
         ce=pyrometheus.chem_expr,
 
-        falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                           if isinstance(react, ct.FalloffReaction)],
-        three_body_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                             if isinstance(react, ct.ThreeBodyReaction)],
+        falloff_reactions=falloff_rxn,
+        three_body_reactions=three_body_rxn,
     )
 
 
