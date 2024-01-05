@@ -193,8 +193,8 @@ def viscosity_polynomial_expr(c, t):
 def conductivity_polynomial_expr(c, t):
     """Generate code for conductivity polynomials
 
-    :returns: Conductivity polynomial expression with coefficients c in terms of
-    the temperature t as a :class:`pymbolic.primitives.Expression`.
+    :returns: Conductivity polynomial expression with coefficients c in terms
+    of the temperature t as a :class:`pymbolic.primitives.Expression`.
     """
     assert len(c) == 5
     return (
@@ -211,8 +211,8 @@ def conductivity_polynomial_expr(c, t):
 def diffusivity_polynomial_expr(c, t):
     """Generate code for diffusivity polynomials
 
-    :returns: Diffusivity polynomial expression with coefficients c in terms of
-    the temperature t as a :class:`pymbolic.primitives.Expression`.
+    :returns: Diffusivity polynomial expression with coefficients c in terms
+    of the temperature t as a :class:`pymbolic.primitives.Expression`.
     """
     assert len(c) == 5
     return (
