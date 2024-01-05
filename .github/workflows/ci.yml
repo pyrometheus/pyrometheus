@@ -88,4 +88,3 @@ jobs:
                 python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
                 build_docs
 
-# vim: sw=4
