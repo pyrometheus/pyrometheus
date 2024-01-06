@@ -261,7 +261,7 @@ class Thermochemistry:
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
             %for i in range(sol.n_species):
-                + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
             %endfor
             )
 
@@ -320,80 +320,6 @@ class Thermochemistry:
         e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
-
-    def get_species_viscosities(self, temperature):
-        return self._pyro_make_array([
-            % for sp in range(sol.n_species):
-            ${cgm(ce.viscosity_polynomial_expr(
-                sol.get_viscosity_polynomial(sp),
-                Variable("temperature")))},
-            % endfor
-            ])
-
-    def get_species_thermal_conductivities(self, temperature):
-        return self._pyro_make_array([
-            % for sp in range(sol.n_species):
-            ${cgm(ce.conductivity_polynomial_expr(
-                sol.get_thermal_conductivity_polynomial(sp),
-                Variable("temperature")))},
-            % endfor
-            ])
-
-    def get_species_binary_mass_diffusivities(self, temperature):
-        return self._pyro_make_array([
-            % for i, j, in product(range(sol.n_species), range(sol.n_species)):
-            ${cgm(ce.diffusivity_polynomial_expr(
-                sol.get_binary_diff_coeffs_polynomial(i, j),
-                Variable("temperature")))},
-            % endfor
-            ]).reshape((self.num_species, self.num_species))
-
-    def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
-        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
-        viscosities = self.get_species_viscosities(temperature)
-        mix_rule_f = self._pyro_make_array([
-            %for sp in range(sol.n_species):
-            ${cgm(ce.viscosity_mixture_rule_wilke_expr(sol, sp,
-                Variable("mole_fractions"), Variable("viscosities")))},
-            %endfor
-            ])
-        return self.usr_np.sum(mole_fractions*viscosities/mix_rule_f)
-
-    def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
-        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
-        conductivities = self.get_species_thermal_conductivities(temperature)
-        return 0.5*(self.usr_np.sum(mole_fractions*conductivities)
-            + 1/self.usr_np.sum(mole_fractions/conductivities))
-
-    def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
-            mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
-        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
-        bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
-        zeros = self._pyro_zeros_like(temperature)
-
-        x_sum = self._pyro_make_array([
-            %for sp in range(sol.n_species):
-            ${cgm(ce.diffusivity_mixture_rule_denom_expr(
-                sol, sp, Variable("mole_fractions"), Variable("bdiff_ij")))},
-            %endfor
-            ])
-        denom = self._pyro_make_array([
-            %for s in range(sol.n_species):
-            x_sum[${s}] - mole_fractions[${s}]/bdiff_ij[${s}][${s}],
-            %endfor
-            ])
-
-        return self._pyro_make_array([
-            %for sp in range(sol.n_species):
-            self.usr_np.where(self.usr_np.greater(denom[${sp}], zeros),
-            (mmw - mole_fractions[${sp}] * self.wts[${sp}])/(
-                pressure * mmw * denom[${sp}]),
-                bdiff_ij[${sp}][${sp}] / pressure),
-            % endfor
-            ])
 
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
@@ -553,6 +479,80 @@ class Thermochemistry:
         return self._pyro_make_array([
             %for sp in sol.species():
             ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
+            %endfor
+            ])
+
+    def get_species_viscosities(self, temperature):
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            ${cgm(ce.viscosity_polynomial_expr(
+                sol.get_viscosity_polynomial(sp),
+                Variable("temperature")))},
+            % endfor
+            ])
+
+    def get_species_thermal_conductivities(self, temperature):
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            ${cgm(ce.conductivity_polynomial_expr(
+                sol.get_thermal_conductivity_polynomial(sp),
+                Variable("temperature")))},
+            % endfor
+            ])
+
+    def get_species_binary_mass_diffusivities(self, temperature):
+        return self._pyro_make_array([
+            % for i, j, in product(range(sol.n_species), range(sol.n_species)):
+            ${cgm(ce.diffusivity_polynomial_expr(
+                sol.get_binary_diff_coeffs_polynomial(i, j),
+                Variable("temperature")))},
+            % endfor
+            ]).reshape((self.num_species, self.num_species))
+
+    def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        viscosities = self.get_species_viscosities(temperature)
+        mix_rule_f = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.viscosity_mixture_rule_wilke_expr(sol, sp,
+                Variable("mole_fractions"), Variable("viscosities")))},
+            %endfor
+            ])
+        return self.usr_np.sum(mole_fractions*viscosities/mix_rule_f)
+
+    def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        conductivities = self.get_species_thermal_conductivities(temperature)
+        return 0.5*(self.usr_np.sum(mole_fractions*conductivities)
+            + 1/self.usr_np.sum(mole_fractions/conductivities))
+
+    def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
+            mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
+        zeros = self._pyro_zeros_like(temperature)
+
+        x_sum = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.diffusivity_mixture_rule_denom_expr(
+                sol, sp, Variable("mole_fractions"), Variable("bdiff_ij")))},
+            %endfor
+            ])
+        denom = self._pyro_make_array([
+            %for s in range(sol.n_species):
+            x_sum[${s}] - mole_fractions[${s}]/bdiff_ij[${s}][${s}],
+            %endfor
+            ])
+
+        return self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            self.usr_np.where(self.usr_np.greater(denom[${sp}], zeros), <%
+                %>(mmw - mole_fractions[${sp}] * self.molecular_weights[${sp}])/(<%
+                    %>pressure * mmw * denom[${sp}]), <%
+                %>bdiff_ij[${sp}][${sp}] / pressure),
             %endfor
             ])""", strict_undefined=True)
 
