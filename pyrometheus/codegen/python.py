@@ -492,12 +492,16 @@ class Thermochemistry:
 
     def get_species_binary_mass_diffusivities(self, temperature):
         return self._pyro_make_array([
-            % for i, j, in product(range(sol.n_species), range(sol.n_species)):
-            ${cgm(ce.diffusivity_polynomial_expr(
-                sol.get_binary_diff_coeffs_polynomial(i, j),
-                Variable("temperature")))},
-            % endfor
-            ]).reshape((self.num_species, self.num_species))
+            %for i in range(sol.n_species):
+            self._pyro_make_array([
+                %for j in range(sol.n_species):
+                ${cgm(ce.diffusivity_polynomial_expr(
+                      sol.get_binary_diff_coeffs_polynomial(i, j),
+                      Variable("temperature")))},
+                %endfor
+            ]),
+            %endfor
+        ])
 
     def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)

@@ -513,7 +513,8 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
 
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
-                         [("sandiego", "H2", 0.5, 1e-6),
+                         [("uiuc", "C2H4", 1.0, 1e-7),
+                          ("sandiego", "H2", 0.5, 1e-7),
                           ("uconn32", "C2H4", 3, 1e-7),
                           ])
 @pytest.mark.parametrize("usr_np", numpy_list)
@@ -522,8 +523,6 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
     """This function tests multiple aspects of pyro transport
     1. Transport properties of individual species
     2. Transport properties of species mixtures
-    Tests are pointwise compositions and over object arrays that
-    represent grids.
     """
 
     sol = ct.Solution(f"mechs/{mechname}.yaml")
@@ -552,14 +551,11 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
         # Loop over species
         for sp_idx, sp_name in enumerate(sol.species_names):
             sol.Y = sp_name + ":1"
-            y = sol.Y
             # Errors
             err_visc = usr_np.abs(pyro_visc[sp_idx] - sol.viscosity)
             err_cond = usr_np.abs(pyro_cond[sp_idx] - sol.thermal_conductivity)
             err_diff = usr_np.abs(pyro_diff[sp_idx][sp_idx]/pres
                                   - ct_diff[sp_idx, sp_idx])
-            # print(f"Species: {sp_name}\t... visc: {err_visc}\t ... "
-            #       f"cond: {err_cond}\t ... diff: {err_diff}")
             assert err_visc < 1e-12
             assert err_cond < 1e-12
             assert err_diff < 1e-12
@@ -598,6 +594,7 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
         assert err_visc < 1e-12
         assert err_cond < 1e-12
         assert err_diff < 1e-12
+
 
     """Test on object, multi-dim arrays that represent 1D grids.
     """
