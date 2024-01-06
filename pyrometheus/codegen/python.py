@@ -461,23 +461,23 @@ class Thermochemistry:
     %endif
     def get_fwd_rate_coefficients(self, temperature, concentrations):
         ones = self._pyro_zeros_like(temperature) + 1.0
+        %if falloff_reactions:
+        k_falloff = self.get_falloff_rates(temperature, concentrations)
+        %endif
         k_fwd = [
-        %for react in sol.reactions():
-        %if react.equation in [r.equation for _, r in falloff_reactions]:
-            0*temperature,
+        %for i, react in enumerate(sol.reactions()):
+        %if react.reaction_type.startswith("falloff"):
+        %for k, (j, react) in enumerate(falloff_reactions):
+        %if i == j:
+            k_falloff[${k}]*ones,
+        %endif
+        %endfor
         %else:
             ${cgm(ce.rate_coefficient_expr(react.rate,
                                         Variable("temperature")))} * ones,
         %endif
         %endfor
         ]
-        %if falloff_reactions:
-        k_falloff = self.get_falloff_rates(temperature, concentrations)
-        %for j, (i, react) in enumerate(falloff_reactions):
-        k_fwd[${i}] = k_falloff[${j}]*ones
-        %endfor
-        %endif
-
         return self._pyro_make_array(k_fwd)
 
     def get_rev_rate_coefficients(self, pressure, temperature, concentrations):
@@ -487,16 +487,24 @@ class Thermochemistry:
 
     def get_net_rates_of_progress(self, pressure, temperature, concentrations):
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
-        %for i, react in three_body_reactions:
-        k_fwd[${i}] = k_fwd[${i}]*(${cgm(ce.third_body_efficiencies_expr(
-            sol, react, Variable("concentrations")))})
-        %endfor
         log_k_eq = self.get_equilibrium_constants(pressure, temperature)
         return self._pyro_make_array([
-            %for i in range(sol.n_reactions):
+            %for i, react in enumerate(sol.reactions()):
+            %if react.reaction_type.startswith("three-body"):
+            %for k, (j, react) in enumerate(three_body_reactions):
+            %if i == j:
+            ${cgm(ce.rate_of_progress_expr(sol, i,
+                Variable("concentrations"),
+                Variable("k_fwd"), Variable("log_k_eq")))}*<%
+            %>(${cgm(ce.third_body_efficiencies_expr(
+                sol, react, Variable("concentrations")))}),
+            %endif
+            %endfor
+            %else:
             ${cgm(ce.rate_of_progress_expr(sol, i,
                 Variable("concentrations"),
                 Variable("k_fwd"), Variable("log_k_eq")))},
+            %endif
             %endfor
             ])
 
