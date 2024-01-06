@@ -26,9 +26,6 @@ THE SOFTWARE.
 """
 Internal Functionality
 ^^^^^^^^^^^^^^^^^^^^^^
-.. autofunction:: transport_polynomial_expr
-.. autofunction:: viscosity_mixture_rule_wilke_expr
-.. autofunction:: species_mass_diff_mixture_rule_expr
 .. autofunction:: equilibrium_constants_expr
 .. autofunction:: rate_coefficient_expr
 .. autofunction:: third_body_efficiencies_expr
@@ -170,7 +167,6 @@ def _zeros_like(argument):
 
 # {{{ Equilibrium constants
 
-
 def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
     """Generate code for equilibrium constants.
 
@@ -202,7 +198,6 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
         return sum_p - sum_r + sum_nu_net*p.Variable("c0")
     else:
         return sum_p - sum_r
-
 
 # }}}
 
