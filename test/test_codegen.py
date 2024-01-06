@@ -199,239 +199,6 @@ def test_get_pressure(mechname, usr_np):
     assert abs(p_ct - p_pm) / p_ct < 1.0e-12
 
 
-@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
-                         [("sandiego", "H2", 0.5, 1e-6),
-                          ("uconn32", "C2H4", 3, 1e-7),
-                          ])
-@pytest.mark.parametrize("usr_np", numpy_list)
-def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
-
-    """This function tests multiple aspects of pyro transport
-    1. Transport properties of individual species
-    2. Transport properties of species mixtures
-    Tests are pointwise compositions and over object arrays that
-    represent grids.
-    """
-
-    sol = ct.Solution(f"mechs/{mechname}.yaml")
-    pyro_class = pyro.codegen.python.get_thermochem_class(sol)
-    pyro_gas = make_jax_pyro_class(pyro_class, usr_np)
-
-    i_di = sol.species_index("N2")
-    i_ox = sol.species_index("O2")
-    i_fu = sol.species_index(fuel)
-
-    """Test on pointwise quantities
-    """
-    num_temp = 31
-    temp = np.linspace(300, 3000, num_temp)
-    pres = ct.one_atm
-
-    # Individual species viscosities and conductivities
-    for t in temp:
-        # Cantera state and mass diffusivities
-        sol.TP = t, pres
-        ct_diff = sol.binary_diff_coeffs
-        # Pyro transport
-        pyro_visc = pyro_gas.get_species_viscosities(t)
-        pyro_cond = pyro_gas.get_species_thermal_conductivities(t)
-        pyro_diff = pyro_gas.get_species_binary_mass_diffusivities(t)
-        # Loop over species
-        for sp_idx, sp_name in enumerate(sol.species_names):
-            sol.Y = sp_name + ":1"
-            y = sol.Y
-            # Errors
-            err_visc = usr_np.abs(pyro_visc[sp_idx] - sol.viscosity)
-            err_cond = usr_np.abs(pyro_cond[sp_idx] - sol.thermal_conductivity)
-            err_diff = usr_np.abs(pyro_diff[sp_idx][sp_idx]/pres
-                                  - ct_diff[sp_idx, sp_idx])
-            # print(f"Species: {sp_name}\t... visc: {err_visc}\t ... "
-            #       f"cond: {err_cond}\t ... diff: {err_diff}")
-            assert err_visc < 1e-12
-            assert err_cond < 1e-12
-            assert err_diff < 1e-12
-
-    # Now test for mixtures from a 0D reactor
-    time = 0
-
-    init_temp = 1200
-    equiv_ratio = 1
-    ox_di_ratio = 0.21
-
-    x = np.zeros(pyro_gas.num_species)
-    x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
-    x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
-    x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
-
-    sol.TPX = init_temp, pres, x
-    reactor = ct.IdealGasConstPressureReactor(sol)
-    sim = ct.ReactorNet([reactor])
-
-    for _ in range(100):
-        time += dt
-        sim.advance(time)
-        sol.TPY = reactor.T, pres, reactor.Y
-
-        pyro_visc = pyro_gas.get_mixture_viscosity_mixavg(sol.T, sol.Y)
-        pyro_cond = pyro_gas.get_mixture_thermal_conductivity_mixavg(sol.T,
-                                                                     sol.Y)
-        pyro_diff = pyro_gas.get_species_mass_diffusivities_mixavg(sol.P,
-                                                                   sol.T,
-                                                                   sol.Y)
-        err_visc = usr_np.abs(pyro_visc - sol.viscosity)
-        err_cond = usr_np.abs(pyro_cond - sol.thermal_conductivity)
-        err_diff = usr_np.linalg.norm(pyro_diff - sol.mix_diff_coeffs)
-
-        assert err_visc < 1e-12
-        assert err_cond < 1e-12
-        assert err_diff < 1e-12
-
-    """Test on object, multi-dim arrays that represent 1D grids.
-    """
-    t_mix = 300
-
-    num_points = 51
-    z = usr_np.linspace(0, 1, num_points)
-
-    sol.X = fuel + ":0.5, N2:0.5"
-    y_fu = sol.Y
-
-    sol.X = "O2:0.21, N2:0.79"
-    y_ox = sol.Y
-
-    y = (y_ox + (y_fu - y_ox)*z[:, None]).T
-
-    temp = t_mix * usr_np.ones(num_points)
-    pyro_diff_cold = pyro_gas.get_species_mass_diffusivities_mixavg(
-        pres, temp, y)
-
-    ct_diff_cold = np.zeros([sol.n_species, num_points])
-    ct_diff_equil = np.zeros([sol.n_species, num_points])
-
-    temp_equil = np.zeros(num_points)
-    y_equil = np.zeros([sol.n_species, num_points])
-
-    for i in range(num_points):
-        mf = np.array([y[s][i] for s in range(sol.n_species)])
-        sol.TPY = t_mix, pres, mf
-        ct_diff_cold[:, i] = sol.mix_diff_coeffs
-
-        sol.equilibrate("HP")
-        temp_equil[i] = sol.T
-        y_equil[:, i] = sol.Y
-        ct_diff_equil[:, i] = sol.mix_diff_coeffs
-
-    ct_diff_cold = pyro_gas._pyro_make_array(ct_diff_cold)
-    ct_diff_equil = pyro_gas._pyro_make_array(ct_diff_equil)
-    y_equil = pyro_gas._pyro_make_array(y_equil)
-
-    pyro_diff_equil = pyro_gas.get_species_mass_diffusivities_mixavg(
-        pres, temp_equil, y_equil)
-
-    for i in range(sol.n_species):
-        err_cold = usr_np.linalg.norm(
-            ct_diff_cold[i] - pyro_diff_cold[i])
-
-        err_equil = usr_np.linalg.norm(
-            ct_diff_equil[i] - pyro_diff_equil[i], np.inf)
-
-        # print(f"Species: {s}\t... Norm(c): {err_cold}\t ... "
-        #       f"Norm(e): {err_equil}")
-        assert err_cold < 1e-11 and err_equil < 1e-11
-
-    """Test on object, multi-dim arrays that represent 2D grids.
-    """
-    z_1, z_2 = np.meshgrid(z, z)
-    y = pyro_gas._pyro_make_array(
-        (y_ox + (y_fu - y_ox)*z_2[:, :, None]).T)
-
-    # Get pyro values
-    temp = t_mix * usr_np.ones([num_points, num_points])
-    pyro_diff_cold = pyro_gas.get_species_mass_diffusivities_mixavg(
-        pres, temp, y)
-
-    # Equilibrium values (from 1D test)
-    temp_equil = np.tile(temp_equil, (num_points, 1))
-    y_equil_twodim = np.zeros([pyro_gas.num_species, num_points, num_points])
-    for i_sp in range(pyro_gas.num_species):
-        y_equil_twodim[i_sp] = np.tile(y_equil[i_sp], (num_points, 1))
-
-    y_equil = pyro_gas._pyro_make_array(y_equil_twodim)
-
-    # Now a clunky loop for Cantera
-    from itertools import product
-
-    ct_diff_cold = np.zeros([sol.n_species, num_points, num_points])
-    ct_diff_equil = np.zeros_like(ct_diff_cold)
-
-    for i, j in product(range(num_points), range(num_points)):
-        mf = np.array([y[s][i, j] for s in range(sol.n_species)])
-        sol.TPY = t_mix, pres, mf
-        ct_diff_cold[:, i, j] = sol.mix_diff_coeffs
-
-        mf = np.array([y_equil[s][i, j] for s in range(sol.n_species)])
-        sol.TPY = temp_equil[i, j], pres, mf
-        ct_diff_equil[:, i, j] = sol.mix_diff_coeffs
-
-    ct_diff_cold = pyro_gas._pyro_make_array(ct_diff_cold)
-    ct_diff_equil = pyro_gas._pyro_make_array(ct_diff_equil)
-
-    pyro_diff_equil = pyro_gas.get_species_mass_diffusivities_mixavg(
-        pres, temp_equil, y_equil)
-
-    # Compare
-    for i in range(sol.n_species):
-        err_cold = usr_np.linalg.norm(
-            ct_diff_cold[i] - pyro_diff_cold[i], "fro")
-
-        err_equil = usr_np.linalg.norm(
-            ct_diff_equil[i] - pyro_diff_equil[i], "fro")
-
-        assert err_cold < 1e-12 and err_equil < 1e-12
-
-    """Now test on profiles that have single-species states
-    (Y_i = 1 and Y_j = 0 for j != i)
-    """
-    t_mix = 300
-
-    num_points = 51
-    z = usr_np.linspace(0.35, 0.65, num_points)
-
-    y_fu = 0.5 * (1 + usr_np.tanh(50 * (z - 0.5)))
-    y_ox = 1 - y_fu
-
-    y = np.zeros([pyro_gas.num_species, num_points])
-    y[i_fu] = y_fu
-    y[i_ox] = y_ox
-    y = pyro_gas._pyro_make_array(y)
-    # y = pyro_gas._pyro_make_array(jnp.zeros([
-    #     pyro_gas.num_species, num_points]))
-
-    temp = t_mix * usr_np.ones(num_points)
-    pyro_diff = pyro_gas.get_species_mass_diffusivities_mixavg(
-        ct.one_atm, temp, y)
-
-    ct_diff = np.zeros([sol.n_species, num_points])
-
-    temp_equil = np.zeros(num_points)
-    y_equil = np.zeros([sol.n_species, num_points])
-
-    for i in range(num_points):
-        mf = np.array([y[s][i] for s in range(sol.n_species)])
-        sol.TPY = t_mix, ct.one_atm, mf
-        ct_diff[:, i] = sol.mix_diff_coeffs
-
-    ct_diff = pyro_gas._pyro_make_array(ct_diff)
-
-    for i in range(sol.n_species):
-        err = usr_np.linalg.norm(
-            ct_diff[i] - pyro_diff[i])
-
-        assert err < 1e-10
-
-    return
-
-
 #@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
 @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32"])
 @pytest.mark.parametrize("usr_np", numpy_list)
@@ -741,6 +508,239 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
         # Compare
         assert err < 4e-14
+
+    return
+
+
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
+                         [("sandiego", "H2", 0.5, 1e-6),
+                          ("uconn32", "C2H4", 3, 1e-7),
+                          ])
+@pytest.mark.parametrize("usr_np", numpy_list)
+def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
+
+    """This function tests multiple aspects of pyro transport
+    1. Transport properties of individual species
+    2. Transport properties of species mixtures
+    Tests are pointwise compositions and over object arrays that
+    represent grids.
+    """
+
+    sol = ct.Solution(f"mechs/{mechname}.yaml")
+    pyro_class = pyro.codegen.python.get_thermochem_class(sol)
+    pyro_gas = make_jax_pyro_class(pyro_class, usr_np)
+
+    i_di = sol.species_index("N2")
+    i_ox = sol.species_index("O2")
+    i_fu = sol.species_index(fuel)
+
+    """Test on pointwise quantities
+    """
+    num_temp = 31
+    temp = np.linspace(300, 3000, num_temp)
+    pres = ct.one_atm
+
+    # Individual species viscosities and conductivities
+    for t in temp:
+        # Cantera state and mass diffusivities
+        sol.TP = t, pres
+        ct_diff = sol.binary_diff_coeffs
+        # Pyro transport
+        pyro_visc = pyro_gas.get_species_viscosities(t)
+        pyro_cond = pyro_gas.get_species_thermal_conductivities(t)
+        pyro_diff = pyro_gas.get_species_binary_mass_diffusivities(t)
+        # Loop over species
+        for sp_idx, sp_name in enumerate(sol.species_names):
+            sol.Y = sp_name + ":1"
+            y = sol.Y
+            # Errors
+            err_visc = usr_np.abs(pyro_visc[sp_idx] - sol.viscosity)
+            err_cond = usr_np.abs(pyro_cond[sp_idx] - sol.thermal_conductivity)
+            err_diff = usr_np.abs(pyro_diff[sp_idx][sp_idx]/pres
+                                  - ct_diff[sp_idx, sp_idx])
+            # print(f"Species: {sp_name}\t... visc: {err_visc}\t ... "
+            #       f"cond: {err_cond}\t ... diff: {err_diff}")
+            assert err_visc < 1e-12
+            assert err_cond < 1e-12
+            assert err_diff < 1e-12
+
+    # Now test for mixtures from a 0D reactor
+    time = 0
+
+    init_temp = 1200
+    equiv_ratio = 1
+    ox_di_ratio = 0.21
+
+    x = np.zeros(pyro_gas.num_species)
+    x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
+    x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
+    x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
+
+    sol.TPX = init_temp, pres, x
+    reactor = ct.IdealGasConstPressureReactor(sol)
+    sim = ct.ReactorNet([reactor])
+
+    for _ in range(100):
+        time += dt
+        sim.advance(time)
+        sol.TPY = reactor.T, pres, reactor.Y
+
+        pyro_visc = pyro_gas.get_mixture_viscosity_mixavg(sol.T, sol.Y)
+        pyro_cond = pyro_gas.get_mixture_thermal_conductivity_mixavg(sol.T,
+                                                                     sol.Y)
+        pyro_diff = pyro_gas.get_species_mass_diffusivities_mixavg(sol.P,
+                                                                   sol.T,
+                                                                   sol.Y)
+        err_visc = usr_np.abs(pyro_visc - sol.viscosity)
+        err_cond = usr_np.abs(pyro_cond - sol.thermal_conductivity)
+        err_diff = usr_np.linalg.norm(pyro_diff - sol.mix_diff_coeffs)
+
+        assert err_visc < 1e-12
+        assert err_cond < 1e-12
+        assert err_diff < 1e-12
+
+    """Test on object, multi-dim arrays that represent 1D grids.
+    """
+    t_mix = 300
+
+    num_points = 51
+    z = usr_np.linspace(0, 1, num_points)
+
+    sol.X = fuel + ":0.5, N2:0.5"
+    y_fu = sol.Y
+
+    sol.X = "O2:0.21, N2:0.79"
+    y_ox = sol.Y
+
+    y = (y_ox + (y_fu - y_ox)*z[:, None]).T
+
+    temp = t_mix * usr_np.ones(num_points)
+    pyro_diff_cold = pyro_gas.get_species_mass_diffusivities_mixavg(
+        pres, temp, y)
+
+    ct_diff_cold = np.zeros([sol.n_species, num_points])
+    ct_diff_equil = np.zeros([sol.n_species, num_points])
+
+    temp_equil = np.zeros(num_points)
+    y_equil = np.zeros([sol.n_species, num_points])
+
+    for i in range(num_points):
+        mf = np.array([y[s][i] for s in range(sol.n_species)])
+        sol.TPY = t_mix, pres, mf
+        ct_diff_cold[:, i] = sol.mix_diff_coeffs
+
+        sol.equilibrate("HP")
+        temp_equil[i] = sol.T
+        y_equil[:, i] = sol.Y
+        ct_diff_equil[:, i] = sol.mix_diff_coeffs
+
+    ct_diff_cold = pyro_gas._pyro_make_array(ct_diff_cold)
+    ct_diff_equil = pyro_gas._pyro_make_array(ct_diff_equil)
+    y_equil = pyro_gas._pyro_make_array(y_equil)
+
+    pyro_diff_equil = pyro_gas.get_species_mass_diffusivities_mixavg(
+        pres, temp_equil, y_equil)
+
+    for i in range(sol.n_species):
+        err_cold = usr_np.linalg.norm(
+            ct_diff_cold[i] - pyro_diff_cold[i])
+
+        err_equil = usr_np.linalg.norm(
+            ct_diff_equil[i] - pyro_diff_equil[i], np.inf)
+
+        # print(f"Species: {s}\t... Norm(c): {err_cold}\t ... "
+        #       f"Norm(e): {err_equil}")
+        assert err_cold < 1e-11 and err_equil < 1e-11
+
+    """Test on object, multi-dim arrays that represent 2D grids.
+    """
+    z_1, z_2 = np.meshgrid(z, z)
+    y = pyro_gas._pyro_make_array(
+        (y_ox + (y_fu - y_ox)*z_2[:, :, None]).T)
+
+    # Get pyro values
+    temp = t_mix * usr_np.ones([num_points, num_points])
+    pyro_diff_cold = pyro_gas.get_species_mass_diffusivities_mixavg(
+        pres, temp, y)
+
+    # Equilibrium values (from 1D test)
+    temp_equil = np.tile(temp_equil, (num_points, 1))
+    y_equil_twodim = np.zeros([pyro_gas.num_species, num_points, num_points])
+    for i_sp in range(pyro_gas.num_species):
+        y_equil_twodim[i_sp] = np.tile(y_equil[i_sp], (num_points, 1))
+
+    y_equil = pyro_gas._pyro_make_array(y_equil_twodim)
+
+    # Now a clunky loop for Cantera
+    from itertools import product
+
+    ct_diff_cold = np.zeros([sol.n_species, num_points, num_points])
+    ct_diff_equil = np.zeros_like(ct_diff_cold)
+
+    for i, j in product(range(num_points), range(num_points)):
+        mf = np.array([y[s][i, j] for s in range(sol.n_species)])
+        sol.TPY = t_mix, pres, mf
+        ct_diff_cold[:, i, j] = sol.mix_diff_coeffs
+
+        mf = np.array([y_equil[s][i, j] for s in range(sol.n_species)])
+        sol.TPY = temp_equil[i, j], pres, mf
+        ct_diff_equil[:, i, j] = sol.mix_diff_coeffs
+
+    ct_diff_cold = pyro_gas._pyro_make_array(ct_diff_cold)
+    ct_diff_equil = pyro_gas._pyro_make_array(ct_diff_equil)
+
+    pyro_diff_equil = pyro_gas.get_species_mass_diffusivities_mixavg(
+        pres, temp_equil, y_equil)
+
+    # Compare
+    for i in range(sol.n_species):
+        err_cold = usr_np.linalg.norm(
+            ct_diff_cold[i] - pyro_diff_cold[i], "fro")
+
+        err_equil = usr_np.linalg.norm(
+            ct_diff_equil[i] - pyro_diff_equil[i], "fro")
+
+        assert err_cold < 1e-12 and err_equil < 1e-12
+
+    """Now test on profiles that have single-species states
+    (Y_i = 1 and Y_j = 0 for j != i)
+    """
+    t_mix = 300
+
+    num_points = 51
+    z = usr_np.linspace(0.35, 0.65, num_points)
+
+    y_fu = 0.5 * (1 + usr_np.tanh(50 * (z - 0.5)))
+    y_ox = 1 - y_fu
+
+    y = np.zeros([pyro_gas.num_species, num_points])
+    y[i_fu] = y_fu
+    y[i_ox] = y_ox
+    y = pyro_gas._pyro_make_array(y)
+    # y = pyro_gas._pyro_make_array(jnp.zeros([
+    #     pyro_gas.num_species, num_points]))
+
+    temp = t_mix * usr_np.ones(num_points)
+    pyro_diff = pyro_gas.get_species_mass_diffusivities_mixavg(
+        ct.one_atm, temp, y)
+
+    ct_diff = np.zeros([sol.n_species, num_points])
+
+    temp_equil = np.zeros(num_points)
+    y_equil = np.zeros([sol.n_species, num_points])
+
+    for i in range(num_points):
+        mf = np.array([y[s][i] for s in range(sol.n_species)])
+        sol.TPY = t_mix, ct.one_atm, mf
+        ct_diff[:, i] = sol.mix_diff_coeffs
+
+    ct_diff = pyro_gas._pyro_make_array(ct_diff)
+
+    for i in range(sol.n_species):
+        err = usr_np.linalg.norm(
+            ct_diff[i] - pyro_diff[i])
+
+        assert err < 1e-10
 
     return
 
