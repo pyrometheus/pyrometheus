@@ -254,8 +254,6 @@ def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
                 print(sol.delta_entropy[i]/gas_const, delta_s[i], reaction)
                 assert (sol.delta_entropy[i]/gas_const - delta_s[i]) < 1e-13
 
-    return
-
 
 # @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "gri30"])
 @pytest.mark.parametrize("mechname", ["uiuc", "sandiego"])
@@ -376,8 +374,6 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, tol, reactor_type, usr_np):
         for i in range(sol.n_species):
             print(omega_pm[i], omega_ct[i], omega_pm[i] - omega_ct[i])
             assert np.abs((omega_pm[i] - omega_ct[i])) < tol
-
-    return
 
 
 def test_autodiff_accuracy():
@@ -521,8 +517,6 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
         # Compare
         assert err < 4e-14
-
-    return
 
 
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
@@ -754,8 +748,6 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
             ct_diff[i] - pyro_diff[i])
 
         assert err < 1e-10
-
-    return
 
 
 # run single tests using
