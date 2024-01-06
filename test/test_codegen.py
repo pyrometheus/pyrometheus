@@ -595,7 +595,6 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
         assert err_cond < 1e-12
         assert err_diff < 1e-12
 
-
     """Test on object, multi-dim arrays that represent 1D grids.
     """
     t_mix = 300
