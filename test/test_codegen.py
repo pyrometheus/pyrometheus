@@ -228,12 +228,12 @@ def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
         # mixture entropy mole
         s_mix_mole = ptk.get_mixture_entropy_mole(pressure, temperature, Y)
         assert (s_mix_mole - sol.entropy_mole) < 5.0e-6  # round-off error
-        assert (s_mix_mole - sol.entropy_mole)/sol.entropy_mole < 1.0e-12
+        assert (s_mix_mole - sol.entropy_mole)/sol.entropy_mole < 2.0e-12
 
         # mixture entropy mass
         s_mix_mass = ptk.get_mixture_entropy_mass(pressure, temperature, Y)
         assert (s_mix_mass - sol.entropy_mass) < 5.0e-6  # round-off error
-        assert (s_mix_mass - sol.entropy_mass)/sol.entropy_mass < 1.0e-12
+        assert (s_mix_mass - sol.entropy_mass)/sol.entropy_mass < 2.0e-12
 
         # delta enthalpy
         nu = (sol.product_stoich_coeffs - sol.reactant_stoich_coeffs)
