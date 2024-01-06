@@ -302,9 +302,6 @@ class Thermochemistry:
             %endfor
             ])
 
-    def get_mole_fractions(self, mix_mol_weight, mass_fractions):
-        return self.inv_molecular_weights * mass_fractions * mix_mol_weight
-
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([
             mass_fractions[i] * spec_property[i] * self.inv_molecular_weights[i]
@@ -332,8 +329,8 @@ class Thermochemistry:
 
     def get_mixture_entropy_mass(self, pressure, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
-        return 1.0/mmw * self.get_mixture_entropy_mole(pressure, temperature,
-                                                       mass_fractions)
+        return 1.0/mmw * self.get_mixture_entropy_mole(pressure, temperature, <%
+                                                       %>mass_fractions)
 
     def get_mole_average_property(self, mass_fractions, spec_property):
         mmw = self.get_mix_molecular_weight(mass_fractions)
@@ -481,10 +478,6 @@ class Thermochemistry:
         %endfor
         %endif
 
-        %for i, react in three_body_reactions:
-        k_fwd[${i}] = k_fwd[${i}]*(${cgm(ce.third_body_efficiencies_expr(
-            sol, react, Variable("concentrations")))})
-        %endfor
         return self._pyro_make_array(k_fwd)
 
     def get_rev_rate_coefficients(self, pressure, temperature, concentrations):
@@ -494,6 +487,10 @@ class Thermochemistry:
 
     def get_net_rates_of_progress(self, pressure, temperature, concentrations):
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
+        %for i, react in three_body_reactions:
+        k_fwd[${i}] = k_fwd[${i}]*(${cgm(ce.third_body_efficiencies_expr(
+            sol, react, Variable("concentrations")))})
+        %endfor
         log_k_eq = self.get_equilibrium_constants(pressure, temperature)
         return self._pyro_make_array([
             %for i in range(sol.n_reactions):

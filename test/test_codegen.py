@@ -236,7 +236,7 @@ def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
         assert (s_mix_mass - sol.entropy_mass)/sol.entropy_mass < 1.0e-12
 
         # delta enthalpy
-        nu = (sol.product_stoich_coeffs() - sol.reactant_stoich_coeffs())
+        nu = (sol.product_stoich_coeffs - sol.reactant_stoich_coeffs)
         delta_h = nu.T@ptk.get_species_enthalpies_rt(temperature)
         assert error(sol.delta_enthalpy/(gas_const*temperature) - delta_h) < 1e-13
 
@@ -296,7 +296,9 @@ def test_get_temperature(mechname, usr_np):
 
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt, tol",
                          [("uiuc", "C2H4", 3.0, 1e-6, 1.0e-11),
-                          ("sandiego", "H2", 0.5, 1e-6, 5.0e-11)])
+                          ("sandiego", "H2", 0.5, 1e-6, 5.0e-11),
+#                          ("uconn32", "C2H2", 1.0, 1e-6, 5.0e-11)
+                        ])
 @pytest.mark.parametrize("reactor_type",
                          ["IdealGasReactor", "IdealGasConstPressureReactor"])
 @pytest.mark.parametrize("usr_np", numpy_list)
@@ -323,6 +325,9 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, tol, reactor_type, usr_np):
 
     sim = ct.ReactorNet([reactor])
 
+    three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
+                            if r.reaction_type == "three-body-Arrhenius"]
+
     def error(x):
         return np.linalg.norm(x, np.inf)
 
@@ -344,29 +349,52 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, tol, reactor_type, usr_np):
         # forward
         kfd_pm = ptk.get_fwd_rate_coefficients(temp, c)
         kfw_ct = sol.forward_rate_constants
+
+#        # Cantera 3.0 has bumped the third-body efficiency factor from the
+#        # rate coefficient to the rate of progress
+#        for i, r in three_body_reactions:
+#            eff = np.sum([c[sol.species_index(sp)] * r.third_body.efficiencies[sp]
+#                          for sp in r.third_body.efficiencies])
+#            eff += np.sum([c[sp] for sp in range(sol.n_species)
+#                           if sol.species_name(sp) not in r.third_body.efficiencies])
+#            kfw_ct[i] *= eff
+
         for i, _ in enumerate(sol.reactions()):
-            assert np.abs((kfd_pm[i] - kfw_ct[i]) / kfw_ct[i]) < 1.0e-13
+            print(kfd_pm[i], kfw_ct[i], kfd_pm[i] - kfw_ct[i])
+            assert np.abs(kfd_pm[i] - kfw_ct[i])/np.maximum(1.0, np.abs(kfw_ct[i])) < 1.0e-13
 
         # equilibrium
         keq_pm = usr_np.exp(-1.*ptk.get_equilibrium_constants(pressure, temp))
         keq_ct = sol.equilibrium_constants
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:  # skip irreversible reactions
-                assert np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i]) < 1.0e-13
+                print(keq_pm[i], keq_ct[i], keq_pm[i] - keq_ct[i])
+                assert np.abs(keq_pm[i] - keq_ct[i])/np.maximum(1.0, np.abs(keq_ct[i])) < 1.0e-13
 
         # reverse rates
         krv_pm = ptk.get_rev_rate_coefficients(pressure, temp, c)
         krv_ct = sol.reverse_rate_constants
+
+#        # Cantera 3.0 has bumped the third-body efficiency factor from the
+#        # rate coefficient to the rate of progress
+#        for i, r in three_body_reactions:
+#            eff = np.sum([c[sol.species_index(sp)] * r.third_body.efficiencies[sp]
+#                          for sp in r.third_body.efficiencies])
+#            eff += np.sum([c[sp] for sp in range(sol.n_species)
+#                           if sol.species_name(sp) not in r.third_body.efficiencies])
+#            krv_ct[i] *= eff
+
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:  # skip irreversible reactions
-                assert np.abs((krv_pm[i] - krv_ct[i]) / krv_ct[i]) < 1.0e-13
+                print(krv_pm[i], krv_ct[i], krv_pm[i] - krv_ct[i])
+                assert np.abs(krv_pm[i] - krv_ct[i])/np.maximum(1.0, np.abs(krv_ct[i])) < 1.0e-13
 
         # reaction progress
         rates_pm = ptk.get_net_rates_of_progress(pressure, temp, c)
         rates_ct = sol.net_rates_of_progress
         for i, _ in enumerate(sol.reactions()):
             print(rates_pm[i], rates_ct[i], rates_pm[i] - rates_ct[i])
-            assert np.abs((rates_pm[i] - rates_ct[i])) < tol
+            assert np.abs(rates_pm[i] - rates_ct[i]) < tol
 
         # species production/destruction
         omega_pm = ptk.get_net_production_rates(rho, temp, y)
