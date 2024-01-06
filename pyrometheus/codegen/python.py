@@ -266,10 +266,10 @@ class Thermochemistry:
 
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
-                %for i in range(sol.n_species):
-                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
-                %endfor
-                )
+            %for i in range(sol.n_species):
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+            %endfor
+            )
 
     def get_density(self, p, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
@@ -283,22 +283,31 @@ class Thermochemistry:
 
     def get_mix_molecular_weight(self, mass_fractions):
         return 1/(
-                %for i in range(sol.n_species):
-                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
-                %endfor
-                )
+            %for i in range(sol.n_species):
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+            %endfor
+            )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.inv_molecular_weights * rho * mass_fractions
+        return self._pyro_make_array([
+            %for i in range(sol.n_species):
+            self.inv_molecular_weights[${i}] * rho * mass_fractions[${i}],
+            %endfor
+        ])
+
+    def get_mole_fractions(self, mix_mol_weight, mass_fractions):
+        return self._pyro_make_array([
+            %for i in range(sol.n_species):
+            self.inv_molecular_weights[${i}] * mass_fractions[${i}] * mix_mol_weight,
+            %endfor
+            ])
 
     def get_mole_fractions(self, mix_mol_weight, mass_fractions):
         return self.inv_molecular_weights * mass_fractions * mix_mol_weight
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([
-            mass_fractions[i]
-            * spec_property[i]
-            * self.inv_molecular_weights[i]
+            mass_fractions[i] * spec_property[i] * self.inv_molecular_weights[i]
             for i in range(self.num_species)])
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
@@ -353,14 +362,14 @@ class Thermochemistry:
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
-                ])
+            ])
 
     def get_species_enthalpies_rt(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
-                ])
+            ])
 
     def get_species_entropies_r(self, pressure, temperature):
         return self._pyro_make_array([
@@ -368,7 +377,7 @@ class Thermochemistry:
             ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}
             - self.usr_np.log(pressure/101325.0),
             % endfor
-                ])
+            ])
 
     def get_species_gibbs_rt(self, pressure, temperature):
         h0_rt = self.get_species_enthalpies_rt(temperature)
@@ -382,14 +391,13 @@ class Thermochemistry:
         g0_rt = self.get_species_gibbs_rt(pressure, temperature)
         return self._pyro_make_array([
             %for i, react in enumerate(sol.reactions()):
-                %if react.reversible:
-                    ${cgm(ce.equilibrium_constants_expr(
-                        sol, i, Variable("g0_rt")))},
-                %else:
-                    -0.17364695002734*temperature,
-                %endif
+            %if react.reversible:
+            ${cgm(ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))},
+            %else:
+            -0.17364695002734*temperature,
+            %endif
             %endfor
-                ])
+            ])
 
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
         if do_energy is False:
@@ -418,40 +426,30 @@ class Thermochemistry:
     def get_falloff_rates(self, temperature, concentrations):
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.high_rate, Variable("temperature")))},
-            %else:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.high_rate, Variable("temperature")))},
-            %endif
         %endfor
-                ])
+        ])
 
         k_low = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.low_rate, Variable("temperature")))},
-            %else:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.low_rate, Variable("temperature")))},
-            %endif
         %endfor
-                ])
+        ])
 
         reduced_pressure = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
             (${cgm(ce.third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
-                            ])
+        ])
 
         falloff_center = self._pyro_make_array([
         %for _, react in falloff_reactions:
             ${cgm(ce.troe_falloff_expr(react, Variable("temperature")))},
         %endfor
-                        ])
+        ])
 
         falloff_function = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
@@ -459,7 +457,7 @@ class Thermochemistry:
                 react, i, Variable("temperature"), Variable("reduced_pressure"),
                 Variable("falloff_center")))},
         %endfor
-                            ])*reduced_pressure/(1+reduced_pressure)
+        ])*reduced_pressure/(1+reduced_pressure)
 
         return k_high*falloff_function
 
@@ -468,14 +466,14 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
         %for react in sol.reactions():
-        %if isinstance(react, ct.FalloffReaction):
+        %if react.equation in [r.equation for _, r in falloff_reactions]:
             0*temperature,
         %else:
             ${cgm(ce.rate_coefficient_expr(react.rate,
                                         Variable("temperature")))} * ones,
         %endif
         %endfor
-                ]
+        ]
         %if falloff_reactions:
         k_falloff = self.get_falloff_rates(temperature, concentrations)
         %for j, (i, react) in enumerate(falloff_reactions):
@@ -498,12 +496,12 @@ class Thermochemistry:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(pressure, temperature)
         return self._pyro_make_array([
-                %for i in range(sol.n_reactions):
-                    ${cgm(ce.rate_of_progress_expr(sol, i,
-                        Variable("concentrations"),
-                        Variable("k_fwd"), Variable("log_k_eq")))},
-                %endfor
-               ])
+            %for i in range(sol.n_reactions):
+            ${cgm(ce.rate_of_progress_expr(sol, i,
+                Variable("concentrations"),
+                Variable("k_fwd"), Variable("log_k_eq")))},
+            %endfor
+            ])
 
     def get_net_production_rates(self, rho, temperature, mass_fractions):
         pressure = self.get_pressure(rho, temperature, mass_fractions)
@@ -512,10 +510,83 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
-                ${cgm(ce.production_rate_expr(
-                    sol, sp.name, Variable("r_net")))} * ones,
+            ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
             %endfor
-               ])""", strict_undefined=True)
+            ])
+
+    def get_species_viscosities(self, temperature):
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            ${cgm(ce.viscosity_polynomial_expr(
+                sol.get_viscosity_polynomial(sp),
+                Variable("temperature")))},
+            % endfor
+            ])
+
+    def get_species_thermal_conductivities(self, temperature):
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            ${cgm(ce.conductivity_polynomial_expr(
+                sol.get_thermal_conductivity_polynomial(sp),
+                Variable("temperature")))},
+            % endfor
+            ])
+
+    def get_species_binary_mass_diffusivities(self, temperature):
+        return self._pyro_make_array([
+            % for i, j, in product(range(sol.n_species), range(sol.n_species)):
+            ${cgm(ce.diffusivity_polynomial_expr(
+                sol.get_binary_diff_coeffs_polynomial(i, j),
+                Variable("temperature")))},
+            % endfor
+            ]).reshape((self.num_species, self.num_species))
+
+    def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        viscosities = self.get_species_viscosities(temperature)
+        mix_rule_f = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.viscosity_mixture_rule_wilke_expr(sol, sp,
+                Variable("mole_fractions"), Variable("viscosities")))},
+            %endfor
+            ])
+        return self.usr_np.sum(mole_fractions*viscosities/mix_rule_f)
+
+    def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        conductivities = self.get_species_thermal_conductivities(temperature)
+        return 0.5*(self.usr_np.sum(mole_fractions*conductivities)
+            + 1/self.usr_np.sum(mole_fractions/conductivities))
+
+    def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
+            mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
+        zeros = self._pyro_zeros_like(temperature)
+
+        x_sum = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.diffusivity_mixture_rule_denom_expr(
+                sol, sp, Variable("mole_fractions"), Variable("bdiff_ij")))},
+            %endfor
+            ])
+        denom = self._pyro_make_array([
+            %for s in range(sol.n_species):
+            x_sum[${s}] - mole_fractions[${s}]/bdiff_ij[${s}][${s}],
+            %endfor
+            ])
+
+        return self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            self.usr_np.where(self.usr_np.greater(denom[${sp}], zeros), <%
+                %>(mmw - mole_fractions[${sp}] * self.molecular_weights[${sp}])/(<%
+                    %>pressure * mmw * denom[${sp}]), <%
+                %>bdiff_ij[${sp}][${sp}] / pressure),
+            %endfor
+            ])""", strict_undefined=True)
 
 # }}}
 
@@ -528,6 +599,12 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
     interface.
     """
+
+    falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                   if r.reaction_type.startswith("falloff")]
+    three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                      if r.reaction_type == "three-body-Arrhenius"]
+
     return code_tpl.render(
         ct=ct,
         sol=sol,
@@ -540,10 +617,8 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
 
         ce=pyrometheus.chem_expr,
 
-        falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                           if isinstance(react, ct.FalloffReaction)],
-        three_body_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                             if isinstance(react, ct.ThreeBodyReaction)],
+        falloff_reactions=falloff_rxn,
+        three_body_reactions=three_body_rxn,
     )
 
 

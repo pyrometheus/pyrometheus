@@ -1,6 +1,6 @@
-.. _sec:kinetics:
+.. _sec:thermochemistry:
 
-Chemical Kinetics
+Thermochemistry and Transport
 =================
 
 Pyrometheus generates code to evaluate chemical source terms.
@@ -10,9 +10,9 @@ We focus on a homogeneous adiabatic reactor for simplicify. Yet, the
 systems explained here can easily be adapted to other configurations
 (e.g., isochoric or inhomogeneous reactors).
 
-.. _subsec:species:
+.. _subsec:thermokinetics:
 
-Species Conservation and Chemical Source Terms
+Chemical Kinetics and Thermodynamics
 ----------------------------------------------
 
 Our goal is to express, in as much detail, the chemical kinetics of
@@ -41,7 +41,7 @@ where
 .. math:: W = \sum_{i = 1}^{N}W_{i}y_{i}
 
 is the mixture molecular weight, :math:`R` the universal gas constant
-(in :math:`\mathrm{J/kmol-K}`), and :math:`T` the temperature (in
+(in :math:`\mathrm{J/kmol\cdot K}`), and :math:`T` the temperature (in
 :math:`\mathrm{K}`). We explain how to obtain the mixture temperature in
 detail in Section `1.2 <#subsec:energy>`__.
 
@@ -77,7 +77,7 @@ are given by the law of mass-action,
 .. math::
 
    \label{eq:reaction_rates}
-     R_{j} = k_{j}(T)\psq{ \prod_{\ell = 1}^{N}\pp{\frac{ \rho y_{\ell} }{ W_{\ell} }}^{\nu_{mj}^{\prime}} - \frac{1}{K_{j}(T)}\prod_{k = 1}^{N}\pp{\frac{ \rho y_{k} }{ W_{k} }}^{\nu_{mj}^{\prime\prime}} },\qquad j = 1,\dots,M,
+     R_{j} = k_{j}(T)\left[  \prod_{\ell = 1}^{N}\left(\frac{ \rho y_{\ell} }{ W_{\ell} }\right)^{\nu_{mj}^{\prime}} - \frac{1}{K_{j}(T)}\prod_{k = 1}^{N}\left(\frac{ \rho y_{k} }{ W_{k} }\right)^{\nu_{mj}^{\prime\prime}} \right],\qquad j = 1,\dots,M,
 
 where :math:`k_{j}(T)` is the rate coefficient of the
 :math:`j^{\mathrm{th}}` reaction and :math:`K_{j}(T)` its equilibrium
@@ -88,7 +88,7 @@ pressure). Its simplest form is the Arrhenius expression,
 .. math::
 
    \label{eq:rate_coeff}
-     k_{j}(T) = A_{j}T^{b_{j}}\exp\pp{ -\frac{\theta_{a,j}}{T} },\qquad j = 1,\dots,M
+     k_{j}(T) = A_{j}T^{b_{j}}\exp\left({ -\frac{\theta_{a,j}}{T} }\right),\qquad j = 1,\dots,M
 
 where :math:`A_{j}` is the pre-exponential, :math:`b_{j}` is the
 temperature exponent, and :math:`\theta_{a,j}` is the activation
@@ -99,7 +99,7 @@ The equilibrium constant is evaluated through equilibrium thermodynamics
 .. math::
 
    \label{eq:equil_constants}
-     K_{j}(T) = \pp{ \frac{p_{0}}{RT} }^{\sum_{i = 0}^{\nu_{ij}}}\exp\pp{ -\sum_{i = 1}^{N}\frac{\nu_{ij}g_{i}(T)}{RT} },\qquad j = 1,\dots,M,
+     K_{j}(T) = \left( \frac{p_{0}}{RT} \right)^{\sum_{i = 0}^{\nu_{ij}}}\exp\left( -\sum_{i = 1}^{N}\frac{\nu_{ij}g_{i}(T)}{RT} \right),\qquad j = 1,\dots,M,
 
 where :math:`p_{0} = 1` :math:`\mathrm{atm}` and
 
@@ -122,3 +122,70 @@ To evaluate the rates of
 progress `[reaction_rates] <#reaction_rates>`__, we need the
 temperature. Yet, we have defered any discussion on how to compute it
 from other state variables.
+
+.. _subsec:transport:
+
+Transport Properties
+----------------------------------------------
+
+Pyrometheus-generated code provides routines to evaluate species and mixture transport properties. These follow most closely the Cantera implementation, which is based on polynomial fits to collision integrals. This approach is based on the kinetic theory of gases, for which a complete overview can be found in chapter 12 of [Kee_2003]_.
+
+.. _subsec:Viscosity:
+
+The viscosity of the :math:`n^{\mathrm{th}}` species in the mixture is:
+
+.. math::
+
+    \mu_n = \sqrt{T} \lef[\sum_{m = 0}^{4} a_{m, n}\, (\log\, T)^{m}\right]^2,
+
+where the coefficients :math:`a_{m, n}` are provided by Cantera. The viscosity of the mixture is then obtained via the mixture rule
+
+.. math::
+
+    \mu = \sum_{n = 1}^{N} \frac{X_n \mu_n}{\sum_{j = 1}^{N} X_j\Phi_{nj}}
+
+where :math:`X_{n} = W Y_{n} / W_{(n)}` is the mole fraction of species :math:`n`, and
+
+.. math::
+
+    \Phi_{nj} = \frac{1}{\sqrt{8}}
+    \left( 1 + \frac{W_n}{W_j} \right)^{-\frac{1}{2}}
+    \left( 1 + \left[ \frac{\mu_n}{\mu_j} \right]^{\frac{1}{2}}
+    \left[ \frac{W_j}{W_n} \right]^{\frac{1}{4}} \right)^2.
+
+.. _subsec:Thermal conductivity:
+
+The thermal conductivity of species :math:`n` is
+
+.. math::
+
+    \lambda_n = \sqrt{T} \sum_{m = 0}^{0} b_{m, n}\, (\log\, T)^{m}.
+
+The mixture viscosity is
+
+.. math::
+
+    \lambda = \frac{1}{2} \left( \sum_{n = 1}^{N} X_n \lambda_n +
+       \frac{1}{\sum_{n = 1}^{N} \frac{X_n}{\lambda_n} } \right).
+
+.. _subsec:Species mass diffusivities:
+
+The binary mass diffusivities, in :math:`\frac{m^2}{s}`, for species $i$ and $j$ are
+
+.. math::
+
+     D_{i,j}(T) = \frac{T^{3/2}}{p} \sum_{m = 0}^{4}c_{i,j,m}\, (\log\, T)^m
+
+The mixture-averaged diffusivity of species :math:`n` is
+
+.. math::
+
+    \mathscr{D}_{n} = \frac{W - X_{(n)}W_{n}}{W}\pp{ \sum_{m \neq n}\frac{X_{m}}{D_{nm}}  }^{-1}
+
+This expression becomes singular for :math:`X_n = 1` (for any :math:`n`, so :math:`\sum_{m \neq n} X_m/D_{nm} = 0`). Thus, following Cantera, :func:`get_species_mass_diffusivities_mixavg` only returns the mixture-averaged diffusivity if
+
+.. math::
+
+   \sum_{m \neq n} \frac{X_{m}}{D_nm} > 0,
+
+and :math:`D_{nn}` otherwise. The conditional is implemented using :func:`where` and, of course, it is difficult to satisfy in finite-precision calculations. It can lead to round-off errors in :math:`\mathscr{D}_{n}` but, like Cantera, Pyrometheus does not attempt to correct this behavior to avoid the use of arbitrary thresholds.

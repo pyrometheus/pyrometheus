@@ -67,3 +67,5 @@ References
 
     .. [Hesthaven_2008] Hesthaven and Warburton (2008), Nodal DG Methods, Springer \
         `DOI: <https://doi.org/10.1007/978-0-387-72067-8>`__
+.. [Kee_2003] Robert J. Kee, Michael E. Coltrin, Peter Glarborg (2003), Chemically Reacting Flow: Theory and Practice \
+    `(DOI) <https://doi.org/10.1002/0471461296>`__

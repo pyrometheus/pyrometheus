@@ -43,7 +43,7 @@ jobs:
                 # "3" is intentional: It's suppposed to be conda's default
                 # Python version number, which seems to have moved past
                 # 3.9 as of 2022-02-20.
-                python_version: ["3.9", "3"]
+                python_version: ["3.9", "3.11"]
         runs-on: ubuntu-latest
         env:
             PYTHON_VERSION: ${{ matrix.python_version }}
@@ -100,10 +100,11 @@ jobs:
             env:
                 DOWNSTREAM_PROJECT: ${{ matrix.downstream_project }}
             run: |
+                set -x
                 curl -L -O https://tiker.net/ci-support-v0
                 . ./ci-support-v0
 
-                git clone "https://github.com/illinois-ceesd/$DOWNSTREAM_PROJECT.git"
+                git clone -b use_cantera30 "https://github.com/illinois-ceesd/$DOWNSTREAM_PROJECT.git"
                 cd "$DOWNSTREAM_PROJECT"
                 echo "*** $DOWNSTREAM_PROJECT version: $(git rev-parse --short HEAD)"
                 edit_requirements_txt_for_downstream_in_subdir
@@ -113,6 +114,9 @@ jobs:
                     # can't turn off MPI in mirgecom
                     export CONDA_ENVIRONMENT=conda-env.yml
                     echo "- mpi4py" >> "$CONDA_ENVIRONMENT"
+
+                    # Make sure not to reinstall mpi4py
+                    sed -i "/mpi4py/ d" requirements.txt
                 else
                     sed -i "/mpi4py/ d" requirements.txt
                     export CONDA_ENVIRONMENT=.test-conda-env-py3.yml
