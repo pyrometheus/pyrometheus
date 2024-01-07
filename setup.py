@@ -28,13 +28,18 @@ setup(name="pyrometheus",
           "Topic :: Utilities",
           ],
 
-      python_requires="~=3.6",
+      python_requires="~=3.8",
 
       install_requires=[
           "cantera",
           "pymbolic",
           "mako",
+          "arraycontext"
           ],
+
+      dependency_links=[
+          "git+https://github.com/inducer/arraycontext.git@torch-actx#egg=arraycontext"
+      ],
 
       author="Andreas Kloeckner",
       url="https://github.com/inducer/pyrometheus",
