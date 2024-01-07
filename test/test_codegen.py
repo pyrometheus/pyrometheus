@@ -170,7 +170,6 @@ def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
     def error(x):
         return np.linalg.norm(x, np.inf)
 
-    # Loop over temperatures
     time = 0.0
     dt = 1e-6
 
@@ -324,23 +323,24 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, tol, reactor_type, usr_np):
 
     sim = ct.ReactorNet([reactor])
 
-    def error(x):
-        return np.linalg.norm(x, np.inf)
-
     time = 0.0
     for _ in range(100):
         time += dt
         sim.advance(time)
 
         # Get state from Cantera
-        temp = sol.T
-        rho = sol.density
+        temp = reactor.T
+        rho = reactor.density
         pressure = sol.P
         y = np.where(reactor.Y > 0, reactor.Y, 0)
 
-        print(temp, rho, pressure, y)
-
         c = ptk.get_concentrations(rho, y)
+
+        # Print
+        print("T = ", reactor.T)
+        print("y_ct", reactor.Y)
+        print("y = ", y)
+        print()
 
         # forward
         kfd_pm = ptk.get_fwd_rate_coefficients(temp, c)
@@ -380,7 +380,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, tol, reactor_type, usr_np):
         omega_ct = sol.net_production_rates
         for i in range(sol.n_species):
             print(omega_pm[i], omega_ct[i], omega_pm[i] - omega_ct[i])
-            assert np.abs((omega_pm[i] - omega_ct[i])) < tol
+            assert np.abs(omega_pm[i] - omega_ct[i]) < tol
 
 
 def test_autodiff_accuracy():
