@@ -1,7 +1,7 @@
 .. _sec:thermochemistry:
 
 Thermochemistry and Transport
-=================
+=============================
 
 Pyrometheus generates code to evaluate chemical source terms.
 These appear in the conservation equations of reacting flows.
@@ -13,7 +13,7 @@ systems explained here can easily be adapted to other configurations
 .. _subsec:thermokinetics:
 
 Chemical Kinetics and Thermodynamics
-----------------------------------------------
+------------------------------------
 
 Our goal is to express, in as much detail, the chemical kinetics of
 reactive flows. We assume a homogeneous mixture of ideal gases evolves
@@ -136,7 +136,7 @@ The viscosity of the :math:`n^{\mathrm{th}}` species in the mixture is:
 
 .. math::
 
-    \mu_n = \sqrt{T} \lef[\sum_{m = 0}^{4} a_{m, n}\, (\log\, T)^{m}\right]^2,
+    \mu_n = \sqrt{T} \left[\sum_{m = 0}^{4} a_{m, n}\, (\log\, T)^{m}\right]^2,
 
 where the coefficients :math:`a_{m, n}` are provided by Cantera. The viscosity of the mixture is then obtained via the mixture rule
 
@@ -180,12 +180,12 @@ The mixture-averaged diffusivity of species :math:`n` is
 
 .. math::
 
-    \mathscr{D}_{n} = \frac{W - X_{(n)}W_{n}}{W}\pp{ \sum_{m \neq n}\frac{X_{m}}{D_{nm}}  }^{-1}
+    \mathscr{D}_{n} = \frac{W - X_{(n)}W_{n}}{W}\left\lbrace \sum_{m \neq n}\frac{X_{m}}{D_{nm}}  \right\rbrace^{-1}
 
-This expression becomes singular for :math:`X_n = 1` (for any :math:`n`, so :math:`\sum_{m \neq n} X_m/D_{nm} = 0`). Thus, following Cantera, :func:`get_species_mass_diffusivities_mixavg` only returns the mixture-averaged diffusivity if
+This expression becomes singular for :math:`X_n = 1` (for any :math:`n`, so :math:`\sum_{m \neq n} X_m/D_{nm} = 0`). Thus, following Cantera, it only returns the mixture-averaged diffusivity if
 
 .. math::
 
    \sum_{m \neq n} \frac{X_{m}}{D_nm} > 0,
 
-and :math:`D_{nn}` otherwise. The conditional is implemented using :func:`where` and, of course, it is difficult to satisfy in finite-precision calculations. It can lead to round-off errors in :math:`\mathscr{D}_{n}` but, like Cantera, Pyrometheus does not attempt to correct this behavior to avoid the use of arbitrary thresholds.
+and :math:`D_{nn}` otherwise. The conditional is implemented using :func:`numpy.where` and, of course, it is difficult to satisfy in finite-precision calculations. It can lead to round-off errors in :math:`\mathscr{D}_{n}` but, like Cantera, Pyrometheus does not attempt to correct this behavior to avoid the use of arbitrary thresholds.
