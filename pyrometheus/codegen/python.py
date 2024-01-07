@@ -560,14 +560,14 @@ class Thermochemistry:
                 Variable("mole_fractions"), Variable("viscosities")))},
             %endfor
             ])
-        return self.usr_np.sum(mole_fractions*viscosities/mix_rule_f)
+        return sum(mole_fractions*viscosities/mix_rule_f)
 
     def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
         conductivities = self.get_species_thermal_conductivities(temperature)
-        return 0.5*(self.usr_np.sum(mole_fractions*conductivities)
-            + 1/self.usr_np.sum(mole_fractions/conductivities))
+        return 0.5*(sum(mole_fractions*conductivities)
+            + 1/sum(mole_fractions/conductivities))
 
     def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
             mass_fractions):
