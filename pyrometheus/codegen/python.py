@@ -135,13 +135,9 @@ class Thermochemistry:
     .. automethod:: get_concentrations
     .. automethod:: get_mole_fractions
     .. automethod:: get_mass_average_property
-    .. automethod:: get_mole_average_property
     .. automethod:: get_mixture_specific_heat_cp_mass
     .. automethod:: get_mixture_specific_heat_cv_mass
     .. automethod:: get_mixture_enthalpy_mass
-    .. automethod:: get_mixture_enthalpy_mole
-    .. automethod:: get_mixture_entropy_mass
-    .. automethod:: get_mixture_entropy_mole
     .. automethod:: get_mixture_internal_energy_mass
     .. automethod:: get_species_viscosities
     .. automethod:: get_mixture_viscosity_mixavg
@@ -309,50 +305,23 @@ class Thermochemistry:
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
         cp0_r = self.get_species_specific_heats_r(temperature)
-        cpmix = self.get_mass_average_property(mass_fractions, cp0_r)
-        return self.gas_constant * cpmix
+        cp_mix = self.get_mass_average_property(mass_fractions, cp0_r)
+        return self.gas_constant * cp_mix
 
     def get_mixture_specific_heat_cv_mass(self, temperature, mass_fractions):
         cv0_r = self.get_species_specific_heats_r(temperature) - 1.0
-        cvmix = self.get_mass_average_property(mass_fractions, cv0_r)
-        return self.gas_constant * cvmix
+        cv_mix = self.get_mass_average_property(mass_fractions, cv0_r)
+        return self.gas_constant * cv_mix
 
     def get_mixture_enthalpy_mass(self, temperature, mass_fractions):
         h0_rt = self.get_species_enthalpies_rt(temperature)
-        hmix = self.get_mass_average_property(mass_fractions, h0_rt)
-        return self.gas_constant * temperature * hmix
+        h_mix = self.get_mass_average_property(mass_fractions, h0_rt)
+        return self.gas_constant * temperature * h_mix
 
     def get_mixture_internal_energy_mass(self, temperature, mass_fractions):
         e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
-        emix = self.get_mass_average_property(mass_fractions, e0_rt)
-        return self.gas_constant * temperature * emix
-
-    def get_mixture_entropy_mass(self, pressure, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
-        return 1.0/mmw * self.get_mixture_entropy_mole(pressure, temperature, <%
-                                                       %>mass_fractions)
-
-    def get_mole_average_property(self, mass_fractions, spec_property):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
-        mole_fracs = self.get_mole_fractions(mmw, mass_fractions)
-        return sum([mole_fracs[i] * spec_property[i]
-                    for i in range(self.num_species)])
-
-    def get_mixture_enthalpy_mole(self, temperature, mass_fractions):
-        h0_rt = self.get_species_enthalpies_rt(temperature)
-        hmix = self.get_mole_average_property(mass_fractions, h0_rt)
-        return self.gas_constant * temperature * hmix
-
-    def get_mixture_entropy_mole(self, pressure, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
-        # necessary to avoid nans in the log function below
-        x = self.usr_np.where(
-            self.usr_np.less(self.get_mole_fractions(mmw, mass_fractions), 1e-16),
-            1e-16, self.get_mole_fractions(mmw, mass_fractions))
-        s0_r = self.get_species_entropies_r(pressure, temperature)
-        smix = self.get_mole_average_property(mass_fractions, s0_r)
-        xmix = self.get_mole_average_property(mass_fractions, self.usr_np.log(x))
-        return self.gas_constant * (smix - xmix)
+        e_mix = self.get_mass_average_property(mass_fractions, e0_rt)
+        return self.gas_constant * temperature * e_mix
 
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
@@ -372,7 +341,7 @@ class Thermochemistry:
         return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}
-            - self.usr_np.log(pressure/101325.0),
+            - self.usr_np.log(pressure/self.one_atm),
             % endfor
             ])
 
@@ -389,7 +358,8 @@ class Thermochemistry:
         return self._pyro_make_array([
             %for i, react in enumerate(sol.reactions()):
             %if react.reversible:
-            ${cgm(ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))},
+            ${cgm(ce.equilibrium_constants_expr(sol, i, Variable("g0_rt"),
+                                                Variable("c0")))},
             %else:
             -0.17364695002734*temperature,
             %endif

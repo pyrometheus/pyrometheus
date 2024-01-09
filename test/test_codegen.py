@@ -188,6 +188,37 @@ def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
     if reactor_type == "IdealGasConstPressureReactor":
         reactor = ct.IdealGasConstPressureReactor(sol)
 
+    # TODO remove this opportunely
+    def get_mixture_entropy_mass(pressure, temperature, mass_fractions):
+        mmw = ptk.get_mix_molecular_weight(mass_fractions)
+        return 1.0/mmw * get_mixture_entropy_mole(pressure, temperature,
+                                                  mass_fractions)
+
+    # TODO remove this opportunely
+    def get_mole_average_property(mass_fractions, spec_property):
+        mmw = ptk.get_mix_molecular_weight(mass_fractions)
+        mole_fracs = ptk.get_mole_fractions(mmw, mass_fractions)
+        return usr_np.sum([mole_fracs[i] * spec_property[i]
+                           for i in range(ptk.num_species)])
+
+    # TODO remove this opportunely
+    def get_mixture_enthalpy_mole(temperature, mass_fractions):
+        h0_rt = ptk.get_species_enthalpies_rt(temperature)
+        hmix = get_mole_average_property(mass_fractions, h0_rt)
+        return ptk.gas_constant * temperature * hmix
+
+    # TODO remove this opportunely
+    def get_mixture_entropy_mole(pressure, temperature, mass_fractions):
+        mmw = ptk.get_mix_molecular_weight(mass_fractions)
+        # necessary to avoid nans in the log function below
+        x = usr_np.where(
+            usr_np.less(ptk.get_mole_fractions(mmw, mass_fractions), 1e-16),
+            1e-16, ptk.get_mole_fractions(mmw, mass_fractions))
+        s0_r = ptk.get_species_entropies_r(pressure, temperature)
+        s_t_mix = get_mole_average_property(mass_fractions, s0_r)
+        s_x_mix = get_mole_average_property(mass_fractions, usr_np.log(x))
+        return ptk.gas_constant * (s_t_mix - s_x_mix)
+
     sim = ct.ReactorNet([reactor])
     for _ in range(100):
         time += dt
@@ -224,13 +255,15 @@ def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
         # print(f"cnt_h = {sol.standard_gibbs_RT}")
         assert error(spec_gibbs - sol.standard_gibbs_RT) < 1.0e-13
 
+        # TODO remove this opportunely
         # mixture entropy mole
-        s_mix_mole = ptk.get_mixture_entropy_mole(pressure, temperature, Y)
+        s_mix_mole = get_mixture_entropy_mole(pressure, temperature, Y)
         assert (s_mix_mole - sol.entropy_mole) < 5.0e-6  # round-off error
         assert (s_mix_mole - sol.entropy_mole)/sol.entropy_mole < 2.0e-12
 
+        # TODO remove this opportunely
         # mixture entropy mass
-        s_mix_mass = ptk.get_mixture_entropy_mass(pressure, temperature, Y)
+        s_mix_mass = get_mixture_entropy_mass(pressure, temperature, Y)
         assert (s_mix_mass - sol.entropy_mass) < 5.0e-6  # round-off error
         assert (s_mix_mass - sol.entropy_mass)/sol.entropy_mass < 2.0e-12
 
@@ -239,6 +272,7 @@ def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
         delta_h = nu.T@ptk.get_species_enthalpies_rt(temperature)
         assert error(sol.delta_enthalpy/(gas_const*temperature) - delta_h) < 1e-13
 
+        # TODO remove this opportunely
         # delta entropy
         # zero or negative mole fractions values are troublesome due to the log
         mmw = ptk.get_mix_molecular_weight(Y)

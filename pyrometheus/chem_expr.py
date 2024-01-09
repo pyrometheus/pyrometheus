@@ -256,7 +256,7 @@ def diffusivity_mixture_rule_denom_expr(sol: ct.Solution, j_sp, x, bdiff):
 
 # {{{ Equilibrium constants
 
-def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
+def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt, c0):
     """Generate code for equilibrium constants.
 
     :returns: Equilibrium constant expression for reaction with
@@ -282,7 +282,7 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
     # Check if reaction is termolecular
     sum_nu_net = sum(nu_reac) - sum(nu_prod)
     if sum_nu_net != 0:
-        return sum_p - sum_r + sum_nu_net*p.Variable("c0")
+        return sum_p - sum_r + sum_nu_net*c0
     else:
         return sum_p - sum_r
 
