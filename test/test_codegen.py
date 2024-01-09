@@ -198,8 +198,8 @@ def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
     def get_mole_average_property(mass_fractions, spec_property):
         mmw = ptk.get_mix_molecular_weight(mass_fractions)
         mole_fracs = ptk.get_mole_fractions(mmw, mass_fractions)
-        return usr_np.sum([mole_fracs[i] * spec_property[i]
-                           for i in range(ptk.num_species)])
+        return sum([mole_fracs[i] * spec_property[i]
+                    for i in range(ptk.num_species)])
 
     # TODO remove this opportunely
     def get_mixture_enthalpy_mole(temperature, mass_fractions):
