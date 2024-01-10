@@ -216,10 +216,6 @@ module ${module_name}
     ${real_type}, parameter :: inv_weights(*) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
-    ${real_type}, parameter :: elem_matrix(*, *) = transpose(reshape((/ & 
-        ${str_np(elem_matrix)}/), &
-        (/${sol.n_species}, ${sol.n_elements}/)))
-
     character(len=12), parameter :: species_names(*) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
 
@@ -232,7 +228,7 @@ contains
 
         integer, intent(in) :: sp_index
         character(len=*), intent(out) :: sp_name
-        
+
         sp_name = species_names(sp_index)
 
     end subroutine get_species_name
@@ -460,7 +456,7 @@ contains
         ${real_type}, intent(out), dimension(num_reactions) :: k_eq
 
         ${real_type} :: rt
-        ${real_type} :: c0        
+        ${real_type} :: c0
 
         ${real_type}, dimension(num_species) :: g0_rt
 
@@ -533,34 +529,36 @@ contains
         ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_center
         ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_function
 
-        %for i, react in enumerate(falloff_reactions):
-        k_high(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.high_rate, Variable("temperature")))}
+        %for i, (_, react) in enumerate(falloff_reactions):
+        k_high(${i+1}) = ${cgm(ce.rate_coefficient_expr(
+                                react.rate.high_rate,
+                                Variable("temperature")))}
         %endfor
 
-        %for i, react in enumerate(falloff_reactions):
-        k_low(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.low_rate, Variable("temperature")))}
-        %endfor
-
-        %for i, react in enumerate(falloff_reactions):
-        reduced_pressure(${i+1}) = (${cgm(
-            ce.third_body_efficiencies_expr(sol, 
-                                            react, 
-                                            Variable("concentrations")))})*k_low(${i+1})/k_high(${i+1})
-        %endfor
-
-        %for i, react in enumerate(falloff_reactions):
-        %if react.falloff.falloff_type == "Troe":
-        falloff_center(${i+1}) = log10(${cgm(ce.troe_falloff_expr(react, Variable("temperature")))})
-        %else:
-        falloff_center(${i+1}) = 1.d0
+        %for i, (_, react) in enumerate(falloff_reactions):
+        k_low(${i+1}) = ${cgm(ce.rate_coefficient_expr(
+                                react.rate.low_rate,
+                                Variable("temperature")))}
         %endif
         %endfor
 
         %for i, react in enumerate(falloff_reactions):
-        falloff_function(${i+1}) = ${cgm(ce.falloff_function_expr(react, i, 
-                                         Variable("temperature"),
-                                         Variable("reduced_pressure"),
-                                         Variable("falloff_center")))}
+        reduced_pressure(${i+1}) = (${cgm(
+            ce.third_body_efficiencies_expr(sol,
+                                            react,
+                                            Variable("concentrations")))})*k_low(${i+1})/k_high(${i+1})
+        %endfor
+
+        %for i, (_, react) in enumerate(falloff_reactions):
+        falloff_center(${i+1}) = log10(${cgm(ce.troe_falloff_expr(
+            react, Variable("temperature")))})
+        %endfor
+
+        %for i, (_, react) in enumerate(falloff_reactions):
+        falloff_function(${i+1}) = ${cgm(ce.falloff_function_expr(
+            react, i, Variable("temperature"),
+            Variable("reduced_pressure"),
+            Variable("falloff_center")))}
         %endfor
 
         %for i in range(len(falloff_reactions)):
@@ -637,7 +635,7 @@ contains
         call get_net_rates_of_progress(temperature, concentrations, r_net)
 
         %for i, sp in enumerate(sol.species()):
-        omega(${i+1}) = ${cgm(ce.production_rate_expr(sol, 
+        omega(${i+1}) = ${cgm(ce.production_rate_expr(sol,
             sp.name, Variable("r_net")))}
         %endfor
 
@@ -651,10 +649,14 @@ end module
 
 def gen_thermochem_code(sol: ct.Solution, real_type="real(kind(1.d0))",
         module_name="thermochem") -> str:
-    """For the mechanism given by *sol*, return Python source code for a class conforming
-    to a module containing a class called ``Thermochemistry`` adhering to the
-    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
+    """For the mechanism given by *sol*, return Fortran source code.
     """
+
+    falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                   if r.reaction_type.startswith("falloff")]
+    three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                      if r.reaction_type == "three-body-Arrhenius"]
+
     return wrap_code(module_tpl.render(
         ct=ct,
         sol=sol,
@@ -669,19 +671,8 @@ def gen_thermochem_code(sol: ct.Solution, real_type="real(kind(1.d0))",
 
         ce=pyrometheus.chem_expr,
 
-        elem_matrix=np.array([sol.n_atoms(i, j)
-                              for i, j in product(range(sol.n_species),
-                                                  range(sol.n_elements))]),
-
-        falloff_reactions=list(compress(sol.reactions(),
-                                        [isinstance(r, ct.FalloffReaction)
-                                         for r in sol.reactions()])),
-        non_falloff_reactions=list(compress(sol.reactions(),
-                                            [not isinstance(r, ct.FalloffReaction)
-                                             for r in sol.reactions()])),
-        three_body_reactions=list(compress(sol.reactions(),
-                                           [isinstance(r, ct.ThreeBodyReaction)
-                                            for r in sol.reactions()])),
+        falloff_reactions=falloff_rxn,
+        three_body_reactions=three_body_rxn
     ))
 
 
