@@ -539,7 +539,6 @@ contains
         k_low(${i+1}) = ${cgm(ce.rate_coefficient_expr(
                                 react.rate.low_rate,
                                 Variable("temperature")))}
-        %endif
         %endfor
 
         %for i, (_, react) in enumerate(falloff_reactions):
