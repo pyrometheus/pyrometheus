@@ -48,9 +48,10 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
     class PyroJaxNumpy(ptk_base_cls):
 
         def _pyro_make_array(self, res_list):
-            """This works around (e.g.) numpy.exp not working with object arrays of numpy
-            scalars. It defaults to making object arrays, however if an array
-            consists of all scalars, it makes a "plain old" :class:`numpy.ndarray`.
+            """This works around (e.g.) numpy.exp not working with object
+            arrays of :mod:`numpy` scalars. It defaults to making object arrays,
+            however if an array consists of all scalars, it makes a "plain old"
+            :class:`numpy.ndarray`.
 
             See ``this numpy bug <https://github.com/numpy/numpy/issues/18004>`__
             for more context.
@@ -111,10 +112,8 @@ def test_generate_mechfile(lang_module, mechname):
         print(code, file=mech_file)
 
 
-@pytest.mark.parametrize("mechname, fuel",
-                         [("uiuc.yaml", "C2H4"),
-                          ("sandiego.yaml", "H2"),
-                          ("uiuc.cti", "C2H4")])
+@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml",
+                                      "uiuc.yaml"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_rate_coefficients(mechname, fuel, usr_np):
     """This function tests that pyrometheus-generated code
@@ -126,7 +125,9 @@ def test_get_rate_coefficients(mechname, fuel, usr_np):
 
     y = np.zeros(sol.n_species)
     y[sol.species_index(fuel)] = 1
-    
+    three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
+                            if r.reaction_type == "three-body-Arrhenius"]
+
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
@@ -138,7 +139,23 @@ def test_get_rate_coefficients(mechname, fuel, usr_np):
         c = ptk.get_concentrations([rho], y)
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
-        k_pm = ptk.get_fwd_rate_coefficients(t, c.reshape(y.shape))
+        k_pm = ptk.get_fwd_rate_coefficients(t, c)
+
+        # It seems like Cantera 3.0 has bumped the third-body efficiency
+        # factor from the rate coefficient to the rate of progress
+        for i, r in three_body_reactions:
+            eff = np.sum([c[sol.species_index(sp)]
+                          * r.third_body.efficiencies[sp]
+                          for sp in r.third_body.efficiencies])
+            eff += np.sum([c[sp] for sp in range(sol.n_species)
+                           if sol.species_name(sp) not in
+                           r.third_body.efficiencies])
+            k_ct[i] *= eff
+
+        print(k_ct)
+        print()
+        print(k_pm)
+        print()
         print(np.abs((k_ct-k_pm)/k_ct))
         assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-13
     return
@@ -227,7 +244,8 @@ def test_get_thermo_properties(mechname, usr_np):
         print(f"keq_pm = {keq_pm}")
         print(f"keq_cnt = {keq_ct}")
         print(f"temperature = {t}")
-        # exclude meaningless check on equilibrium constants for irreversible reaction
+        # exclude meaningless check on equilibrium constants
+        # for irreversible reaction
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:
                 keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
@@ -450,8 +468,12 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     sim = ct.ReactorNet([reactor])
 
     # Falloff reactions
-    i_falloff = [i for i, r in enumerate(sol.reactions())
-            if isinstance(r, ct.FalloffReaction)]
+    if not all((isinstance(r, ct.Reaction) for r in sol.reactions())):
+        i_falloff = [i for i, r in enumerate(sol.reactions())
+                     if isinstance(r, ct.FalloffReaction)]
+    else:
+        i_falloff = [i for i, r in enumerate(sol.reactions())
+                     if r.reaction_type.startswith("falloff")]
 
     dt = 1e-6
     time = 0

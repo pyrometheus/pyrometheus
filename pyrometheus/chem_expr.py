@@ -197,8 +197,6 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
                     for sp in sol.reaction(reaction_index).products]
 
     # Stoichiometric coefficients
-    #nu_reac = [react.reactants[sp] for sp in react.reactants]
-    #nu_prod = [react.products[sp] for sp in react.products]
     nu_reac = [sol.reactant_stoich_coeff(sol.species_index(sp), reaction_index)
                for sp in sol.reaction(reaction_index).reactants]
     nu_prod = [sol.product_stoich_coeff(sol.species_index(sp), reaction_index)
@@ -245,9 +243,14 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
         of the species concentrations *c* as a
         :class:`pymbolic.primitives.Expression`
     """
-    efficiencies = [react.efficiencies[sp] for sp in react.efficiencies]
-    indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
-    indices_default = [i for i in range(sol.n_species) if i not in indices_nondef]
+
+    efficiencies = [react.third_body.efficiencies[sp]
+                    for sp in react.third_body.efficiencies]
+    indices_nondef = [sol.species_index(sp) for sp
+                      in react.third_body.efficiencies]
+    indices_default = [i for i in range(sol.n_species)
+                       if i not in indices_nondef]
+
     sum_nondef = sum(eff_i * c[index_i] for eff_i, index_i
                      in zip(np.array(efficiencies), indices_nondef))
     sum_default = react.default_efficiency * sum(c[i] for i in indices_default)
@@ -259,31 +262,14 @@ def troe_falloff_expr(react: ct.Reaction, t):
     :returns: The Troe falloff center expression for reaction *react* in terms of the
         temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
-    if not react.uses_legacy:
-        if react.rate.type == "Troe":
-            troe_params = react.rate.falloff_coeffs
-        elif react.rate.type == "Lindemann":
-            return 1
-        else:
-            raise ValueError("Unexpected value of 'rate.type': "
-                             f" '{react.rate.type}'")
-    else:
-        from warnings import warn
-        warn("Legacy 'ct.Reaction.falloff' interface is deprecated "
-             "in Cantera 2.6 and will be removed in Cantera 3. "
-             "Access 'FalloffRate' objects using "
-             " ct.Reaction.rate' instead", DeprecationWarning, stacklevel=2)
-        if react.falloff.falloff_type == "Troe":
-            if react.falloff.parameters[3]:
-                troe_params = react.falloff.parameters
-            else:
-                troe_params = react.falloff.parameters[:-1]
 
-        elif react.falloff.falloff_type == "Lindemann":
-            return 1
-        else:
-            raise ValueError("Unexpected value of 'falloff_type': "
-                             f" '{react.falloff.falloff_type}'")
+    if isinstance(react.rate, ct.TroeRate):
+        troe_params = react.rate.falloff_coeffs
+    elif isinstance(react.rate, ct.LindemannRate):
+        return 1
+    else:
+        raise ValueError("Unexpected value of 'rate.type': "
+                         f" '{react.rate.type}'")
 
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
@@ -304,15 +290,8 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
         of the temperature *t*, reduced pressure *red_pressure*, and falloff center
         *falloff_center* as a :class:`pymbolic.primitives.Expression`
     """
-    if not react.uses_legacy:
-        falloff_type = react.rate.type
-    else:
-        from warnings import warn
-        warn("Legacy 'ct.Reaction.falloff' interface is deprecated "
-             "in Cantera 2.6 and will be removed in Cantera 3. "
-             "Access 'FalloffRate' objects using "
-             " ct.Reaction.rate' instead", DeprecationWarning, stacklevel=2)
-        falloff_type = react.falloff.falloff_type
+
+    falloff_type = react.reaction_type.split("-")[1]
 
     if falloff_type == "Troe":
         log_rp = p.Variable("log10")(red_pressure[i])
