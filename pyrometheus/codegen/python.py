@@ -275,7 +275,11 @@ class Thermochemistry:
                 )
 
     def get_concentrations(self, rho, mass_fractions):
-        return self.inv_molecular_weights * rho * mass_fractions
+        return self._pyro_make_array([
+            %for i in range(sol.n_species):
+            self.inv_molecular_weights[${i}] * rho * mass_fractions[${i}],
+            %endfor
+        ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([
@@ -374,25 +378,15 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.high_rate, Variable("temperature")))},
-            %else:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.high_rate, Variable("temperature")))},
-            %endif
         %endfor
                 ])
 
         k_low = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            %if react.uses_legacy:
-            ${cgm(ce.rate_coefficient_expr(
-                react.low_rate, Variable("temperature")))},
-            %else:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.low_rate, Variable("temperature")))},
-            %endif
         %endfor
                 ])
 
@@ -427,7 +421,7 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
         %for react in sol.reactions():
-        %if isinstance(react, ct.FalloffReaction):
+        %if react.equation in [r.equation for _, r in falloff_reactions]:
             0*temperature,
         %else:
             ${cgm(ce.rate_coefficient_expr(react.rate,
@@ -476,6 +470,12 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
     interface.
     """
+
+    falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                   if r.reaction_type.startswith("falloff")]
+    three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                      if r.reaction_type == "three-body-Arrhenius"]
+
     return code_tpl.render(
         ct=ct,
         sol=sol,
@@ -486,10 +486,8 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
 
         ce=pyrometheus.chem_expr,
 
-        falloff_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                           if isinstance(react, ct.FalloffReaction)],
-        three_body_reactions=[(i, react) for i, react in enumerate(sol.reactions())
-                             if isinstance(react, ct.ThreeBodyReaction)],
+        falloff_reactions=falloff_rxn,
+        three_body_reactions=three_body_rxn,
     )
 
 
