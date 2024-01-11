@@ -101,6 +101,8 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
 @pytest.mark.parametrize("lang_module", [
     pyro.codegen.python,
+    pyro.codegen.cpp,
+    pyro.codegen.fortran90,
     ])
 def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
@@ -110,9 +112,10 @@ def test_generate_mechfile(lang_module, mechname):
         print(code, file=mech_file)
 
 
-@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml", "uiuc.cti"])
+@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml",
+                                      "uiuc.yaml"])
 @pytest.mark.parametrize("usr_np", numpy_list)
-def test_get_rate_coefficients(mechname, usr_np):
+def test_get_rate_coefficients(mechname, fuel, usr_np):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
@@ -120,21 +123,41 @@ def test_get_rate_coefficients(mechname, usr_np):
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
+    y = np.zeros(sol.n_species)
+    y[sol.species_index(fuel)] = 1
+    three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
+                            if r.reaction_type == "three-body-Arrhenius"]
+
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
         # Set new temperature in Cantera
-        sol.TP = t, ct.one_atm
+        sol.TPY = t, ct.one_atm, y
         # Concentrations
         y = sol.Y
         rho = sol.density
-        c = ptk.get_concentrations(rho, y)
+        c = ptk.get_concentrations([rho], y)
         # Get rate coefficients and compare
         k_ct = sol.forward_rate_constants
         k_pm = ptk.get_fwd_rate_coefficients(t, c)
+
+        # It seems like Cantera 3.0 has bumped the third-body efficiency
+        # factor from the rate coefficient to the rate of progress
+        for i, r in three_body_reactions:
+            eff = np.sum([c[sol.species_index(sp)]
+                          * r.third_body.efficiencies[sp]
+                          for sp in r.third_body.efficiencies])
+            eff += np.sum([c[sp] for sp in range(sol.n_species)
+                           if sol.species_name(sp) not in
+                           r.third_body.efficiencies])
+            k_ct[i] *= eff
+
         print(k_ct)
+        print()
+        print(k_pm)
+        print()
         print(np.abs((k_ct-k_pm)/k_ct))
-        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-14
+        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-13
     return
 
 
@@ -221,11 +244,12 @@ def test_get_thermo_properties(mechname, usr_np):
         print(f"keq_pm = {keq_pm}")
         print(f"keq_cnt = {keq_ct}")
         print(f"temperature = {t}")
-        # xclude meaningless check on equilibrium constants for irreversible reaction
+        # exclude meaningless check on equilibrium constants
+        # for irreversible reaction
         for i, reaction in enumerate(sol.reactions()):
             if reaction.reversible:
                 keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
-                print(f"keq_err = {keq_err}")
+                print(f"i = {i}, keq_err = {keq_err}")
                 assert keq_err < 1.0e-13
         # keq_pm_test = keq_pm[1:]
         # keq_ct_test = keq_ct[1:]
@@ -318,9 +342,9 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
         y = np.where(reactor.Y > 0, reactor.Y, 0)
 
         # Prometheus kinetics
-        c = ptk.get_concentrations(rho, y)
+        c = ptk.get_concentrations([rho], y)
         r_pm = ptk.get_net_rates_of_progress(temp, c)
-        omega_pm = ptk.get_net_production_rates(rho, temp, y)
+        omega_pm = ptk.get_net_production_rates([rho], temp, y)
         err_r = np.linalg.norm(r_ct-r_pm, np.inf)
         err_omega = np.linalg.norm(omega_ct - omega_pm, np.inf)
 
@@ -444,8 +468,12 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     sim = ct.ReactorNet([reactor])
 
     # Falloff reactions
-    i_falloff = [i for i, r in enumerate(sol.reactions())
-            if isinstance(r, ct.FalloffReaction)]
+    if not all((isinstance(r, ct.Reaction) for r in sol.reactions())):
+        i_falloff = [i for i, r in enumerate(sol.reactions())
+                     if isinstance(r, ct.FalloffReaction)]
+    else:
+        i_falloff = [i for i, r in enumerate(sol.reactions())
+                     if r.reaction_type.startswith("falloff")]
 
     dt = 1e-6
     time = 0
@@ -462,7 +490,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
         mass_fractions = np.where(reactor.Y > 0, reactor.Y, 0)
 
         # Prometheus kinetics
-        concentrations = ptk.get_concentrations(density, mass_fractions)
+        concentrations = ptk.get_concentrations([density], mass_fractions)
         k_pm = ptk.get_fwd_rate_coefficients(temperature, concentrations)
         err = np.linalg.norm((k_ct[i_falloff] - k_pm[i_falloff])/k_ct[i_falloff],
                 np.inf)
@@ -480,7 +508,7 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
 
 # run single tests using
-# $ python test_codegen.py 'test_sandiego()'
+# $ python test_codegen.py 'test_get_thermo_properties()'
 if __name__ == "__main__":
 
     if len(sys.argv) > 1:

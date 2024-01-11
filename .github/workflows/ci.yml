@@ -43,7 +43,7 @@ jobs:
                 # "3" is intentional: It's suppposed to be conda's default
                 # Python version number, which seems to have moved past
                 # 3.9 as of 2022-02-20.
-                python_version: ["3.9", "3"]
+                python_version: ["3.9", "3.11"]
         runs-on: ubuntu-latest
         env:
             PYTHON_VERSION: ${{ matrix.python_version }}
@@ -104,7 +104,7 @@ jobs:
                 curl -L -O https://tiker.net/ci-support-v0
                 . ./ci-support-v0
 
-                git clone "https://github.com/illinois-ceesd/$DOWNSTREAM_PROJECT.git"
+                git clone -b use_cantera30 "https://github.com/illinois-ceesd/$DOWNSTREAM_PROJECT.git"
                 cd "$DOWNSTREAM_PROJECT"
                 echo "*** $DOWNSTREAM_PROJECT version: $(git rev-parse --short HEAD)"
                 edit_requirements_txt_for_downstream_in_subdir

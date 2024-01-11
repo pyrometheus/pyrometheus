@@ -73,7 +73,7 @@ intersphinx_mapping = {
         "numpy": ("https://numpy.org/doc/stable/", None),
         "mirgecom": ("https://mirgecom.readthedocs.io/en/latest/", None),
         "pymbolic": ("https://documen.tician.de/pymbolic", None),
-        "cantera": ("https://cantera.org/documentation/dev/sphinx/html", None),
+        "cantera": ("https://cantera.org/documentation/docs-3.0/sphinx/html/", None),
         }
 
 autoclass_content = "class"
