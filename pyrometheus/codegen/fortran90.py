@@ -541,7 +541,7 @@ contains
                                 Variable("temperature")))}
         %endfor
 
-        %for i, react in enumerate(falloff_reactions):
+        %for i, (_, react) in enumerate(falloff_reactions):
         reduced_pressure(${i+1}) = (${cgm(
             ce.third_body_efficiencies_expr(sol,
                                             react,
