@@ -207,8 +207,7 @@ module ${module_name}
     integer, parameter :: num_species = ${sol.n_species}
     integer, parameter :: num_reactions = ${sol.n_reactions}
     integer, parameter :: num_falloff = ${
-        sum(1 if isinstance(r, ct.FalloffReaction) else 0
-        for r in sol.reactions())}
+        len(falloff_reactions)}
     ${real_type}, parameter :: one_atm = ${float_to_fortran(ct.one_atm)}
     ${real_type}, parameter :: gas_constant = ${float_to_fortran(ct.gas_constant)}
     ${real_type}, parameter :: mol_weights(*) = &
@@ -579,7 +578,7 @@ contains
         %endif
 
         %for i, react in enumerate(sol.reactions()):
-        %if isinstance(react, ct.FalloffReaction):
+        %if react.equation in [r.equation for _, r in falloff_reactions]:
         k_fwd(${i+1}) = 0.d0
         %else:
         k_fwd(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.rate, Variable("temperature")))}
