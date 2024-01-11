@@ -16,7 +16,7 @@ from mako.template import Template
 import pyrometheus.chem_expr
 from pymbolic.mapper.stringifier import (
         StringifyMapper, PREC_NONE, PREC_CALL, PREC_PRODUCT)
-from itertools import compress, product
+from itertools import product
 
 
 file_extension = "f90"
@@ -206,7 +206,7 @@ module ${module_name}
     integer, parameter :: num_elements = ${sol.n_elements}
     integer, parameter :: num_species = ${sol.n_species}
     integer, parameter :: num_reactions = ${sol.n_reactions}
-    integer, parameter :: num_falloff = 2
+    integer, parameter :: num_falloff = ${len(falloff_reactions)}
     ${real_type}, parameter :: one_atm = ${float_to_fortran(ct.one_atm)}
     ${real_type}, parameter :: gas_constant = ${float_to_fortran(ct.gas_constant)}
     ${real_type}, parameter :: mol_weights(*) = &
@@ -580,7 +580,8 @@ contains
         %if react.equation in [r.equation for _, r in falloff_reactions]:
         k_fwd(${i+1}) = 0.d0
         %else:
-        k_fwd(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.rate, Variable("temperature")))}
+        k_fwd(${i+1}) = ${cgm(ce.rate_coefficient_expr(react.rate,
+                            Variable("temperature")))}
         %endif
         %endfor
 
@@ -610,8 +611,8 @@ contains
 
         call get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
         call get_equilibrium_constants(temperature, log_k_eq)
-        %for i, react in enumerate(sol.reactions()):
-        r_net(${i+1}) = ${cgm(ce.rate_of_progress_expr(sol, react,
+        %for i in range(sol.n_reactions):
+        r_net(${i+1}) = ${cgm(ce.rate_of_progress_expr(sol, i,
                         Variable("concentrations"),
                         Variable("k_fwd"), Variable("log_k_eq")))}
         %endfor
