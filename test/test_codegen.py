@@ -123,8 +123,6 @@ def test_get_rate_coefficients(mechname, usr_np):
     three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
                             if r.reaction_type == "three-body-Arrhenius"]
 
-    pyro_code = pyro.codegen.python.gen_thermochem_code(sol)
-
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
