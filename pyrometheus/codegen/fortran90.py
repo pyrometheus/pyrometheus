@@ -560,7 +560,7 @@ contains
             Variable("falloff_center")))}
         %endfor
 
-        %for j, (i, react) in range(len(falloff_reactions)):
+        %for j, (i, react) in enumerate(falloff_reactions):
         k_fwd(${i+1}) = k_high(${j+1})*falloff_function(${j+1}) * &
             reduced_pressure(${j+1})/(1.d0 + reduced_pressure(${j+1}))
         %endfor
