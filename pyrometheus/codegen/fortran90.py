@@ -206,8 +206,7 @@ module ${module_name}
     integer, parameter :: num_elements = ${sol.n_elements}
     integer, parameter :: num_species = ${sol.n_species}
     integer, parameter :: num_reactions = ${sol.n_reactions}
-    integer, parameter :: num_falloff = ${
-        len(falloff_reactions)}
+    integer, parameter :: num_falloff = 2
     ${real_type}, parameter :: one_atm = ${float_to_fortran(ct.one_atm)}
     ${real_type}, parameter :: gas_constant = ${float_to_fortran(ct.gas_constant)}
     ${real_type}, parameter :: mol_weights(*) = &
