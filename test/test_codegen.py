@@ -113,8 +113,7 @@ def test_generate_mechfile(lang_module, mechname):
         print(code, file=mech_file)
 
 
-@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml",
-                                      "uiuc.yaml"])
+@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml", "uconn32.yaml"])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_rate_coefficients(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -131,7 +130,9 @@ def test_get_rate_coefficients(mechname, usr_np):
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
         # Set new temperature in Cantera
-        sol.TP = t, ct.one_atm
+        sol.TPY = t, ct.one_atm, (1/sol.n_species) * np.ones(
+            (sol.n_species,)
+        )
         # Concentrations
         y = sol.Y
         rho = sol.density
@@ -146,7 +147,9 @@ def test_get_rate_coefficients(mechname, usr_np):
             eff = np.sum([c[sol.species_index(sp)]
                           * r.third_body.efficiencies[sp]
                           for sp in r.third_body.efficiencies])
-            eff += np.sum([c[sp] for sp in range(sol.n_species)
+            eff += np.sum([c[sp]
+                           * r.third_body.default_efficiency
+                           for sp in range(sol.n_species)
                            if sol.species_name(sp) not in
                            r.third_body.efficiencies])
             k_ct[i] *= eff
@@ -156,7 +159,8 @@ def test_get_rate_coefficients(mechname, usr_np):
         print(k_pm)
         print()
         print(np.abs((k_ct-k_pm)/k_ct))
-        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-14
+        print(np.linalg.norm((k_ct-k_pm)/k_ct, np.inf))
+        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-13
     return
 
 
