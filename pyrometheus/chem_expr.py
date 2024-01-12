@@ -280,9 +280,9 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt, c0):
             for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod))
 
     # Check if reaction is termolecular
-    sum_nu_net = sum(nu_reac) - sum(nu_prod)
+    sum_nu_net = sum(nu_prod) - sum(nu_reac)
     if sum_nu_net != 0:
-        return sum_p - sum_r + sum_nu_net*c0
+        return sum_p - sum_r - sum_nu_net*c0
     else:
         return sum_p - sum_r
 
@@ -300,13 +300,12 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
     a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
     t_a = rate_coeff.activation_energy/ct.gas_constant
-    return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
-#    if t_a == 0:
-#        # Weakly temperature-dependent rate
-#        return a * t**b
-#    else:
-#        # Modified Arrhenius
-#        return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
+    if t_a == 0:
+        # Weakly temperature-dependent rate
+        return a * t**b
+    else:
+        # Modified Arrhenius
+        return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):

@@ -267,10 +267,10 @@ class Thermochemistry:
             %endfor
             )
 
-    def get_density(self, p, temperature, mass_fractions):
+    def get_density(self, pressure, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
         rt = self.gas_constant * temperature
-        return p * mmw / rt
+        return pressure * mmw / rt
 
     def get_pressure(self, rho, temperature, mass_fractions):
         mmw = self.get_mix_molecular_weight(mass_fractions)
