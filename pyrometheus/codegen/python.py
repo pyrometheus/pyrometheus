@@ -1,4 +1,5 @@
-"""
+"""Code generation tool for Python codes.
+
 Python code generation
 ----------------------
 
@@ -44,6 +45,7 @@ import numpy as np  # noqa: F401
 from mako.template import Template
 import pyrometheus.chem_expr
 
+from itertools import product
 
 file_extension = "py"
 
@@ -135,6 +137,12 @@ class Thermochemistry:
     .. automethod:: get_mixture_specific_heat_cv_mass
     .. automethod:: get_mixture_enthalpy_mass
     .. automethod:: get_mixture_internal_energy_mass
+    .. automethod:: get_species_viscosities
+    .. automethod:: get_mixture_viscosity_mixavg
+    .. automethod:: get_species_thermal_conductivities
+    .. automethod:: get_mixture_thermal_conductivity_mixavg
+    .. automethod:: get_species_binary_mass_diffusivities
+    .. automethod:: get_species_mass_diffusivities_mixavg
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
     .. automethod:: get_species_entropies_r
@@ -281,6 +289,9 @@ class Thermochemistry:
             %endfor
         ])
 
+    def get_mole_fractions(self, mix_mol_weight, mass_fractions):
+        return self.inv_molecular_weights * mass_fractions * mix_mol_weight
+
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([
             mass_fractions[i]
@@ -307,6 +318,79 @@ class Thermochemistry:
         e0_rt = self.get_species_enthalpies_rt(temperature) - 1.0
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
+
+    def get_species_viscosities(self, temperature):
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            self.usr_np.sqrt(temperature)*${cgm(ce.transport_polynomial_expr(
+            sol.get_viscosity_polynomial(sp), 2, Variable("temperature")))},
+            % endfor
+        ])
+
+    def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fracs = self.get_mole_fractions(mmw, mass_fractions)
+        viscosities = self.get_species_viscosities(temperature)
+        mix_rule_f = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.viscosity_mixture_rule_wilke_expr(sol, sp,
+                 Variable("mole_fracs"), Variable("viscosities")))},
+            %endfor
+        ])
+        return sum(mole_fracs*viscosities/mix_rule_f)
+
+    def get_species_thermal_conductivities(self, temperature):
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            self.usr_np.sqrt(temperature)*(${cgm(ce.transport_polynomial_expr(
+                sol.get_thermal_conductivity_polynomial(sp), 1,
+                Variable("temperature")))}),
+            % endfor
+        ])
+
+    def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fracs = self.get_mole_fractions(mmw, mass_fractions)
+        conductivities = self.get_species_thermal_conductivities(temperature)
+        return 0.5*(sum(mole_fracs*conductivities)
+            + 1/sum(mole_fracs/conductivities))
+
+    def get_species_binary_mass_diffusivities(self, temperature):
+        return self._pyro_make_array([
+            % for i, j, in product(range(sol.n_species), range(sol.n_species)):
+            ${cgm(ce.transport_polynomial_expr(
+                  sol.get_binary_diff_coeffs_polynomial(i, j), 1,
+                  Variable("temperature")))},
+            % endfor
+        ]).reshape((self.num_species, self.num_species))
+
+    def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
+                                              mass_fractions):
+        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mole_fracs = self.get_mole_fractions(mmw, mass_fractions)
+        diff_ij = self.get_species_binary_mass_diffusivities(temperature)
+        temp_pres = temperature**(3/2)/pressure
+        zeros = self._pyro_zeros_like(temperature)
+
+        x_sum = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.diffusivity_mixture_rule_denom_expr(
+                sol, sp, Variable("mole_fracs"), Variable("diff_ij")))},
+            %endfor
+            ])
+        denom = self._pyro_make_array([
+            %for s in range(sol.n_species):
+            x_sum[${s}] - mole_fracs[${s}]/diff_ij[${s}, ${s}],
+            %endfor
+            ])
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            temp_pres*self.usr_np.where(self.usr_np.greater(denom[${sp}], zeros),
+                (mmw - mole_fracs[${sp}] * self.wts[${sp}])/(mmw * denom[${sp}]),
+                diff_ij[${sp}, ${sp}]
+            ),
+            % endfor
+        ])
 
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
@@ -465,7 +549,9 @@ class Thermochemistry:
 
 
 def gen_thermochem_code(sol: ct.Solution) -> str:
-    """For the mechanism given by *sol*, return Python source code for a class
+    """Return a Python source code.
+
+    For the mechanism given by *sol*, return Python source code for a class
     conforming to a module containing a class called ``Thermochemistry``
     adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
     interface.
@@ -479,6 +565,8 @@ def gen_thermochem_code(sol: ct.Solution) -> str:
     return code_tpl.render(
         ct=ct,
         sol=sol,
+
+        product=product,
 
         str_np=str_np,
         cgm=CodeGenerationMapper(),
@@ -500,7 +588,9 @@ def compile_class(code_str, class_name="Thermochemistry"):
 
 
 def get_thermochem_class(sol: ct.Solution):
-    """For the mechanism given by *sol*, return a class conforming to the
+    """Return a Thermochemistry class.
+
+    For the mechanism given by *sol*, return a class conforming to the
     :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
     """
     return compile_class(gen_thermochem_code(sol))
