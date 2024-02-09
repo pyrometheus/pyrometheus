@@ -104,7 +104,7 @@ jobs:
                 curl -L -O https://tiker.net/ci-support-v0
                 . ./ci-support-v0
 
-                git clone -b use_cantera30 "https://github.com/illinois-ceesd/$DOWNSTREAM_PROJECT.git"
+                git clone "https://github.com/illinois-ceesd/$DOWNSTREAM_PROJECT.git"
                 cd "$DOWNSTREAM_PROJECT"
                 echo "*** $DOWNSTREAM_PROJECT version: $(git rev-parse --short HEAD)"
                 edit_requirements_txt_for_downstream_in_subdir
