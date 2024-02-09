@@ -256,7 +256,7 @@ def diffusivity_mixture_rule_denom_expr(sol: ct.Solution, j_sp, x, bdiff):
 
 # {{{ Equilibrium constants
 
-def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
+def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt, c0):
     """Generate code for equilibrium constants.
 
     :returns: Equilibrium constant expression for reaction with
@@ -282,10 +282,9 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
     # Check if reaction is termolecular
     sum_nu_net = sum(nu_prod) - sum(nu_reac)
     if sum_nu_net != 0:
-        return sum_p - sum_r - sum_nu_net*p.Variable("c0")
+        return sum_p - sum_r - sum_nu_net*c0
     else:
         return sum_p - sum_r
-
 
 # }}}
 
@@ -351,7 +350,7 @@ def troe_falloff_expr(react: ct.Reaction, t):
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
         return p.Variable("log10")(troe_1 + troe_2 + troe_3)
     else:
-        raise ValueError("Unexpected length of 'tro_params': "
+        raise ValueError("Unexpected length of 'troe_params': "
                          f" '{len(troe_params)}'")
     return
 
