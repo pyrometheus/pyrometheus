@@ -105,6 +105,7 @@ jobs:
                 . ./ci-support-v0
 
                 git clone "https://github.com/illinois-ceesd/$DOWNSTREAM_PROJECT.git"
+
                 cd "$DOWNSTREAM_PROJECT"
                 echo "*** $DOWNSTREAM_PROJECT version: $(git rev-parse --short HEAD)"
                 edit_requirements_txt_for_downstream_in_subdir
