@@ -110,7 +110,9 @@ def test_generate_mechfile(lang_module, mechname):
         print(code, file=mech_file)
 
 
-@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml", "uconn32.yaml"])
+@pytest.mark.parametrize("mechname", [
+    "uiuc.yaml", "sandiego.yaml", "uconn32.yaml", "hong.yaml"
+])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_rate_coefficients(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -161,7 +163,9 @@ def test_get_rate_coefficients(mechname, usr_np):
     return
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
+@pytest.mark.parametrize("mechname", [
+    "uiuc", "sandiego", "uconn32", "gri30", "hong"
+])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_pressure(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -199,7 +203,9 @@ def test_get_pressure(mechname, usr_np):
     assert abs(p_ct - p_pm) / p_ct < 1.0e-12
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
+@pytest.mark.parametrize("mechname", [
+    "uiuc", "sandiego", "uconn32", "gri30", "hong"
+])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_thermo_properties(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -258,7 +264,9 @@ def test_get_thermo_properties(mechname, usr_np):
     return
 
 
-@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "gri30"])
+@pytest.mark.parametrize("mechname", [
+    "uiuc", "sandiego", "gri30", "hong"
+])
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_get_temperature(mechname, usr_np):
     """This function tests that pyrometheus-generated code
@@ -295,9 +303,12 @@ def test_get_temperature(mechname, usr_np):
         assert np.abs(t - t_pm) < tol
 
 
-@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
-                         [("uiuc", "C2H4", 3.0, 1e-7),
-                          ("sandiego", "H2", 0.5, 1e-6)])
+@pytest.mark.parametrize(
+    "mechname, fuel, stoich_ratio, dt",
+    [("uiuc", "C2H4", 3.0, 1e-7),
+     ("sandiego", "H2", 0.5, 1e-6),
+     ("hong", "H2", 0.5, 1e-6)]
+)
 @pytest.mark.parametrize("usr_np", numpy_list)
 def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
     """This function tests that pyrometheus-generated code
@@ -437,10 +448,13 @@ def test_autodiff_accuracy():
     assert orderest > 1.95
 
 
-@pytest.mark.parametrize("mechname, fuel, stoich_ratio",
-                         [("gri30", "CH4", 2),
-                          ("uconn32", "C2H4", 3),
-                          ("sandiego", "H2", 0.5)])
+@pytest.mark.parametrize(
+    "mechname, fuel, stoich_ratio",
+    [("gri30", "CH4", 2),
+     ("uconn32", "C2H4", 3),
+     ("sandiego", "H2", 0.5),
+     ("hong", "H2", 0.5)]
+)
 def test_falloff_kinetics(mechname, fuel, stoich_ratio):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted falloff rate coefficients"""
@@ -490,9 +504,16 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
         # Prometheus kinetics
         concentrations = ptk.get_concentrations(density, mass_fractions)
+        print(f'c = {concentrations}')
         k_pm = ptk.get_fwd_rate_coefficients(temperature, concentrations)
-        err = np.linalg.norm((k_ct[i_falloff] - k_pm[i_falloff])/k_ct[i_falloff],
-                np.inf)
+        err = np.linalg.norm(
+            np.where(
+                k_ct[i_falloff],
+                (k_ct[i_falloff] - k_pm[i_falloff])/k_ct[i_falloff],
+                0
+            ),
+            np.inf
+        )
 
         # Print
         print("T = ", reactor.T)
