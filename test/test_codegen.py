@@ -504,7 +504,6 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
         # Prometheus kinetics
         concentrations = ptk.get_concentrations(density, mass_fractions)
-        print(f'c = {concentrations}')
         k_pm = ptk.get_fwd_rate_coefficients(temperature, concentrations)
         err = np.linalg.norm(
             np.where(
