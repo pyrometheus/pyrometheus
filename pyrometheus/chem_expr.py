@@ -29,7 +29,8 @@ Internal Functionality
 .. autofunction:: equilibrium_constants_expr
 .. autofunction:: rate_coefficient_expr
 .. autofunction:: third_body_efficiencies_expr
-.. autofunction:: troe_falloff_expr
+.. autofunction:: troe_falloff_center_expr
+.. autofunction:: troe_falloff_factor_expr
 .. autofunction:: falloff_function_expr
 .. autofunction:: rate_of_progress_expr
 .. autofunction:: production_rate_expr
@@ -241,7 +242,7 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
     return sum_nondef + sum_default
 
 
-def troe_falloff_expr(react: ct.Reaction, t):
+def troe_falloff_center_expr(react: ct.Reaction, t):
     """
     :returns: The Troe falloff center expression for reaction *react* in terms of the
         temperature *t* as a :class:`pymbolic.primitives.Expression`
@@ -268,21 +269,48 @@ def troe_falloff_expr(react: ct.Reaction, t):
     return
 
 
-def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center):
+def troe_falloff_factor_expr(react: ct.Reaction, i,
+                             red_pressure, falloff_center):
     """
-    :returns: Falloff function expression for reaction *react* in terms
-        of the temperature *t*, reduced pressure *red_pressure*, and falloff center
-        *falloff_center* as a :class:`pymbolic.primitives.Expression`
+    :returns: The Troe falloff factor expression for reaction
+    *react* in terms of reduced pressure *red_pressure* and the
+    falloff center *falloff_center* as a
+    :class:`pymbolic.primitives.Expression`
+
+    """
+
+    if isinstance(react.rate, ct.TroeRate):
+        log_rp = p.Variable("log10")(red_pressure[i])
+        c = -0.4 - 0.67 * falloff_center[i]
+        n = 0.75 - 1.27 * falloff_center[i]
+        return p.If(
+            p.Comparison(red_pressure[i], ">", 0),
+            (log_rp + c) / (n - 0.14 * (log_rp + c)),
+            -1/0.14
+        )
+    elif isinstance(react.rate, ct.LindemannRate):
+        return 0
+    else:
+        raise ValueError("Unexpected value of 'rate.type': "
+                         f" '{react.rate.type}'")
+
+
+def falloff_function_expr(react: ct.Reaction, i, t,
+                          falloff_factor, falloff_center):
+    """
+    :returns: Falloff function expression for reaction *react* in
+    terms of the temperature *t*, falloff width factor
+    *falloff_factor*, and falloff center *falloff_center* as a
+    :class:`pymbolic.primitives.Expression`
+
     """
 
     falloff_type = react.reaction_type.split("-")[1]
 
     if falloff_type == "Troe":
-        log_rp = p.Variable("log10")(red_pressure[i])
-        c = -0.4-0.67*falloff_center[i]
-        n = 0.75-1.27*falloff_center[i]
-        f = (log_rp+c)/(n-0.14*(log_rp+c))
-        return 10**((falloff_center[i])/(1+f**2))
+        return 10**(
+            falloff_center[i] / (1+falloff_factor[i]**2)
+        )
     elif falloff_type == "Lindemann":
         return 1
     else:
