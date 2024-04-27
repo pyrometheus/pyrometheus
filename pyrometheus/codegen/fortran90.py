@@ -547,8 +547,8 @@ contains
         %endfor
 
         %for i, (_, react) in enumerate(falloff_reactions):
-        falloff_center(${i+1}) = log10(${cgm(ce.troe_falloff_expr(
-            react, Variable("temperature")))})
+        falloff_center(${i+1}) = ${cgm(ce.troe_falloff_expr(
+            react, Variable("temperature")))}
         %endfor
 
         %for i, (_, react) in enumerate(falloff_reactions):
