@@ -45,11 +45,45 @@ import numpy as np
 # {{{ polynomial processing
 
 def nasa7_conditional(t, poly, part_gen):
-    # FIXME: Should check minTemp, maxTemp
+    minT = poly.min_temp
+    maxT = poly.max_temp
+    ch = poly.coeffs[1:8]
+    cl = poly.coeffs[8:15]
+    min_coeffs = cl*0.
+    max_coeffs = ch*0.
+
+    # compute coefficients below the lower temperature bound that yield a constant Cp
+    min_coeffs[0] = (cl[0] + cl[1]*minT + cl[2]*minT ** 2 + cl[3]*minT ** 3
+                     + cl[4]*minT ** 4)
+    min_coeffs[5] = minT*(cl[0] + cl[1]/2.*minT + cl[2]/3.*minT ** 2
+                          + cl[3]/4.*minT ** 3 + cl[4]/5.*minT ** 4
+                          + cl[5]/minT - min_coeffs[0])
+    min_coeffs[6] = (cl[0]*np.log(minT) + cl[1]*minT + cl[2]/2.*minT ** 2
+                     + cl[3]/3.*minT ** 3 + cl[4]/4.*minT ** 4
+                     + cl[5]/minT - min_coeffs[0]*np.log(minT))
+
+    # compute coefficients below the lower temperature bound that yield a constant Cp
+    max_coeffs[0] = (ch[0] + ch[1]*maxT + ch[2]*maxT ** 2 + ch[3]*maxT ** 3
+                     + ch[4]*maxT ** 4)
+    max_coeffs[5] = maxT*(ch[0] + ch[1]/2.*maxT + ch[2]/3.*maxT ** 2
+                          + ch[3]/4.*maxT ** 3 + ch[4]/5.*maxT ** 4
+                          + ch[5]/maxT - max_coeffs[0])
+    max_coeffs[6] = (ch[0]*np.log(maxT) + ch[1]*maxT + ch[2]/2.*maxT ** 2
+                     + ch[3]/3.*maxT ** 3 + ch[4]/4.*maxT ** 4
+                     + ch[5]/maxT - max_coeffs[0]*np.log(maxT))
+
+    # nested if loop to get the right temperature range
     return p.If(
-        p.Comparison(t, ">", poly.coeffs[0]),
-        part_gen(poly.coeffs[1:8], t),
-        part_gen(poly.coeffs[8:15], t),
+        p.Comparison(t, ">", poly.max_temp),
+        part_gen(max_coeffs, t),
+        p.If(p.Comparison(t, ">", poly.coeffs[0]),
+            part_gen(ch, t),
+            p.If(p.Comparison(t, ">", poly.min_temp),
+                part_gen(cl, t),
+                part_gen(min_coeffs, t),
+                #part_gen(cl, t),
+                 ),
+             ),
     )
 
 
