@@ -409,22 +409,11 @@ class Thermochemistry:
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
         ones = self._pyro_zeros_like(temperature) + 1.0
-<<<<<<< HEAD
-        k_high = self._pyro_make_tensor([
-        %for j, (i, react) in enumerate(falloff_reactions):
-            %if react.uses_legacy:
-            ${cgm(ce.ArrheniusMapper().fixed_coeffs(
-                ce.ArrheniusExpression(Variable("a"),
-                Variable("b"), Variable("t_act"),
-                Variable("temperature")),
-                react.high_rate))} * ones,
-=======
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
             %if 'uses_legacy' in dir(react) and react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
                 react.high_rate, Variable("temperature")))},
->>>>>>> get-soundspeed
             %else:
             ${cgm(ce.ArrheniusMapper().fixed_coeffs(
                 ce.ArrheniusExpression(Variable("a"),
@@ -435,22 +424,11 @@ class Thermochemistry:
         %endfor
                 ])
 
-<<<<<<< HEAD
-        k_low = self._pyro_make_tensor([
-        %for j, (i, react) in enumerate(falloff_reactions):
-            %if react.uses_legacy:
-            ${cgm(ce.ArrheniusMapper().fixed_coeffs(
-                ce.ArrheniusExpression(Variable("a"),
-                Variable("b"), Variable("t_act"),
-                Variable("temperature")),
-                react.low_rate))} * ones,
-=======
         k_low = self._pyro_make_array([
         %for _, react in falloff_reactions:
             %if 'uses_legacy' in dir(react) and react.uses_legacy:
             ${cgm(ce.rate_coefficient_expr(
                 react.low_rate, Variable("temperature")))},
->>>>>>> get-soundspeed
             %else:
             ${cgm(ce.ArrheniusMapper().fixed_coeffs(
                 ce.ArrheniusExpression(Variable("a"),
@@ -497,15 +475,9 @@ class Thermochemistry:
         t_act = rate_params[2]
     %endif
         ones = self._pyro_zeros_like(temperature) + 1.0
-<<<<<<< HEAD
-        k_fwd = self._pyro_make_tensor([
-        %for i in range(sol.n_reactions):
-        %if isinstance(sol.reaction(i), ct.FalloffReaction):
-=======
         k_fwd = [
         %for react in sol.reactions():
         %if react.equation in [r.equation for _, r in falloff_reactions]:
->>>>>>> get-soundspeed
             0*temperature,
         %else:
             %if fixed_coeffs:
@@ -522,7 +494,7 @@ class Thermochemistry:
             %endif
         %endif
         %endfor
-                ])
+                ]
         %if falloff_reactions:
         self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
