@@ -100,7 +100,7 @@ def wrap_code(s, indent=4):
 
 
 def float_to_fortran(num):
-    result = repr(num).replace("e", "d")
+    result = f"{num}".replace("e", "d")
     if "d" not in result:
         result = result+"d0"
     if num < 0:
