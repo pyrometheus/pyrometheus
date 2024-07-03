@@ -425,7 +425,7 @@ class Thermochemistry:
             f = enthalpy_or_energy - he_fun(t_i, y)
             j = -pv_fun(t_i, y)
             dt = -f / j
-            t_i += dt
+            t_i = t_i + dt
             if self._pyro_norm(dt, np.inf) < tol:
                 return t_i
 
@@ -501,7 +501,7 @@ class Thermochemistry:
     %endif
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = self._pyro_make_tensor([
-        %for react in sol.reactions():
+        %for i, react in enumerate(sol.reactions()):
         %if react.equation in [r.equation for _, r in falloff_reactions]:
             0*temperature,
         %else:
