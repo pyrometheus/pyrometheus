@@ -203,7 +203,7 @@ module_tpl = Template("""
 module ${module_name}
 
     implicit none
-    integer, parameter :: num_elements = ${sol.n_elements}
+    integer, parameter, private :: num_elements = ${sol.n_elements}
     integer, parameter :: num_species = ${sol.n_species}
     integer, parameter :: num_reactions = ${sol.n_reactions}
     integer, parameter :: num_falloff = ${len(falloff_reactions)}
