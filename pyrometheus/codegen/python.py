@@ -140,6 +140,7 @@ class Thermochemistry:
     .. automethod:: get_sound_speed
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
+    .. automethod:: get_species_enthalpies_deriv
     .. automethod:: get_species_entropies_r
     .. automethod:: get_species_gibbs_rt
     .. automethod:: get_equilibrium_constants
@@ -351,6 +352,30 @@ class Thermochemistry:
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
                 ])
+    
+    def get_species_enthalpies_deriv(self, temperature, h_rt=None):
+        \"""The derivative of the NASA polynomial for enthalpy is not the 
+        temperature derivative of enthalpy because the NASA polynomials return
+        h_k(T)/RT. So, if we let x_k = h_k(T)/RT, the derivative is dx_k/dT.
+        Because h_k(T) = x_k*R*T, we can get the temperature derivative of
+        h_k(T) by applying the chain and product rules:
+        
+            dh_k(T)/dT = d(x_k*R*T)/dT = R*(x_k + T*dx_k/dT),
+            
+        where x_k is computed using `get_species_enthalpies_rt` and dx_k/dT
+        is the result of differentiating the NASA polynomial.        
+        \"""
+        h_rt_T_deriv = self._pyro_make_tensor([
+            % for sp in sol.species():
+            ${cgm(ce.poly_to_enthalpy_deriv_expr(sp.thermo, "temperature"))},
+            % endfor
+                ])
+            
+        # Makes use of already computed h_rt if available.
+        if h_rt is None:
+            h_rt = self.get_species_enthalpies_rt(temperature)
+        
+        return self.gas_constant*(h_rt + temperature*h_rt_T_deriv)
 
     def get_species_entropies_r(self, temperature):
         return self._pyro_make_tensor([
@@ -400,7 +425,7 @@ class Thermochemistry:
             f = enthalpy_or_energy - he_fun(t_i, y)
             j = -pv_fun(t_i, y)
             dt = -f / j
-            t_i += dt
+            t_i = t_i + dt
             if self._pyro_norm(dt, np.inf) < tol:
                 return t_i
 
@@ -476,7 +501,7 @@ class Thermochemistry:
     %endif
         ones = self._pyro_zeros_like(temperature) + 1.0
         k_fwd = [
-        %for react in sol.reactions():
+        %for i, react in enumerate(sol.reactions()):
         %if react.equation in [r.equation for _, r in falloff_reactions]:
             0*temperature,
         %else:
