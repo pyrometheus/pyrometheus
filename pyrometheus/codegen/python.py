@@ -538,7 +538,12 @@ class Thermochemistry:
                 ${cgm(ce.production_rate_expr(
                     sol, sp.name, Variable("r_net")))} * ones,
             %endfor
-               ])""", strict_undefined=True)
+               ])
+
+    ## TBD
+    ##def get_Euler_split_flux_Jac_2D_TTv(self, r, Ys, u, v, a, ev, T, up, nx, ny, Q, direction):
+    
+    """, strict_undefined=True)
 
 # }}}
 
