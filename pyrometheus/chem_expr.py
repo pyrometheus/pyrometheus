@@ -44,12 +44,12 @@ import numpy as np
 
 # {{{ polynomial processing
 
-def nasa7_conditional(t, poly, part_gen):
+def nasa7_conditional(variables, poly, part_gen):
     # FIXME: Should check minTemp, maxTemp
     return p.If(
-        p.Comparison(t, ">", poly.coeffs[0]),
-        part_gen(poly.coeffs[1:8], t),
-        part_gen(poly.coeffs[8:15], t),
+        p.Comparison(variables[0], ">", poly.coeffs[0]),
+        part_gen(poly.coeffs[1:8], *variables),
+        part_gen(poly.coeffs[8:15], *variables),
     )
 
 
@@ -59,34 +59,42 @@ def poly_to_expr(poly):
 
 
 @poly_to_expr.register
-def _(poly: ct.NasaPoly2, arg_name):
-    def gen(c, t):
+def _(poly: ct.NasaPoly2, arg_names):
+    variables = [p.Variable(arg) for arg in arg_names]
+    def gen(c, t, ov_t, t2, t3, t4, log_t):
         assert len(c) == 7
-        return c[0] + c[1] * t + c[2] * t ** 2 + c[3] * t ** 3 + c[4] * t ** 4
+        return (
+            c[0]
+            + c[1] * t
+            + c[2] * t2
+            + c[3] * t3
+            + c[4] * t4
+        )
 
-    return nasa7_conditional(p.Variable(arg_name), poly, gen)
+    return nasa7_conditional(variables, poly, gen)
 
 
 @singledispatch
-def poly_to_enthalpy_expr(poly, arg_name):
+def poly_to_enthalpy_expr(poly, arg_names):
     raise TypeError("unexpected argument type in poly_to_enthalpy_expr: "
             f"{type(poly)}")
 
 
 @poly_to_enthalpy_expr.register
-def _(poly: ct.NasaPoly2, arg_name):
-    def gen(c, t):
+def _(poly: ct.NasaPoly2, arg_names):
+    variables = [p.Variable(arg) for arg in arg_names]
+    def gen(c, t, ov_t, t2, t3, t4, log_t):
         assert len(c) == 7
         return (
             c[0]
             + c[1] / 2 * t
-            + c[2] / 3 * t ** 2
-            + c[3] / 4 * t ** 3
-            + c[4] / 5 * t ** 4
-            + c[5] / t
+            + c[2] / 3 * t2
+            + c[3] / 4 * t3
+            + c[4] / 5 * t4
+            + c[5] * ov_t
         )
 
-    return nasa7_conditional(p.Variable(arg_name), poly, gen)
+    return nasa7_conditional(variables, poly, gen)
 
 
 @singledispatch
@@ -96,21 +104,22 @@ def poly_to_entropy_expr(poly, arg_name):
 
 
 @poly_to_entropy_expr.register
-def _(poly: ct.NasaPoly2, arg_name):
-    log = p.Variable("log")
+def _(poly: ct.NasaPoly2, arg_names):
+    #log = p.Variable("log")
+    variables = [p.Variable(arg) for arg in arg_names]
 
-    def gen(c, t):
+    def gen(c, t, ov_t, t2, t3, t4, log_t):
         assert len(c) == 7
         return (
-            c[0] * log(t)
+            c[0] * log_t
             + c[1] * t
-            + c[2] / 2 * t ** 2
-            + c[3] / 3 * t ** 3
-            + c[4] / 4 * t ** 4
+            + c[2] / 2 * t2
+            + c[3] / 3 * t3
+            + c[4] / 4 * t4
             + c[6]
         )
 
-    return nasa7_conditional(p.Variable(arg_name), poly, gen)
+    return nasa7_conditional(variables, poly, gen)
 
 
 @singledispatch
@@ -120,18 +129,19 @@ def poly_to_enthalpy_deriv_expr(poly, arg_name):
 
 
 @poly_to_enthalpy_deriv_expr.register
-def _(poly: ct.NasaPoly2, arg_name):
-    def gen(c, t):
+def _(poly: ct.NasaPoly2, arg_names):
+    variables = [p.Variable(arg) for arg in arg_names]
+    def gen(c, t, ov_t, t2, t3, t4, log_t):
         assert len(c) == 7
         return (
             c[1] / 2
             + 2 * c[2] / 3 * t
-            + 3 * c[3] / 4 * t ** 2
-            + 4 * c[4] / 5 * t ** 3
-            - c[5] / (t ** 2)
+            + 3 * c[3] / 4 * t2
+            + 4 * c[4] / 5 * t3
+            - c[5] / (t2)
         )
 
-    return nasa7_conditional(p.Variable(arg_name), poly, gen)
+    return nasa7_conditional(variables, poly, gen)
 
 
 @singledispatch
@@ -141,18 +151,19 @@ def poly_to_entropy_deriv_expr(poly, arg_name):
 
 
 @poly_to_entropy_deriv_expr.register
-def _(poly: ct.NasaPoly2, arg_name):
-    def gen(c, t):
+def _(poly: ct.NasaPoly2, arg_names):
+    variables = [p.Variable(arg) for arg in arg_names]
+    def gen(c, t, ov_t, t2, t3, t4, log_t):
         assert len(c) == 7
         return (
-            c[0] / t
+            c[0] * ov_t
             + c[1]
             + c[2] * t
-            + c[3] * t ** 2
-            + c[4] * t ** 3
+            + c[3] * t2
+            + c[4] * t3
         )
 
-    return nasa7_conditional(p.Variable(arg_name), poly, gen)
+    return nasa7_conditional(variables, poly, gen)
 
 # }}}
 
@@ -210,11 +221,11 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
 class ArrheniusExpression(p.Expression):
 
     def __init__(self, a: p.Variable, b: p.Variable, t_act: p.Variable,
-                 t: p.Variable):
+                 t: p.Variable, log_t: p.Variable):
         j = p.Variable("j")
         self.children = (p.subscript(a, j),
                          p.subscript(b, j),
-                         p.Subscript(t_act, j), t)
+                         p.Subscript(t_act, j), t, log_t)
 
     def __getinitargs__(self):
         return self.children
@@ -236,12 +247,16 @@ class ArrheniusMapper(mapper.IdentityMapper):
     def _temperature(self, expr):
         return expr.children[3]
 
+    def _log_temperature(self, expr):
+        return expr.children[4]
+
     def _map_arrhenius(self, expr):
         log = p.Variable("log")
         exp = p.Variable("exp")
         t = self._temperature(expr)
+        log_t = self._log_temperature(expr)
         return exp(log(self._pre_exponential(expr))
-                   + self._temp_exponent(expr) * log(t)
+                   + self._temp_exponent(expr) * log_t
                    - self._activation_temp(expr) / t)
 
     def map_arrhenius(self, expr, rxn_index):

@@ -340,16 +340,23 @@ class Thermochemistry:
         return self.usr_np.sqrt(gamma * mix_gas_constant * temperature)
 
     def get_species_specific_heats_r(self, temperature):
+        temperature_pow_2 = temperature ** 2
+        temperature_pow_3 = temperature ** 3
+        temperature_pow_4 = temperature ** 4
         return self._pyro_make_tensor([
             % for sp in sol.species():
-            ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
+            ${cgm(ce.poly_to_expr(sp.thermo, ["temperature", "ov_temperature", "temperature_pow_2", "temperature_pow_3", "temperature_pow_4", "log_temperature"]))},
             % endfor
                 ])
 
     def get_species_enthalpies_rt(self, temperature):
+        ov_temperature = 1.0 / temperature
+        temperature_pow_2 = temperature ** 2
+        temperature_pow_3 = temperature ** 3
+        temperature_pow_4 = temperature ** 4
         return self._pyro_make_tensor([
             % for sp in sol.species():
-            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
+            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, ["temperature", "ov_temperature", "temperature_pow_2", "temperature_pow_3", "temperature_pow_4", "log_temperature"]))},
             % endfor
                 ])
     
@@ -365,9 +372,11 @@ class Thermochemistry:
         where x_k is computed using `get_species_enthalpies_rt` and dx_k/dT
         is the result of differentiating the NASA polynomial.        
         \"""
+        temperature_pow_2 = temperature ** 2
+        temperature_pow_3 = temperature ** 3
         h_rt_T_deriv = self._pyro_make_tensor([
             % for sp in sol.species():
-            ${cgm(ce.poly_to_enthalpy_deriv_expr(sp.thermo, "temperature"))},
+            ${cgm(ce.poly_to_enthalpy_deriv_expr(sp.thermo, ["temperature", "ov_temperature", "temperature_pow_2", "temperature_pow_3", "temperature_pow_4", "log_temperature"]))},
             % endfor
                 ])
             
@@ -378,9 +387,13 @@ class Thermochemistry:
         return self.gas_constant*(h_rt + temperature*h_rt_T_deriv)
 
     def get_species_entropies_r(self, temperature):
+        temperature_pow_2 = temperature ** 2
+        temperature_pow_3 = temperature ** 3
+        temperature_pow_4 = temperature ** 4
+        log_temperature = self.usr_np.log(torch.as_tensor(temperature))
         return self._pyro_make_tensor([
             % for sp in sol.species():
-                ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+                ${cgm(ce.poly_to_entropy_expr(sp.thermo, ["temperature", "ov_temperature", "temperature_pow_2", "temperature_pow_3", "temperature_pow_4", "log_temperature"]))},
             % endfor
                 ])
 
@@ -434,6 +447,7 @@ class Thermochemistry:
     %if falloff_reactions:
     def get_falloff_rates(self, temperature, concentrations, k_fwd):
         ones = self._pyro_zeros_like(temperature) + 1.0
+        log_temperature = self.usr_np.log(self.usr_np.as_tensor(temperature))
         k_high = self._pyro_make_array([
         %for _, react in falloff_reactions:
             %if 'uses_legacy' in dir(react) and react.uses_legacy:
@@ -443,7 +457,7 @@ class Thermochemistry:
             ${cgm(ce.ArrheniusMapper().fixed_coeffs(
                 ce.ArrheniusExpression(Variable("a"),
                 Variable("b"), Variable("t_act"),
-                Variable("temperature")),
+                Variable("temperature"), Variable("log_temperature")),
                 react.rate.high_rate))} * ones,
             %endif
         %endfor
@@ -458,7 +472,7 @@ class Thermochemistry:
             ${cgm(ce.ArrheniusMapper().fixed_coeffs(
                 ce.ArrheniusExpression(Variable("a"),
                 Variable("b"), Variable("t_act"),
-                Variable("temperature")),
+                Variable("temperature"), Variable("log_temperature")),
                 react.rate.low_rate))} * ones,
             %endif
         %endfor
@@ -500,6 +514,7 @@ class Thermochemistry:
         t_act = rate_params[2]
     %endif
         ones = self._pyro_zeros_like(temperature) + 1.0
+        log_temperature = self.usr_np.log(self.usr_np.as_tensor(temperature))
         k_fwd = [
         %for i, react in enumerate(sol.reactions()):
         %if react.equation in [r.equation for _, r in falloff_reactions]:
@@ -509,13 +524,13 @@ class Thermochemistry:
                 ${cgm(ce.ArrheniusMapper().fixed_coeffs(
                     ce.ArrheniusExpression(Variable("a"),
                     Variable("b"), Variable("t_act"),
-                    Variable("temperature")),
+                    Variable("temperature"), Variable("log_temperature")),
                     sol.reaction(i).rate))} * ones,
             %else:
                 ${cgm(ce.ArrheniusMapper()(
                     ce.ArrheniusExpression(Variable("a"),
                     Variable("b"), Variable("t_act"),
-                    Variable("temperature")), i))} * ones,
+                    Variable("temperature"), Variable("log_temperature")), i))} * ones,
             %endif
         %endif
         %endfor
