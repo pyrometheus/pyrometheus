@@ -402,7 +402,7 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
 # {{{ Rates of progress
 
 def rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
-                          k_fwd, log_k_eq):
+                          k_fwd, exp_log_k_eq):
     """
     :returns: Rate of progress expression for reaction with index *reaction_index*
         in terms of species concentrations *c* with rate coefficients *k_fwd*
@@ -426,11 +426,11 @@ def rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
         nu_prod = [sol.reaction(reaction_index).products[sp]
                    for sp in sol.reaction(reaction_index).products]
         r_rev = np.prod([c[index]**nu for index, nu in zip(indices_prod, nu_prod)])
-        return k_fwd[reaction_index] * (
+        return (
                 r_fwd
-                - p.Variable("exp")(log_k_eq[reaction_index]) * r_rev)
+                + (exp_log_k_eq[reaction_index]) * r_rev)
     else:
-        return k_fwd[reaction_index] * r_fwd
+        return r_fwd
 
 # }}}
 

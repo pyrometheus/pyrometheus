@@ -77,8 +77,12 @@ class CodeGenerationMapper(StringifyMapper):
         )
 
     def map_call(self, expr, enclosing_prec, *args, **kwargs):
+        if str(expr.function) == "log":
+            formatted_str = "math.%s(%s)"
+        else:
+            formatted_str = "self.usr_np.%s(%s)"
         return self.format(
-            "self.usr_np.%s(%s)",
+            formatted_str,
             self.rec(expr.function, PREC_CALL, *args, **kwargs),
             self.join_rec(", ", expr.parameters, PREC_NONE, *args, **kwargs),
         )
@@ -106,8 +110,9 @@ code_tpl = Template(
 .. autoclass:: Thermochemistry
 \"""
 
-
+import math
 from warnings import warn
+
 import numpy as np
 import torch
 
@@ -149,7 +154,7 @@ class Thermochemistry:
     .. automethod:: __init__
     \"""
 
-    def __init__(self, usr_np=np):
+    def __init__(self, usr_np=np, device="cpu"):
         \"""Initialize thermochemistry object for a mechanism.
 
         Parameters
@@ -174,6 +179,9 @@ class Thermochemistry:
         \"""
 
         self.usr_np = usr_np
+        if self.usr_np == torch:
+            torch.set_default_dtype(torch.float64)
+            torch.set_default_device(device)
         self.model_name = ${repr(sol.source)}
         self.num_elements = ${sol.n_elements}
         self.num_species = ${sol.n_species}
@@ -193,6 +201,15 @@ class Thermochemistry:
 
         self.molecular_weights = self._pyro_make_tensor(${str_np_inner(sol.molecular_weights)})
         self.inv_molecular_weights = 1/self.molecular_weights
+        
+        # This variable will be of shape [2, num_species, 7].
+        # The first index is for the different temperature range (the split is
+        # at 1000 K). The last index is for 7 polynomial coefficients.
+        self.nasa_coeffs = self._pyro_make_tensor([
+                % for sp in sol.species():
+                ${list(sp.thermo.coeffs)[1:]},
+                % endfor
+                ]).reshape(-1, 2, 7).swapaxes(0,1)[[1,0]]
 
     @property
     def wts(self):
@@ -311,9 +328,9 @@ class Thermochemistry:
         return self.gas_constant * cpmix
 
     def get_mixture_specific_heat_cv_mass(self, temperature, mass_fractions):
-        cp0_r = self.get_species_specific_heats_r(temperature) - 1.0
-        cpmix = self.get_mass_average_property(mass_fractions, cp0_r)
-        return self.gas_constant * cpmix
+        cv0_r = self.get_species_specific_heats_r(temperature) - 1.0
+        cvmix = self.get_mass_average_property(mass_fractions, cv0_r)
+        return self.gas_constant * cvmix
 
     def get_mixture_enthalpy_mass(self, temperature, mass_fractions):
         h0_rt = self.get_species_enthalpies_rt(temperature)
@@ -340,25 +357,15 @@ class Thermochemistry:
         return self.usr_np.sqrt(gamma * mix_gas_constant * temperature)
 
     def get_species_specific_heats_r(self, temperature):
-        temperature_pow_2 = temperature ** 2
-        temperature_pow_3 = temperature ** 3
-        temperature_pow_4 = temperature ** 4
-        return self._pyro_make_tensor([
-            % for sp in sol.species():
-            ${cgm(ce.poly_to_expr(sp.thermo, ["temperature", "ov_temperature", "temperature_pow_2", "temperature_pow_3", "temperature_pow_4", "log_temperature"]))},
-            % endfor
-                ])
+        T = self.usr_np.atleast_1d(temperature)[None,None,:]
+        r = self.nasa_coeffs[...,0,None] + self.nasa_coeffs[...,1,None]*T + self.nasa_coeffs[...,2,None]*T**2 + self.nasa_coeffs[...,3,None]*T**3 + self.nasa_coeffs[...,4,None]*T**4
+        return self.usr_np.where(self.usr_np.greater(temperature, 1000.0), r[1], r[0]).squeeze()
+
 
     def get_species_enthalpies_rt(self, temperature):
-        ov_temperature = 1.0 / temperature
-        temperature_pow_2 = temperature ** 2
-        temperature_pow_3 = temperature ** 3
-        temperature_pow_4 = temperature ** 4
-        return self._pyro_make_tensor([
-            % for sp in sol.species():
-            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, ["temperature", "ov_temperature", "temperature_pow_2", "temperature_pow_3", "temperature_pow_4", "log_temperature"]))},
-            % endfor
-                ])
+        T = self.usr_np.atleast_1d(temperature)[None,None,:]
+        r = self.nasa_coeffs[...,0,None] + self.nasa_coeffs[...,1,None]/2*T + self.nasa_coeffs[...,2,None]/3*T**2 + self.nasa_coeffs[...,3,None]/4*T**3 + self.nasa_coeffs[...,4,None]/5*T**4 + self.nasa_coeffs[...,5,None]/T
+        return self.usr_np.where(self.usr_np.greater(temperature, 1000.0), r[1], r[0]).squeeze()
     
     def get_species_enthalpies_deriv(self, temperature, h_rt=None):
         \"""The derivative of the NASA polynomial for enthalpy is not the 
@@ -372,13 +379,9 @@ class Thermochemistry:
         where x_k is computed using `get_species_enthalpies_rt` and dx_k/dT
         is the result of differentiating the NASA polynomial.        
         \"""
-        temperature_pow_2 = temperature ** 2
-        temperature_pow_3 = temperature ** 3
-        h_rt_T_deriv = self._pyro_make_tensor([
-            % for sp in sol.species():
-            ${cgm(ce.poly_to_enthalpy_deriv_expr(sp.thermo, ["temperature", "ov_temperature", "temperature_pow_2", "temperature_pow_3", "temperature_pow_4", "log_temperature"]))},
-            % endfor
-                ])
+        T = self.usr_np.atleast_1d(temperature)[None,None,:]
+        r = self.nasa_coeffs[...,1,None]/2 + 2*self.nasa_coeffs[...,2,None]/3*T + 3*self.nasa_coeffs[...,3,None]/4*T**2 + 4*self.nasa_coeffs[...,4,None]/5*T**3 + self.nasa_coeffs[...,5,None]/T**2
+        h_rt_T_deriv = self.usr_np.where(self.usr_np.greater(temperature, 1000.0), r[1], r[0]).squeeze()
             
         # Makes use of already computed h_rt if available.
         if h_rt is None:
@@ -387,15 +390,9 @@ class Thermochemistry:
         return self.gas_constant*(h_rt + temperature*h_rt_T_deriv)
 
     def get_species_entropies_r(self, temperature):
-        temperature_pow_2 = temperature ** 2
-        temperature_pow_3 = temperature ** 3
-        temperature_pow_4 = temperature ** 4
-        log_temperature = self.usr_np.log(torch.as_tensor(temperature))
-        return self._pyro_make_tensor([
-            % for sp in sol.species():
-                ${cgm(ce.poly_to_entropy_expr(sp.thermo, ["temperature", "ov_temperature", "temperature_pow_2", "temperature_pow_3", "temperature_pow_4", "log_temperature"]))},
-            % endfor
-                ])
+        T = self.usr_np.atleast_1d(temperature)[None,None,:]
+        r = self.nasa_coeffs[...,0,None]*self.usr_np.log(T) + self.nasa_coeffs[...,1,None]*T + self.nasa_coeffs[...,2,None]/2*T**2 + self.nasa_coeffs[...,3,None]/3*T**3 + self.nasa_coeffs[...,4,None]/4*T**4 + self.nasa_coeffs[...,6,None]
+        return self.usr_np.where(self.usr_np.greater(temperature, 1000.0), r[1], r[0]).squeeze()
 
     def get_species_gibbs_rt(self, temperature):
         h0_rt = self.get_species_enthalpies_rt(temperature)
@@ -514,8 +511,8 @@ class Thermochemistry:
         t_act = rate_params[2]
     %endif
         ones = self._pyro_zeros_like(temperature) + 1.0
-        log_temperature = self.usr_np.log(self.usr_np.as_tensor(temperature))
-        k_fwd = [
+        log_temperature = self.usr_np.log(temperature)
+        k_fwd = self._pyro_make_tensor([
         %for i, react in enumerate(sol.reactions()):
         %if react.equation in [r.equation for _, r in falloff_reactions]:
             0*temperature,
@@ -534,7 +531,7 @@ class Thermochemistry:
             %endif
         %endif
         %endfor
-                ]
+                ])
         %if falloff_reactions:
         self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
@@ -553,12 +550,12 @@ class Thermochemistry:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations,
                                                rate_params)
     %endif
-        log_k_eq = self.get_equilibrium_constants(temperature)
-        return self._pyro_make_tensor([
+        exp_log_k_eq = -self.usr_np.exp(self.get_equilibrium_constants(temperature))
+        return k_fwd*self._pyro_make_tensor([
                 %for i in range(sol.n_reactions):
                     ${cgm(ce.rate_of_progress_expr(sol, i,
                         Variable("concentrations"),
-                        Variable("k_fwd"), Variable("log_k_eq")))},
+                        Variable("k_fwd"), Variable("exp_log_k_eq")))},
                 %endfor
                ])
 
