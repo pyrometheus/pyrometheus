@@ -180,8 +180,10 @@ class Thermochemistry:
 
         self.usr_np = usr_np
         if self.usr_np == torch:
-            torch.set_default_dtype(torch.float64)
-            torch.set_default_device(device)
+            self.WP = torch.float64
+            self.device = device
+            torch.set_default_dtype(self.WP)
+            torch.set_default_device(self.device)
         self.model_name = ${repr(sol.source)}
         self.num_elements = ${sol.n_elements}
         self.num_species = ${sol.n_species}
@@ -237,7 +239,7 @@ class Thermochemistry:
                     res_list[i] = val.squeeze()
                 return torch.stack(res_list, 0)
             else:
-                return self.usr_np.tensor(res_list, dtype=torch.float64)
+                return self.usr_np.tensor(res_list, dtype=self.WP, device=self.device)
         else:
             return self.usr_np.array(res_list)
 
@@ -311,7 +313,7 @@ class Thermochemistry:
     def get_concentrations(self, rho, mass_fractions):
         return self._pyro_make_tensor([
                 %for i in range(sol.n_species):
-                    self.iwts[${i}] * mass_fractions[${i}] * rho,
+                    self.inv_molecular_weights[${i}] * mass_fractions[${i}] * rho,
                 %endfor
                 ])
 
@@ -419,12 +421,13 @@ class Thermochemistry:
         return p / (rho * self.get_specific_gas_constant(Y))
 
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
-        if do_energy is False:
-            pv_fun = self.get_mixture_specific_heat_cp_mass
-            he_fun = self.get_mixture_enthalpy_mass
-        else:
+        if do_energy:
             pv_fun = self.get_mixture_specific_heat_cv_mass
             he_fun = self.get_mixture_internal_energy_mass
+        else:
+            pv_fun = self.get_mixture_specific_heat_cp_mass
+            he_fun = self.get_mixture_enthalpy_mass
+            
 
         num_iter = 500
         tol = 1.0e-6
