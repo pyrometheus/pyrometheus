@@ -36,7 +36,7 @@ except ImportError:
     numpy_list = [np]
     jnp = None
 else:
-    import jax.numpy as jnp  # noqa: F401   
+    import jax.numpy as jnp  # noqa: F401
     jax.config.update("jax_enable_x64", True)
     numpy_list = [np, jnp]
 
