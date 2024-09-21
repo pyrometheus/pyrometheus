@@ -7,5 +7,4 @@ dependencies:
 - python=3
 - cantera
 - pip
-- jax
-- jaxlib=0.4.31
+- jax=0.4.30
