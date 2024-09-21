@@ -8,3 +8,4 @@ dependencies:
 - cantera
 - pip
 - jax
+- jaxlib=0.4.31
