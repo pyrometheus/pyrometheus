@@ -267,6 +267,8 @@ contains
 
     subroutine get_specific_gas_constant(mass_fractions, specific_gas_constant)
 
+        !$acc routine seq
+
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: specific_gas_constant
 
@@ -279,6 +281,8 @@ contains
     end subroutine get_specific_gas_constant
 
     subroutine get_density(pressure, temperature, mass_fractions, density)
+
+        !$acc routine seq
 
         ${real_type}, intent(in) :: pressure
         ${real_type}, intent(in) :: temperature
@@ -294,6 +298,8 @@ contains
 
     subroutine get_pressure(density, temperature, mass_fractions, pressure)
 
+        !$acc routine seq
+
         ${real_type}, intent(in) :: density
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
@@ -308,6 +314,8 @@ contains
 
     subroutine get_mixture_molecular_weight(mass_fractions, mix_mol_weight)
 
+        !$acc routine seq
+
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: mix_mol_weight
 
@@ -321,6 +329,8 @@ contains
 
     subroutine get_concentrations(density, mass_fractions, concentrations)
 
+        !$acc routine seq
+
         ${real_type}, intent(in) :: density
         ${real_type}, intent(in),  dimension(num_species) :: mass_fractions
         ${real_type}, intent(out), dimension(num_species) :: concentrations
@@ -330,6 +340,8 @@ contains
     end subroutine get_concentrations
 
     subroutine get_mass_averaged_property(mass_fractions, spec_property, mix_property)
+
+        !$acc routine seq
 
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(in), dimension(num_species) :: spec_property
@@ -345,6 +357,8 @@ contains
 
     subroutine get_mixture_specific_heat_cp_mass(temperature, mass_fractions, cp_mix)
 
+        !$acc routine seq
+
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: cp_mix
@@ -358,6 +372,8 @@ contains
     end subroutine get_mixture_specific_heat_cp_mass
 
     subroutine get_mixture_specific_heat_cv_mass(temperature, mass_fractions, cv_mix)
+
+        !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
@@ -374,6 +390,8 @@ contains
 
     subroutine get_mixture_enthalpy_mass(temperature, mass_fractions, h_mix)
 
+        !$acc routine seq
+
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
         ${real_type}, intent(out) :: h_mix
@@ -387,6 +405,8 @@ contains
     end subroutine get_mixture_enthalpy_mass
 
     subroutine get_mixture_energy_mass(temperature, mass_fractions, e_mix)
+
+        !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: mass_fractions
@@ -403,6 +423,8 @@ contains
 
     subroutine get_species_specific_heats_r(temperature, cp0_r)
 
+        !$acc routine seq
+
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(num_species) :: cp0_r
 
@@ -413,6 +435,8 @@ contains
     end subroutine get_species_specific_heats_r
 
     subroutine get_species_enthalpies_rt(temperature, h0_rt)
+
+        !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(num_species) :: h0_rt
@@ -425,6 +449,8 @@ contains
 
     subroutine get_species_entropies_r(temperature, s0_r)
 
+        !$acc routine seq
+
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(num_species) :: s0_r
 
@@ -435,6 +461,8 @@ contains
     end subroutine get_species_entropies_r
 
     subroutine get_species_gibbs_rt(temperature, g0_rt)
+
+        !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(num_species) :: g0_rt
@@ -449,6 +477,8 @@ contains
     end subroutine get_species_gibbs_rt
 
     subroutine get_equilibrium_constants(temperature, k_eq)
+
+        !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(num_reactions) :: k_eq
@@ -475,6 +505,8 @@ contains
     end subroutine get_equilibrium_constants
 
     subroutine get_temperature(do_energy, enthalpy_or_energy, t_guess, mass_fractions, temperature)
+
+        !$acc routine seq
 
         logical, intent(in) :: do_energy
         ${real_type}, intent(in)  :: enthalpy_or_energy
@@ -516,6 +548,8 @@ contains
 
     %if falloff_reactions:
     subroutine get_falloff_rates(temperature, concentrations, k_fwd)
+
+        !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: concentrations
@@ -568,6 +602,8 @@ contains
     %endif
     subroutine get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
 
+        !$acc routine seq
+
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: concentrations
         ${real_type}, intent(out), dimension(num_reactions) :: k_fwd
@@ -602,6 +638,8 @@ contains
 
     subroutine get_net_rates_of_progress(temperature, concentrations, r_net)
 
+        !$acc routine seq
+
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(num_species) :: concentrations
         ${real_type}, intent(out), dimension(num_reactions) :: r_net
@@ -620,6 +658,8 @@ contains
     end subroutine get_net_rates_of_progress
 
     subroutine get_net_production_rates(density, temperature, mass_fractions, omega)
+
+        !$acc routine seq
 
         ${real_type}, intent(in) :: density
         ${real_type}, intent(in) :: temperature
