@@ -359,15 +359,21 @@ class Thermochemistry:
         return self.usr_np.sqrt(gamma * mix_gas_constant * temperature)
 
     def get_species_specific_heats_r(self, temperature):
-        T = self.usr_np.atleast_1d(temperature)[None,None,:]
+        original_shape = temperature.shape
+        pre_squeeze_shape = (self.num_species, *original_shape)
+        total_tensor_elements = math.prod(original_shape)
+        T = self.usr_np.atleast_1d(temperature).view(total_tensor_elements)
         r = self.nasa_coeffs[...,0,None] + self.nasa_coeffs[...,1,None]*T + self.nasa_coeffs[...,2,None]*T**2 + self.nasa_coeffs[...,3,None]*T**3 + self.nasa_coeffs[...,4,None]*T**4
-        return self.usr_np.where(self.usr_np.greater(temperature, 1000.0), r[1], r[0]).squeeze()
+        return self.usr_np.where(self.usr_np.greater(T, 1000.0), r[1], r[0]).view(*pre_squeeze_shape).squeeze()
 
 
     def get_species_enthalpies_rt(self, temperature):
-        T = self.usr_np.atleast_1d(temperature)[None,None,:]
+        original_shape = temperature.shape
+        pre_squeeze_shape = (self.num_species, *original_shape)
+        total_tensor_elements = math.prod(original_shape)
+        T = self.usr_np.atleast_1d(temperature).view(total_tensor_elements)
         r = self.nasa_coeffs[...,0,None] + self.nasa_coeffs[...,1,None]/2*T + self.nasa_coeffs[...,2,None]/3*T**2 + self.nasa_coeffs[...,3,None]/4*T**3 + self.nasa_coeffs[...,4,None]/5*T**4 + self.nasa_coeffs[...,5,None]/T
-        return self.usr_np.where(self.usr_np.greater(temperature, 1000.0), r[1], r[0]).squeeze()
+        return self.usr_np.where(self.usr_np.greater(T, 1000.0), r[1], r[0]).view(*pre_squeeze_shape).squeeze()
     
     def get_species_enthalpies_deriv(self, temperature, h_rt=None):
         \"""The derivative of the NASA polynomial for enthalpy is not the 
@@ -381,9 +387,12 @@ class Thermochemistry:
         where x_k is computed using `get_species_enthalpies_rt` and dx_k/dT
         is the result of differentiating the NASA polynomial.        
         \"""
-        T = self.usr_np.atleast_1d(temperature)[None,None,:]
+        original_shape = temperature.shape
+        pre_squeeze_shape = (self.num_species, *original_shape)
+        total_tensor_elements = math.prod(original_shape)
+        T = self.usr_np.atleast_1d(temperature).view(total_tensor_elements)
         r = self.nasa_coeffs[...,1,None]/2 + 2*self.nasa_coeffs[...,2,None]/3*T + 3*self.nasa_coeffs[...,3,None]/4*T**2 + 4*self.nasa_coeffs[...,4,None]/5*T**3 + self.nasa_coeffs[...,5,None]/T**2
-        h_rt_T_deriv = self.usr_np.where(self.usr_np.greater(temperature, 1000.0), r[1], r[0]).squeeze()
+        h_rt_T_deriv = self.usr_np.where(self.usr_np.greater(T, 1000.0), r[1], r[0]).view(*pre_squeeze_shape).squeeze()
             
         # Makes use of already computed h_rt if available.
         if h_rt is None:
@@ -392,9 +401,12 @@ class Thermochemistry:
         return self.gas_constant*(h_rt + temperature*h_rt_T_deriv)
 
     def get_species_entropies_r(self, temperature):
-        T = self.usr_np.atleast_1d(temperature)[None,None,:]
+        original_shape = temperature.shape
+        pre_squeeze_shape = (self.num_species, *original_shape)
+        total_tensor_elements = math.prod(original_shape)
+        T = self.usr_np.atleast_1d(temperature).view(total_tensor_elements)
         r = self.nasa_coeffs[...,0,None]*self.usr_np.log(T) + self.nasa_coeffs[...,1,None]*T + self.nasa_coeffs[...,2,None]/2*T**2 + self.nasa_coeffs[...,3,None]/3*T**3 + self.nasa_coeffs[...,4,None]/4*T**4 + self.nasa_coeffs[...,6,None]
-        return self.usr_np.where(self.usr_np.greater(temperature, 1000.0), r[1], r[0]).squeeze()
+        return self.usr_np.where(self.usr_np.greater(T, 1000.0), r[1], r[0]).view(*pre_squeeze_shape).squeeze()
 
     def get_species_gibbs_rt(self, temperature):
         h0_rt = self.get_species_enthalpies_rt(temperature)
