@@ -480,7 +480,7 @@ class Thermochemistry:
                ])
 
     def get_net_production_rates(self, rho, temperature, mass_fractions):
-        c = self.get_concentrations(rho, mass_fractions)        
+        c = self.get_concentrations(rho, mass_fractions)
         r_net = self.get_net_rates_of_progress(temperature, c)
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([

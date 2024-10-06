@@ -16,7 +16,6 @@ from mako.template import Template
 import pyrometheus.chem_expr
 from pymbolic.mapper.stringifier import (
         StringifyMapper, PREC_NONE, PREC_CALL, PREC_PRODUCT)
-from itertools import product
 
 
 file_extension = "f90"
@@ -200,24 +199,31 @@ class FortranExpressionMapper(StringifyMapper):
 # {{{ module template
 
 module_tpl = Template("""
+#ifndef PYROMETHEUS_CALLER_INDEXING
+#define PYROMETHEUS_CALLER_INDEXING 0
+#endif
 module ${module_name}
 
     implicit none
+
+    integer, parameter :: sp = selected_real_kind(6,37)   ! Single precision
+    integer, parameter :: dp = selected_real_kind(15,307) ! Double precision
+
     integer, parameter :: num_elements = ${sol.n_elements}
     integer, parameter :: num_species = ${sol.n_species}
     integer, parameter :: num_reactions = ${sol.n_reactions}
     integer, parameter :: num_falloff = ${len(falloff_reactions)}
     ${real_type}, parameter :: one_atm = ${float_to_fortran(ct.one_atm)}
     ${real_type}, parameter :: gas_constant = ${float_to_fortran(ct.gas_constant)}
-    ${real_type}, parameter :: mol_weights(*) = &
+    ${real_type}, parameter :: mol_weights(${sol.n_species}) = &
         (/ ${str_np(sol.molecular_weights)} /)
-    ${real_type}, parameter :: inv_weights(*) = &
+    ${real_type}, parameter :: inv_weights(${sol.n_species}) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
-    character(len=12), parameter :: species_names(*) = &
+    character(len=12), parameter :: species_names(${sol.n_species}) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
 
-    character(len=4), parameter :: element_names(*) = &
+    character(len=4), parameter :: element_names(${sol.n_elements}) = &
         (/ ${", ".join('"'+'{0: <4}'.format(e)+'"' for e in sol.element_names)} /)
 
 contains
@@ -227,7 +233,7 @@ contains
         integer, intent(in) :: sp_index
         character(len=*), intent(out) :: sp_name
 
-        sp_name = species_names(sp_index)
+        sp_name = species_names(sp_index + PYROMETHEUS_CALLER_INDEXING)
 
     end subroutine get_species_name
 
@@ -241,7 +247,7 @@ contains
         sp_index = 0
         loop:do idx = 1, num_species
             if(trim(adjustl(sp_name)) .eq. trim(species_names(idx))) then
-                sp_index = idx
+                sp_index = idx - PYROMETHEUS_CALLER_INDEXING
                 exit loop
             end if
         end do loop
@@ -258,7 +264,7 @@ contains
         el_index = 0
         loop:do idx = 1, num_elements
             if(trim(adjustl(el_name)) .eq. trim(element_names(idx))) then
-                el_index = idx
+                el_index = idx - PYROMETHEUS_CALLER_INDEXING
                 exit loop
             end if
         end do loop
@@ -269,7 +275,7 @@ contains
 
         !$acc routine seq
 
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: specific_gas_constant
 
         specific_gas_constant = gas_constant * ( &
@@ -286,7 +292,7 @@ contains
 
         ${real_type}, intent(in) :: pressure
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: density
 
         ${real_type} :: mix_mol_weight
@@ -302,7 +308,7 @@ contains
 
         ${real_type}, intent(in) :: density
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: pressure
 
         ${real_type} :: mix_mol_weight
@@ -316,7 +322,7 @@ contains
 
         !$acc routine seq
 
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: mix_mol_weight
 
         mix_mol_weight = 1.0d0 / ( &
@@ -332,19 +338,20 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: density
-        ${real_type}, intent(in),  dimension(num_species) :: mass_fractions
-        ${real_type}, intent(out), dimension(num_species) :: concentrations
+        ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: concentrations
 
         concentrations = density * inv_weights * mass_fractions
 
     end subroutine get_concentrations
 
-    subroutine get_mass_averaged_property(mass_fractions, spec_property, mix_property)
+    subroutine get_mass_averaged_property(&
+        & mass_fractions, spec_property, mix_property)
 
         !$acc routine seq
 
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
-        ${real_type}, intent(in), dimension(num_species) :: spec_property
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: spec_property
         ${real_type}, intent(out) :: mix_property
 
         mix_property = ( &
@@ -360,10 +367,10 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: cp_mix
 
-        ${real_type}, dimension(num_species) :: cp0_r
+        ${real_type}, dimension(${sol.n_species}) :: cp0_r
 
         call get_species_specific_heats_r(temperature, cp0_r)
         call get_mass_averaged_property(mass_fractions, cp0_r, cp_mix)
@@ -376,10 +383,10 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: cv_mix
 
-        ${real_type}, dimension(num_species) :: cp0_r
+        ${real_type}, dimension(${sol.n_species}) :: cp0_r
 
         call get_species_specific_heats_r(temperature, cp0_r)
         cp0_r(:) = cp0_r(:) - 1.d0
@@ -393,10 +400,10 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: h_mix
 
-        ${real_type}, dimension(num_species) :: h0_rt
+        ${real_type}, dimension(${sol.n_species}) :: h0_rt
 
         call get_species_enthalpies_rt(temperature, h0_rt)
         call get_mass_averaged_property(mass_fractions, h0_rt, h_mix)
@@ -409,10 +416,10 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: e_mix
 
-        ${real_type}, dimension(num_species) :: h0_rt
+        ${real_type}, dimension(${sol.n_species}) :: h0_rt
 
         call get_species_enthalpies_rt(temperature, h0_rt)
         h0_rt(:) = h0_rt - 1.d0
@@ -426,7 +433,7 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(out), dimension(num_species) :: cp0_r
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: cp0_r
 
         %for i, sp in enumerate(sol.species()):
         cp0_r(${i+1}) = ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))}
@@ -439,7 +446,7 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(out), dimension(num_species) :: h0_rt
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: h0_rt
 
         %for i, sp in enumerate(sol.species()):
         h0_rt(${i+1}) = ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))}
@@ -452,7 +459,7 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(out), dimension(num_species) :: s0_r
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: s0_r
 
         %for i, sp in enumerate(sol.species()):
         s0_r(${i+1}) = ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}
@@ -465,10 +472,10 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(out), dimension(num_species) :: g0_rt
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: g0_rt
 
-        ${real_type}, dimension(num_species) :: h0_rt
-        ${real_type}, dimension(num_species) :: s0_r
+        ${real_type}, dimension(${sol.n_species}) :: h0_rt
+        ${real_type}, dimension(${sol.n_species}) :: s0_r
 
         call get_species_enthalpies_rt(temperature, h0_rt)
         call get_species_entropies_r(temperature, s0_r)
@@ -481,12 +488,12 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(out), dimension(num_reactions) :: k_eq
+        ${real_type}, intent(out), dimension(${sol.n_reactions}) :: k_eq
 
         ${real_type} :: rt
         ${real_type} :: c0
 
-        ${real_type}, dimension(num_species) :: g0_rt
+        ${real_type}, dimension(${sol.n_species}) :: g0_rt
 
         rt = gas_constant * temperature
         c0 = log(one_atm/rt)
@@ -504,14 +511,15 @@ contains
 
     end subroutine get_equilibrium_constants
 
-    subroutine get_temperature(do_energy, enthalpy_or_energy, t_guess, mass_fractions, temperature)
+    subroutine get_temperature( &
+        & enthalpy_or_energy, t_guess, mass_fractions, do_energy, temperature)
 
         !$acc routine seq
 
         logical, intent(in) :: do_energy
         ${real_type}, intent(in)  :: enthalpy_or_energy
         ${real_type}, intent(in)  :: t_guess
-        ${real_type}, intent(in), dimension(num_species) :: mass_fractions
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: temperature
 
         integer :: iter
@@ -530,11 +538,14 @@ contains
 
         do iter = 1, num_iter
             if(do_energy) then
-                call get_mixture_specific_heat_cv_mass(iter_temp, mass_fractions, iter_energy_deriv)
+                call get_mixture_specific_heat_cv_mass(&
+                    & iter_temp, mass_fractions, iter_energy_deriv)
                 call get_mixture_energy_mass(iter_temp, mass_fractions, iter_energy)
             else
-                call get_mixture_specific_heat_cp_mass(iter_temp, mass_fractions, iter_energy_deriv)
-                call get_mixture_enthalpy_mass(iter_temp, mass_fractions, iter_energy)
+                call get_mixture_specific_heat_cp_mass(&
+                    & iter_temp, mass_fractions, iter_energy_deriv)
+                call get_mixture_enthalpy_mass(&
+                    & iter_temp, mass_fractions, iter_energy)
             endif
             iter_rhs = enthalpy_or_energy - iter_energy
             iter_deriv = (-1.d0)*iter_energy_deriv
@@ -611,8 +622,8 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: concentrations
-        ${real_type}, intent(out), dimension(num_reactions) :: k_fwd
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: concentrations
+        ${real_type}, intent(out), dimension(${sol.n_reactions}) :: k_fwd
 
         %if falloff_reactions:
         ${real_type}, dimension(${len(falloff_reactions)}) :: k_falloff
@@ -644,11 +655,11 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: concentrations
-        ${real_type}, intent(out), dimension(num_reactions) :: r_net
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: concentrations
+        ${real_type}, intent(out), dimension(${sol.n_reactions}) :: r_net
 
-        ${real_type}, dimension(num_reactions) :: k_fwd
-        ${real_type}, dimension(num_reactions) :: log_k_eq
+        ${real_type}, dimension(${sol.n_reactions}) :: k_fwd
+        ${real_type}, dimension(${sol.n_reactions}) :: log_k_eq
 
         call get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
         call get_equilibrium_constants(temperature, log_k_eq)
@@ -666,11 +677,11 @@ contains
 
         ${real_type}, intent(in) :: density
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in),  dimension(num_species) :: mass_fractions
-        ${real_type}, intent(out), dimension(num_species) :: omega
+        ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: omega
 
-        ${real_type}, dimension(num_species)   :: concentrations
-        ${real_type}, dimension(num_reactions) :: r_net
+        ${real_type}, dimension(${sol.n_species})   :: concentrations
+        ${real_type}, dimension(${sol.n_reactions}) :: r_net
 
         call get_concentrations(density, mass_fractions, concentrations)
         call get_net_rates_of_progress(temperature, concentrations, r_net)
@@ -688,7 +699,7 @@ end module
 # }}}
 
 
-def gen_thermochem_code(sol: ct.Solution, real_type="real(kind(1.d0))",
+def gen_thermochem_code(sol: ct.Solution, real_type="real(dp)",
         module_name="thermochem") -> str:
     """For the mechanism given by *sol*, return Fortran source code.
     """
