@@ -1,0 +1,48 @@
+#include <vector>
+
+#include <${mechanism}.hxx>
+
+#include <pybind11/pybind11.h>
+#include <pybind11/stl_bind.h>
+#include <pybind11/stl.h>
+
+typedef std::vector<double> container_t;
+PYBIND11_MAKE_OPAQUE(container_t);
+
+typedef ${mechanism}::thermochemistry<container_t, double> mech_t;
+
+#define DEF_STATIC_METHOD(name)      m.def(#name, &mech_t::name)
+#define DEF_STATIC_CONST(name, type) m.attr(#name) = pybind11::type##_(mech_t::name);
+
+PYBIND11_MODULE(libpyro_cpp_${mechanism}, m)
+{
+  DEF_STATIC_METHOD(get_species_name);
+  DEF_STATIC_METHOD(get_element_name);
+  DEF_STATIC_METHOD(get_species_index);
+  DEF_STATIC_METHOD(get_element_index);
+  DEF_STATIC_METHOD(get_specific_gas_constant);
+  DEF_STATIC_METHOD(get_mix_molecular_weight);
+  DEF_STATIC_METHOD(get_concentrations);
+  DEF_STATIC_METHOD(get_mass_average_property);
+  DEF_STATIC_METHOD(get_mixture_specific_heat_cp_mass);
+  DEF_STATIC_METHOD(get_mixture_enthalpy_mass);
+  DEF_STATIC_METHOD(get_density);
+  DEF_STATIC_METHOD(get_pressure);
+  DEF_STATIC_METHOD(get_species_specific_heats_r);
+  DEF_STATIC_METHOD(get_species_enthalpies_rt);
+  DEF_STATIC_METHOD(get_species_entropies_r);
+  DEF_STATIC_METHOD(get_species_gibbs_rt);
+  DEF_STATIC_METHOD(get_equilibrium_constants);
+  DEF_STATIC_METHOD(get_temperature);
+  DEF_STATIC_METHOD(get_fwd_rate_coefficients);
+  DEF_STATIC_METHOD(get_net_rates_of_progress);
+  DEF_STATIC_METHOD(get_net_production_rates);
+
+  DEF_STATIC_CONST(num_species,   int);
+  DEF_STATIC_CONST(num_reactions, int);
+  DEF_STATIC_CONST(num_falloff,   int);
+  DEF_STATIC_CONST(gas_constant,  float);
+  DEF_STATIC_CONST(one_atm,       float);
+
+  pybind11::bind_vector<container_t>(m, "VectorDouble");
+}
