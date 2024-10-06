@@ -100,7 +100,7 @@ def wrap_code(s, indent=4):
 
 
 def float_to_fortran(num):
-    result = repr(num).replace("e", "d")
+    result = f"{num}".replace("e", "d")
     if "d" not in result:
         result = result+"d0"
     if num < 0:
@@ -496,7 +496,7 @@ contains
         %for i, react in enumerate(sol.reactions()):
         %if react.reversible:
         k_eq(${i+1}) = ${cgm(
-            ce.equilibrium_constants_expr(sol, react, Variable("g0_rt")))}
+            ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))}
         %else:
         k_eq(${i+1}) = -0.1d0*temperature
         %endif
@@ -552,13 +552,14 @@ contains
         !$acc routine seq
 
         ${real_type}, intent(in) :: temperature
-        ${real_type}, intent(in), dimension(num_species) :: concentrations
-        ${real_type}, intent(out), dimension(${len(falloff_reactions)}) :: k_fwd
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: concentrations
+        ${real_type}, intent(out), dimension(${sol.n_reactions}) :: k_fwd
 
         ${real_type}, dimension(${len(falloff_reactions)}) :: k_high
         ${real_type}, dimension(${len(falloff_reactions)}) :: k_low
         ${real_type}, dimension(${len(falloff_reactions)}) :: reduced_pressure
         ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_center
+        ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_factor
         ${real_type}, dimension(${len(falloff_reactions)}) :: falloff_function
 
         %for i, (_, react) in enumerate(falloff_reactions):
@@ -581,19 +582,24 @@ contains
         %endfor
 
         %for i, (_, react) in enumerate(falloff_reactions):
-        falloff_center(${i+1}) = log10(${cgm(ce.troe_falloff_expr(
-            react, Variable("temperature")))})
+        falloff_center(${i+1}) = ${cgm(ce.troe_falloff_center_expr(
+            react, Variable("temperature")))}
+        %endfor
+
+        %for i, (_, react) in enumerate(falloff_reactions):
+        falloff_factor(${i+1}) = ${cgm(ce.troe_falloff_factor_expr(react, i,
+            Variable("reduced_pressure"), Variable("falloff_center")))}
         %endfor
 
         %for i, (_, react) in enumerate(falloff_reactions):
         falloff_function(${i+1}) = ${cgm(ce.falloff_function_expr(
-            react, i, Variable("temperature"),
-            Variable("reduced_pressure"),
+            react, i,
+            Variable("falloff_factor"),
             Variable("falloff_center")))}
         %endfor
 
-        %for i in range(len(falloff_reactions)):
-        k_fwd(${i+1}) = k_high(${i+1})*falloff_function(${i+1}) * &
+        %for i, (j, react) in enumerate(falloff_reactions):
+        k_fwd(${j+1}) = k_high(${i+1})*falloff_function(${i+1}) * &
             reduced_pressure(${i+1})/(1.d0 + reduced_pressure(${i+1}))
         %endfor
 
@@ -621,17 +627,14 @@ contains
         %endif
         %endfor
 
-        %for react in three_body_reactions:
-        k_fwd(${int(react.ID)}) = k_fwd(${int(react.ID)}) * ( &
+        %for j, react in three_body_reactions:
+        k_fwd(${j+1}) = k_fwd(${j+1}) * ( &
             ${cgm(ce.third_body_efficiencies_expr(
             sol, react, Variable("concentrations")))})
         %endfor
 
         %if falloff_reactions:
-        call get_falloff_rates(temperature, concentrations, k_falloff)        
-        %for i, react in enumerate(falloff_reactions):
-        k_fwd(${int(react.ID)}) = k_falloff(${i+1})
-        %endfor
+        call get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
 
     end subroutine get_fwd_rate_coefficients

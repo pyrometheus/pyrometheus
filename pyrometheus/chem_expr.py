@@ -308,7 +308,7 @@ def troe_falloff_factor_expr(react: ct.Reaction, i,
                          f" '{react.rate.type}'")
 
 
-def falloff_function_expr(react: ct.Reaction, i, t,
+def falloff_function_expr(react: ct.Reaction, i,
                           falloff_factor, falloff_center):
     """
     :returns: Falloff function expression for reaction *react* in
