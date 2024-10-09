@@ -244,10 +244,10 @@ class Thermochemistry:
             return np.abs(argument)
         return self.usr_np.linalg.norm(argument, normord)
 
-    def species_name(self, species_index):
+    def get_species_name(self, species_index):
         return self.species_name[species_index]
 
-    def species_index(self, species_name):
+    def get_species_index(self, species_name):
         return self.species_indices[species_name]
 
     def get_specific_gas_constant(self, mass_fractions):
@@ -308,6 +308,27 @@ class Thermochemistry:
         emix = self.get_mass_average_property(mass_fractions, e0_rt)
         return self.gas_constant * temperature * emix
 
+    def get_species_specific_heats_r_derivative(self, temperature):
+        return self._pyro_make_array([
+            % for sp in sol.species():
+            ${cgm(ce.poly_deriv_to_expr(sp.thermo, "temperature"))},
+            % endfor
+                ])
+
+    def get_species_enthalpies_rt_derivative(self, temperature):
+        return self._pyro_make_array([
+            % for sp in sol.species():
+            ${cgm(ce.poly_deriv_to_enthalpy_expr(sp.thermo, "temperature"))},
+            % endfor
+                ])
+
+    def get_species_entropies_rt_derivative(self, temperature):
+        return self._pyro_make_array([
+            % for sp in sol.species():
+            ${cgm(ce.poly_deriv_to_entropy_expr(sp.thermo, "temperature"))},
+            % endfor
+                ])
+
     def get_species_specific_heats_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
@@ -361,15 +382,15 @@ class Thermochemistry:
         num_iter = 500
         tol = 1.0e-6
         ones = self._pyro_zeros_like(enthalpy_or_energy) + 1.0
-        t_i = t_guess * ones
+        iter_temp = t_guess * ones
 
         for _ in range(num_iter):
-            f = enthalpy_or_energy - he_fun(t_i, y)
-            j = -pv_fun(t_i, y)
-            dt = -f / j
-            t_i += dt
+            iter_rhs = enthalpy_or_energy - he_fun(iter_temp, y)
+            iter_deriv = -pv_fun(iter_temp, y)
+            dt = -iter_rhs / iter_deriv
+            iter_temp += dt
             if self._pyro_norm(dt, np.inf) < tol:
-                return t_i
+                return iter_temp
 
         raise RuntimeError("Temperature iteration failed to converge")
 
@@ -413,7 +434,7 @@ class Thermochemistry:
         falloff_function = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
             ${cgm(ce.falloff_function_expr(
-                react, i, Variable("temperature"),
+                react, i,
                 Variable("falloff_factor"),
                 Variable("falloff_center")))},
         %endfor
