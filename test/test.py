@@ -44,7 +44,7 @@ from backends import PythonBackend, pyro_init, BACKENDS
     "uiuc", "sandiego", "uconn32", "hong"
 ])
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_get_rate_coefficients(mechname, user_np, request):
+def test_get_rate_coefficients(mechname, user_np, request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
@@ -90,7 +90,7 @@ def test_get_rate_coefficients(mechname, user_np, request):
     "uiuc", "sandiego", "uconn32", "gri30", "hong"
 ])
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_get_pressure(mechname, user_np, request):
+def test_get_pressure(mechname, user_np, request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted pressure for given density,
     temperature, and mass fractions
@@ -107,7 +107,6 @@ def test_get_pressure(mechname, user_np, request):
     i_fu = ptk.get_species_index("H2")
     i_ox = ptk.get_species_index("O2")
     i_di = ptk.get_species_index("N2")
-    print(i_fu, i_ox, i_di)
     x = np.zeros(ptk.num_species)
     x[i_fu] = (alpha * phi) / (nu + alpha * phi)
     x[i_ox] = nu * x[i_fu] / phi
@@ -126,7 +125,7 @@ def test_get_pressure(mechname, user_np, request):
     "uiuc", "sandiego", "uconn32", "gri30", "hong"
 ])
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_get_thermo_properties(mechname, user_np, request):
+def test_get_thermo_properties(mechname, user_np, request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes thermodynamic properties c_p, s_r, h_rt, and k_eq
     correctly by comparing against Cantera"""
@@ -178,7 +177,7 @@ def test_get_thermo_properties(mechname, user_np, request):
     "uiuc", "sandiego", "gri30", "hong"
 ])
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_get_temperature(mechname, user_np, request):
+def test_get_temperature(mechname, user_np, request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted temperature for given internal energy
     and mass fractions"""
@@ -218,7 +217,7 @@ def test_get_temperature(mechname, user_np, request):
      ("hong", "H2", 0.5, 1e-6)]
 )
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_kinetics(mechname, fuel, stoich_ratio, dt, user_np, request):
+def test_kinetics(mechname, fuel, stoich_ratio, dt, user_np, request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted rates of progress for given
     temperature and composition"""
@@ -272,7 +271,7 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, user_np, request):
 
 
 @pytest.mark.skipif(jnp is None, reason="JAX not installed")
-def test_autodiff_accuracy(request):
+def test_autodiff_accuracy(request: pytest.FixtureRequest):
     backend = BACKENDS[request.config.getoption("backend").lower()]
     if backend != PythonBackend:
         pytest.skip("JAX only supported with Python backend")
@@ -351,7 +350,7 @@ def test_autodiff_accuracy(request):
      ("hong", "H2", 0.5)]
 )
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_falloff_kinetics(mechname, fuel, stoich_ratio, user_np, request):
+def test_falloff_kinetics(mechname, fuel, stoich_ratio, user_np, request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted falloff rate coefficients"""
 
