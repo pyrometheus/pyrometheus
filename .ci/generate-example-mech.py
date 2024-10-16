@@ -4,7 +4,7 @@ import pyrometheus as pyro
 
 narg = len(sys.argv)
 if len(sys.argv) < 3:
-        print(f"Usage: {sys.argv[0]} cti_file_name mech_file_name")
+    print(f"Usage: {sys.argv[0]} cti_file_name mech_file_name")
 else:
     cti_file_name = sys.argv[1]
     mech_file_name = sys.argv[2]

@@ -1,8 +1,6 @@
 name: CI
 on:
     push:
-        branches:
-        - main
     pull_request:
     schedule:
         - cron:  '17 3 * * 0'
@@ -57,7 +55,10 @@ jobs:
                 curl -L -O https://tiker.net/ci-support-v0
                 . ./ci-support-v0
                 build_py_project_in_conda_env
-                test_py_project
+
+                cmake -S test -B build
+                cmake --build build --parallel $(nproc)
+                ctest --test-dir build
 
     # examples3:
     #     name: Examples Conda Py
@@ -87,5 +88,3 @@ jobs:
                 build_py_project_in_conda_env
                 python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
                 build_docs
-
-# vim: sw=4
