@@ -1,4 +1,4 @@
-import pyrometheus as pyro
+import pyrometheus.codegen.python as pyro
 import glob
 
 test_mechs = glob.glob("test/mechs/*.yaml")

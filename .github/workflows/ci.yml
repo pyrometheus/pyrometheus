@@ -3,88 +3,64 @@ on:
     push:
     pull_request:
     schedule:
-        - cron:  '17 3 * * 0'
+        - cron: '17 3 * * 0'
 
 jobs:
     flake8:
         name: Flake8
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v3
-        -
-            uses: actions/setup-python@v4
-            with:
-                python-version: '3.x'
-        -   name: "Main Script"
-            run: |
-                curl -L -O https://gitlab.tiker.net/inducer/ci-support/raw/main/prepare-and-run-flake8.sh
-                . ./prepare-and-run-flake8.sh "$(basename $GITHUB_REPOSITORY)" test
+        - uses: actions/checkout@v3
+        - uses: actions/setup-python@v4
+          with:
+            python-version: '3.x'
+        - name: Flake8
+          run:  python3 -m pip install .[dev] && flake8
 
     flake8_gen:
         name: Flake8 on Generated Code
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v3
-        -   name: "Main Script"
-            run: |
-                curl -L -O https://tiker.net/ci-support-v0
-                . ./ci-support-v0
-                build_py_project_in_conda_env
-                python -m pip install flake8 pep8-naming flake8-quotes flake8-bugbear
-                python .ci/generate-test-mech.py
-                flake8 --extend-ignore E501,Q000 test/mechs
+        - uses: actions/checkout@v3
+        - uses: actions/setup-python@v4
+          with:
+            python-version: '3.x'
+        - name: Flake8
+          run: |
+            python3 -m pip install .[dev]
+            python3 .ci/generate-test-mech.py
+            flake8 --extend-ignore E501,Q000 test/mechs
 
     pytest:
         name: Pytest Conda Py${{ matrix.python_version }}
         strategy:
             matrix:
-                # "3" is intentional: It's suppposed to be conda's default
-                # Python version number, which seems to have moved past
-                # 3.9 as of 2022-02-20.
                 python_version: ["3.9", "3.11"]
         runs-on: ubuntu-latest
         env:
             PYTHON_VERSION: ${{ matrix.python_version }}
         steps:
-        -   uses: actions/checkout@v3
-        -   name: "Main Script"
+        - uses: actions/checkout@v3
+        - uses: actions/setup-python@v4
+          with:
+            python-version: ${{ matrix.python_version }}
+        -   name: "PyTest"
             run: |
-                CONDA_ENVIRONMENT=.test-conda-env-py3.yml
-                sed -i "s/python=3/python=${PYTHON_VERSION}/" "$CONDA_ENVIRONMENT"
-
-                curl -L -O https://tiker.net/ci-support-v0
-                . ./ci-support-v0
-                build_py_project_in_conda_env
-
-                cmake -S test -B build
+                python3 -m pip install .[test]
+                cmake -S test -B build -Dpybind11_DIR=`python3 -m pybind11 --cmakedir`
                 cmake --build build --parallel $(nproc)
                 ctest --test-dir build
-
-    # examples3:
-    #     name: Examples Conda Py
-    #     runs-on: ubuntu-latest
-    #     steps:
-    #     -   uses: actions/checkout@v3
-    #     -   name: "Main Script"
-    #         run: |
-    #            curl -L -O https://tiker.net/ci-support-v0
-    #            . ./ci-support-v0
-    #            build_py_project_in_conda_env
-    #            run_examples
 
     docs:
         name: Documentation
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v3
-        -
-            uses: actions/setup-python@v4
-            with:
-                python-version: '3.x'
-        -   name: "Main Script"
-            run: |
-                curl -L -O https://tiker.net/ci-support-v0
-                . ci-support-v0
-                build_py_project_in_conda_env
-                python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
-                build_docs
+        - uses: actions/checkout@v3
+        - uses: actions/setup-python@v4
+          with:
+            python-version: '3.x'
+        - name: 'Build Docs'
+          run: |
+            python3 -m pip install -e .[docs]
+            python3 .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
+            cd doc && make html SPHINXOPTS='-W --keep-going -n'

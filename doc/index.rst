@@ -21,10 +21,11 @@ Table of Contents
 .. toctree::
     :maxdepth: 2
 
+    start
     model
     codegen
     misc
-    🚀 Github <https://github.com/ecisneros8/pyrometheus>
+    🚀 Github <https://github.com/pyrometheus/pyrometheus>
     💾 Download Releases <https://pypi.org/project/pyrometheus>
 
 Indices and tables

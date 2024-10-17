@@ -6,8 +6,7 @@
 """
 
 __copyright__ = """
-Copyright (C) 2020 Esteban Cisneros
-Copyright (C) 2020 Andreas Kloeckner
+Copyright (C) 2020 University of Illinois Board of Trustees
 """
 
 __license__ = """
@@ -34,37 +33,3 @@ THE SOFTWARE.
 import pyrometheus.codegen.python  # noqa: F401
 import pyrometheus.codegen.cpp  # noqa: F401
 import pyrometheus.codegen.fortran90  # noqa: F401
-import pyrometheus.codegen.python as _py
-
-
-# {{{ handle deprecations
-
-def gen_thermochem_code(*args, **kwargs):
-    from warnings import warn
-    warn("get_thermochem_code should be imported from pyrometheus.codegen.python "
-            "now. This alias in the root will go away in 2022.",
-            DeprecationWarning, stacklevel=2)
-
-    return _py.gen_thermochem_code(*args, **kwargs)
-
-
-def get_thermochem_class(*args, **kwargs):
-    from warnings import warn
-    warn("get_thermochem_class should be imported from pyrometheus.codegen.python "
-            "now. This alias in the root will go away in 2022.",
-            DeprecationWarning, stacklevel=2)
-
-    return _py.get_thermochem_class(*args, **kwargs)
-
-
-def cti_to_mech_file(*args, **kwargs):
-    from warnings import warn
-    warn("cti_to_mech_file should be imported from pyrometheus.codegen.python "
-            "now. This alias in the root will go away in 2022.",
-            DeprecationWarning, stacklevel=2)
-
-    return _py.cti_to_mech_file(*args, **kwargs)
-
-# }}}
-
-# vim: foldmethod=marker

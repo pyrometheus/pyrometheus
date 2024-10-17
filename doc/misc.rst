@@ -1,13 +1,5 @@
-User-Visible Changes
-====================
-
-Version 2020.1
---------------
-
-.. note::
-
-    This version is currently under development. You can get snapshots from
-    mirgecom's `git repository <https://github.com/ecisneros8/pyrometheus>`__.
+About Pyrometheus
+=================
 
 License
 =======
@@ -47,7 +39,7 @@ Building the Documentation
 You need to install Sphinx (a Python documentation tool) and two third-party
 packages to build the docs::
 
-    pip install furo sphinx sphinx_copybutton
+    pip install .[docs]
 
 Then simply run::
 

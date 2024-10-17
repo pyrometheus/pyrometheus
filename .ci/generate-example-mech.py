@@ -1,5 +1,5 @@
 import sys
-import pyrometheus as pyro
+import pyrometheus.codegen.python as pyro
 
 
 narg = len(sys.argv)

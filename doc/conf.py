@@ -14,25 +14,20 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+import pkg_resources
+
 
 # -- Project information -----------------------------------------------------
 
 project = "pyrometheus"
 copyright = "2020, University of Illinois Board of Trustees"
 author = (
-    "Esteban Cisneros, Andreas Kloeckner, "
+    "Esteban Cisneros, Andreas Kloeckner, Henry Le Berre, "
     "Center for Exascale-Enabled Scramjet Design"
 )
-_ver_file = "../pyrometheus/version.py"
-with open(_ver_file) as ver_file:
-    ver_src = ver_file.read()
-
-ver_dic = {}
-exec(compile(ver_src, _ver_file, "exec"), ver_dic)
-version = ".".join(str(x) for x in ver_dic["VERSION"])
-
+version = pkg_resources.get_distribution("pyrometheus").version
 # The full version, including alpha/beta/rc tags.
-release = ver_dic["VERSION_TEXT"]
+release = version
 
 
 # -- General configuration ---------------------------------------------------
