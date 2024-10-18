@@ -7,7 +7,7 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 .. image:: https://readthedocs.org/projects/pyrometheus/badge/?version=latest
     :alt: Documentation Status
     :target: https://pyrometheus.readthedocs.io/en/latest/?badge=latest
-.. image:: https://badge.fury.io/py/pyrometheus.png
+.. image:: https://img.shields.io/pypi/v/pyrometheus
     :alt: Python Package Index Release Page
     :target: https://pypi.org/project/pyrometheus/
 
