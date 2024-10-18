@@ -6,16 +6,7 @@ License
 Citing Pyrometheus
 ==================
 
-..  code-block::tex
-
-@misc{pyrometheus,
-  author = {{The Pyrometheus Developers}},  
-  title = {Pyrometheus}, 
-  year = {2024}, 
-  publisher = {GitHub}, 
-  journal = {GitHub repository}, 
-  howpublished = {\url{https://github.com/pyrometheus/pyrometheus}}, 
-}
+Cite this GitHub repository. 
 
 Acknowledgment
 ==============
