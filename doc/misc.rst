@@ -6,7 +6,7 @@ License
 Citing Pyrometheus
 ==================
 
-.. code-block:: bibtex
+..  code-block::tex
 
 @misc{pyrometheus,
   author = {{The Pyrometheus Developers}},  
