@@ -5,7 +5,7 @@ Welcome to pyrometheus's documentation!
 
 Pyrometheus is a code generator for chemical mechanisms, based on :ref:`cantera <cantera:sec-cython-documentation>`.
 
-Here’s an example, to give you an impression:
+Here’s an example to give you an impression:
 
 .. code-block:: python
 
@@ -24,7 +24,7 @@ Table of Contents
     model
     codegen
     misc
-    🚀 Github <https://github.com/ecisneros8/pyrometheus>
+    🚀 Github <https://github.com/pyrometheus/pyrometheus>
     💾 Download Releases <https://pypi.org/project/pyrometheus>
 
 Indices and tables
