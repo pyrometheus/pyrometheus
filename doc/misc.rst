@@ -1,14 +1,3 @@
-User-Visible Changes
-====================
-
-Version 2020.1
---------------
-
-.. note::
-
-    This version is currently under development. You can get snapshots from
-    mirgecom's `git repository <https://github.com/ecisneros8/pyrometheus>`__.
-
 License
 =======
 
@@ -17,19 +6,20 @@ License
 Citing Pyrometheus
 ==================
 
-(TBD)
+Cite this GitHub repository. 
 
 Acknowledgment
 ==============
 
 This material is based in part upon work supported by the Department of Energy,
 National Nuclear Security Administration, under Award Number DE-NA0003963.
+Spencer Bryngelson acknowledges support from the US Department of Defense, Office of Naval Research, under award numbers N00014-23-1-2501 and N00014-24-1-2094.
 
 Disclaimer
 ==========
 
 This report was prepared as an account of work sponsored by an agency of the
-United States Government.   Neither  the  United  States  Government  nor  any
+United States Government. Neither  the  United  States  Government  nor  any
 agency  thereof,  nor  any  of  their employees, makes any warranty, express or
 implied, or assumes any legal liability or responsibility for the accuracy,
 completeness,  or usefulness of any information,  apparatus,  product,  or
