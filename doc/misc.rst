@@ -1,9 +1,3 @@
-User-Visible Changes
-====================
-
-Version 2020.1
---------------
-
 License
 =======
 
@@ -12,7 +6,16 @@ License
 Citing Pyrometheus
 ==================
 
-(TBD)
+.. code-block:: bibtex
+
+@misc{pyrometheus,
+  author = {{The Pyrometheus Developers}},  
+  title = {Pyrometheus}, 
+  year = {2024}, 
+  publisher = {GitHub}, 
+  journal = {GitHub repository}, 
+  howpublished = {\url{https://github.com/pyrometheus/pyrometheus}}, 
+}
 
 Acknowledgment
 ==============
@@ -25,7 +28,7 @@ Disclaimer
 ==========
 
 This report was prepared as an account of work sponsored by an agency of the
-United States Government.   Neither  the  United  States  Government  nor  any
+United States Government. Neither  the  United  States  Government  nor  any
 agency  thereof,  nor  any  of  their employees, makes any warranty, express or
 implied, or assumes any legal liability or responsibility for the accuracy,
 completeness,  or usefulness of any information,  apparatus,  product,  or
