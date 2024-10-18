@@ -1,7 +1,7 @@
 Pyrometheus: Code Generation for Combustion Mechanisms
 ======================================================
 
-.. image:: https://github.com/ecisneros8/pyrometheus/workflows/CI/badge.svg?branch=main&event=push
+.. image:: https://github.com/pyrometheus/pyrometheus/workflows/CI/badge.svg?branch=main&event=push
     :alt: Github Build Status
     :target: https://github.com/ecisneros8/pyrometheus/actions?query=branch%main+workflow%3ACI+event%3Apush
 .. image:: https://readthedocs.org/projects/pyrometheus/badge/?version=latest
