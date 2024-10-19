@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name    = "pyrometheus"
+version = "1.0.1"
+readme  = "README.rst"
+authors = [
+  { name="Esteban Cisneros",  email="ec1287@princeton.edu" },
+  { name="Andreas Kloeckner", email="inform@tiker.net"     },
+  { name="Henry Le Berre",    email="hberre3@gatech.edu"   },
+]
+description = "Code generation for combustion thermochemistry, based on Cantera."
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Natural Language :: English",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Other Audience",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Code Generators"
+]
+dependencies = [
+    "cantera",
+    "pymbolic",
+    "mako",
+]
+
+[project.urls]
+Documentation = "https://pyrometheus.readthedocs.io"
+Source = "https://github.com/pyrometheus/pyrometheus"
+Issues = "https://github.com/pyrometheus/pyrometheus/issues"
+
+[tool.flake8]
+ignore = [
+    "E126", "E127", "E128", "E123", "E226",
+    "E241", "E242", "E265", "E402", "W503",
+    "E731",
+]
+max-line-length = 85
+exclude = ["pytools/arithmetic_container.py", "pytools/decorator.py", "build"]
+inline-quotes = '"'
+docstring-quotes = '"'
+multiline-quotes = '"""'
+
+[project.optional-dependencies]
+dev  = [
+    "flake8",
+    "pep8-naming",
+    "flake8-quotes",
+    "flake8-bugbear",
+    "Flake8-pyproject",
+]
+test = [
+    "jax",
+    "jaxlib",
+    "pytest",
+    "pybind11",
+]
+docs = [
+    "furo",
+    "setuptools",
+    "sphinx-copybutton",
+    "sphinx>=4.0.2",
+]

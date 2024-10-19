@@ -14,8 +14,8 @@ build:
     python: "3.10"
   jobs:
     post_install:
-      - pip install sphinx-math-dollar sphinx-copybutton furo
+      - pip3 install .[docs]
       # Generate the thermochem example
-      - python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
+      - python3 .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
       # Reinstall pyrometheus as editable to take into account the generated file
-      - python -m pip install --editable .
+      - python3 -m pip install --editable .

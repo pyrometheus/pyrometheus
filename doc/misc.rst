@@ -1,3 +1,8 @@
+About Pyrometheus
+=================
+
+Pyrometheus is a code generator for combustion thermochemistry, based on Cantera. 
+
 License
 =======
 
@@ -37,7 +42,7 @@ Building the Documentation
 You need to install Sphinx (a Python documentation tool) and two third-party
 packages to build the docs::
 
-    pip install furo sphinx sphinx_copybutton
+    pip install .[docs]
 
 Then simply run::
 

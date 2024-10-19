@@ -21,6 +21,7 @@ Table of Contents
 .. toctree::
     :maxdepth: 2
 
+    start
     model
     codegen
     misc

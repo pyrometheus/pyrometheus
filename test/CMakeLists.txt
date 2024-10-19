@@ -24,7 +24,6 @@ function (pyro_generate_backend_impl)
         OUTPUT  "${ARGS_OUTPUT}"
         DEPENDS "${ARGS_MECHANISM}"
                 "${PYRO_DIR}/chem_expr.py"
-                "${PYRO_DIR}/version.py"
                 "${PYRO_DIR}/__init__.py"
                 "${PYRO_DIR}/codegen/__init__.py"
                 "${PYRO_DIR}/codegen/${ARGS_BACKEND}.py"
