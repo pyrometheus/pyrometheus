@@ -5,7 +5,7 @@ Welcome to pyrometheus's documentation!
 
 Pyrometheus is a code generator for chemical mechanisms, based on :ref:`cantera <cantera:sec-cython-documentation>`.
 
-Here’s an example, to give you an impression:
+Here’s an example to give you an impression:
 
 .. code-block:: python
 
