@@ -7,7 +7,7 @@ name    = "pyrometheus"
 version = "1.0.1"
 readme  = "README.rst"
 authors = [
-  { name="Esteban Cisneros",  email="ec1287@princeton.edu" },
+  { name="Esteban Cisneros",  email="ecisnerosg88@gmail.com" },
   { name="Andreas Kloeckner", email="inform@tiker.net"     },
   { name="Henry Le Berre",    email="hberre3@gatech.edu"   },
 ]
