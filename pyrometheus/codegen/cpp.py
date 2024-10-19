@@ -7,8 +7,7 @@ C++ code generation
 
 
 __copyright__ = """
-Copyright (C) 2020 Esteban Cisneros
-Copyright (C) 2020 Andreas Kloeckner
+Copyright (C) 2020 University of Illinois Board of Trustees
 """
 
 __license__ = """
