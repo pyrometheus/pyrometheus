@@ -2,7 +2,7 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 ======================================================
 
 .. image:: doc/pyro.png
-	   :width: 1280
+	   :width: 640
 .. image:: https://github.com/pyrometheus/pyrometheus/actions/workflows/ci.yml/badge.svg
     :alt: Github Build Status
     :target: https://github.com/pyrometheus/pyrometheus/actions
