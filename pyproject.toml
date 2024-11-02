@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name    = "pyrometheus"
-version = "1.0.1"
+version = "1.0.2"
 readme  = "README.rst"
 authors = [
   { name="Esteban Cisneros",  email="ecisnerosg88@gmail.com" },

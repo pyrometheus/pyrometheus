@@ -202,6 +202,14 @@ module_tpl = Template("""
 #ifndef PYROMETHEUS_CALLER_INDEXING
 #define PYROMETHEUS_CALLER_INDEXING 0
 #endif
+
+#ifdef _CRAYFTN
+#define GPU_ROUTINE(name) !DIR$ INLINEALWAYS name
+#else
+#define GPU_ROUTINE(name) !$acc routine seq
+#endif
+
+
 module ${module_name}
 
     implicit none
@@ -219,6 +227,8 @@ module ${module_name}
         (/ ${str_np(sol.molecular_weights)} /)
     ${real_type}, parameter :: inv_weights(${sol.n_species}) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
+
+    !$acc declare create(mol_weights, inv_weights)
 
     character(len=12), parameter :: species_names(${sol.n_species}) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
@@ -273,7 +283,7 @@ contains
 
     subroutine get_specific_gas_constant(mass_fractions, specific_gas_constant)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_specific_gas_constant)
 
         ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: specific_gas_constant
@@ -288,7 +298,7 @@ contains
 
     subroutine get_density(pressure, temperature, mass_fractions, density)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_density)
 
         ${real_type}, intent(in) :: pressure
         ${real_type}, intent(in) :: temperature
@@ -304,7 +314,7 @@ contains
 
     subroutine get_pressure(density, temperature, mass_fractions, pressure)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_pressure)
 
         ${real_type}, intent(in) :: density
         ${real_type}, intent(in) :: temperature
@@ -320,7 +330,7 @@ contains
 
     subroutine get_mixture_molecular_weight(mass_fractions, mix_mol_weight)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_mixture_molecular_weight)
 
         ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out) :: mix_mol_weight
@@ -335,7 +345,7 @@ contains
 
     subroutine get_concentrations(density, mass_fractions, concentrations)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_concentrations)
 
         ${real_type}, intent(in) :: density
         ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
@@ -348,7 +358,7 @@ contains
     subroutine get_mass_averaged_property(&
         & mass_fractions, spec_property, mix_property)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_mass_averaged_property)
 
         ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(in), dimension(${sol.n_species}) :: spec_property
@@ -364,7 +374,7 @@ contains
 
     subroutine get_mixture_specific_heat_cp_mass(temperature, mass_fractions, cp_mix)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_mixture_specific_heat_cp_mass)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
@@ -380,7 +390,7 @@ contains
 
     subroutine get_mixture_specific_heat_cv_mass(temperature, mass_fractions, cv_mix)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_mixture_specific_heat_cv_mass)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
@@ -397,7 +407,7 @@ contains
 
     subroutine get_mixture_enthalpy_mass(temperature, mass_fractions, h_mix)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_mixture_enthalpy_mass)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
@@ -413,7 +423,7 @@ contains
 
     subroutine get_mixture_energy_mass(temperature, mass_fractions, e_mix)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_mixture_energy_mass)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
@@ -430,7 +440,7 @@ contains
 
     subroutine get_species_specific_heats_r(temperature, cp0_r)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_species_specific_heats_r)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(${sol.n_species}) :: cp0_r
@@ -443,7 +453,7 @@ contains
 
     subroutine get_species_enthalpies_rt(temperature, h0_rt)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_species_enthalpies_rt)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(${sol.n_species}) :: h0_rt
@@ -456,7 +466,7 @@ contains
 
     subroutine get_species_entropies_r(temperature, s0_r)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_species_entropies_r)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(${sol.n_species}) :: s0_r
@@ -469,7 +479,7 @@ contains
 
     subroutine get_species_gibbs_rt(temperature, g0_rt)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_species_gibbs_rt)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(${sol.n_species}) :: g0_rt
@@ -514,7 +524,7 @@ contains
     subroutine get_temperature( &
         & enthalpy_or_energy, t_guess, mass_fractions, do_energy, temperature)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_temperature)
 
         logical, intent(in) :: do_energy
         ${real_type}, intent(in)  :: enthalpy_or_energy
@@ -560,7 +570,7 @@ contains
     %if falloff_reactions:
     subroutine get_falloff_rates(temperature, concentrations, k_fwd)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_falloff_rates)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(${sol.n_species}) :: concentrations
@@ -619,7 +629,7 @@ contains
     %endif
     subroutine get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_fwd_rate_coefficients)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(${sol.n_species}) :: concentrations
@@ -652,7 +662,7 @@ contains
 
     subroutine get_net_rates_of_progress(temperature, concentrations, r_net)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_net_rates_of_progress)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(${sol.n_species}) :: concentrations
@@ -673,7 +683,7 @@ contains
 
     subroutine get_net_production_rates(density, temperature, mass_fractions, omega)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_net_production_rates)
 
         ${real_type}, intent(in) :: density
         ${real_type}, intent(in) :: temperature
