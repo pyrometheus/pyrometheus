@@ -14,8 +14,8 @@ build:
     python: "3.10"
   jobs:
     post_install:
-      - pip3 install .[docs]
+      - python3 -m pip install .[docs]
       # Generate the thermochem example
-      - python3 .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
+      - python3 -m pyrometheus -l python -m test/mechs/sandiego.yaml -n pyrometheus -o pyrometheus/thermochem_example.py -p gas
       # Reinstall pyrometheus as editable to take into account the generated file
       - python3 -m pip install --editable .

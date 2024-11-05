@@ -2,8 +2,7 @@
 Python code generation
 ----------------------
 
-.. autofunction:: gen_thermochem_code
-.. autofunction:: get_thermochem_class
+.. autoclass:: PythonCodeGenerator
 
 """
 
@@ -44,6 +43,9 @@ from mako.template import Template
 import pyrometheus.chem_expr
 
 from itertools import product
+
+from . import CodeGenerator, CodeGenerationOptions
+
 
 file_extension = "py"
 
@@ -129,7 +131,7 @@ class Thermochemistry:
     .. automethod:: get_specific_gas_constant
     .. automethod:: get_density
     .. automethod:: get_pressure
-    .. automethod:: get_mix_molecular_weight
+    .. automethod:: get_mixture_molecular_weight
     .. automethod:: get_concentrations
     .. automethod:: get_mole_fractions
     .. automethod:: get_mixture_specific_heat_cp_mass
@@ -265,16 +267,16 @@ class Thermochemistry:
             )
 
     def get_density(self, p, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
         rt = self.gas_constant * temperature
         return p * mmw / rt
 
     def get_pressure(self, rho, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
         rt = self.gas_constant * temperature
         return rho * rt / mmw
 
-    def get_mix_molecular_weight(self, mass_fractions):
+    def get_mixture_molecular_weight(self, mass_fractions):
         return 1/(
             %for i in range(sol.n_species):
             + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
@@ -532,7 +534,7 @@ class Thermochemistry:
         ])
 
     def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
         mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
         viscosities = self.get_species_viscosities(temperature)
         mix_rule_f = self._pyro_make_array([
@@ -544,7 +546,7 @@ class Thermochemistry:
         return sum(mole_fractions*viscosities/mix_rule_f)
 
     def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
         mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
         conductivities = self.get_species_thermal_conductivities(temperature)
         return 0.5*(sum(mole_fractions*conductivities)
@@ -552,7 +554,7 @@ class Thermochemistry:
 
     def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
             mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
         mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
         bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
         zeros = self._pyro_zeros_like(temperature)
@@ -576,59 +578,66 @@ class Thermochemistry:
                     %>pressure * mmw * denom[${sp}]), <%
                 %>bdiff_ij[${sp}][${sp}] / pressure),
             %endfor
-            ])""", strict_undefined=True)
+            ])
+""", strict_undefined=True)
 
 # }}}
 
 
-def gen_thermochem_code(sol: ct.Solution) -> str:
-    """For the mechanism given by *sol*, return Python source code for a class
-    conforming to a module containing a class called ``Thermochemistry``
-    adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
-    interface.
-    """
+class PythonCodeGenerator(CodeGenerator):
+    @staticmethod
+    def get_name() -> str:
+        return "python"
 
-    falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                   if r.reaction_type.startswith("falloff")]
-    three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                      if r.reaction_type == "three-body-Arrhenius"]
+    @staticmethod
+    def supports_overloading() -> bool:
+        return True
 
-    return code_tpl.render(
-        ct=ct,
-        sol=sol,
+    @staticmethod
+    def generate(name: str, sol: ct.Solution,
+                 opts: CodeGenerationOptions = None) -> str:
+        if opts is None:
+            opts = CodeGenerationOptions()
 
-        product=product,
+        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                    if r.reaction_type.startswith("falloff")]
+        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                        if r.reaction_type == "three-body-Arrhenius"]
 
-        str_np=str_np,
-        cgm=CodeGenerationMapper(),
-        Variable=p.Variable,
+        return code_tpl.render(
+            ct=ct,
+            sol=sol,
 
-        ce=pyrometheus.chem_expr,
+            product=product,
 
-        falloff_reactions=falloff_rxn,
-        three_body_reactions=three_body_rxn,
-    )
+            str_np=str_np,
+            cgm=CodeGenerationMapper(),
+            Variable=p.Variable,
 
+            ce=pyrometheus.chem_expr,
 
-def compile_class(code_str, class_name="Thermochemistry"):
-    exec_dict = {}
-    exec(compile(code_str, "<generated code>", "exec"), exec_dict)
-    exec_dict["_MODULE_SOURCE_CODE"] = code_str
+            falloff_reactions=falloff_rxn,
+            three_body_reactions=three_body_rxn,
+        )
 
-    return exec_dict[class_name]
+    @staticmethod
+    def compile_class(name: str, source: str):
+        """Compile the generated Python source code into a class definition"""
+        exec_dict = {}
+        exec(compile(source, "<generated code>", "exec"), exec_dict)
+        exec_dict["_MODULE_SOURCE_CODE"] = source
 
+        return exec_dict[name]
 
-def get_thermochem_class(sol: ct.Solution):
-    """For the mechanism given by *sol*, return a class conforming to the
-    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
-    """
-    return compile_class(gen_thermochem_code(sol))
-
-
-def cti_to_mech_file(cti_file_name, mech_file_name):
-    """Write python file for mechanism specified by CTI file."""
-    with open(mech_file_name, "w") as outf:
-        code = gen_thermochem_code(ct.Solution(cti_file_name, "gas"))
-        print(code, file=outf)
+    @staticmethod
+    def get_thermochem_class(sol: ct.Solution):
+        """For the mechanism given by *sol*, return an instance of Pyrometheus'
+        generated Python class for thermochemistry.
+        """
+        name = "Thermochemistry"
+        return PythonCodeGenerator.compile_class(
+            name=name,
+            source=PythonCodeGenerator.generate(name, sol)
+        )
 
 # vim: foldmethod=marker
