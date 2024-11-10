@@ -23,16 +23,18 @@ THE SOFTWARE.
 """
 
 import cantera as ct
-import numpy as np
 import importlib
 import pathlib
 import typing
 
 import pytest
-import pyrometheus
 
-from collections.abc import Iterable
 from abc import abstractmethod
+
+from pyrometheus.codegen import CodeGenerator
+from pyrometheus.codegen.python import PythonCodeGenerator
+from pyrometheus.codegen.cpp import CppCodeGenerator
+from pyrometheus.codegen.fortran import FortranCodeGenerator
 
 try:
     import jax
@@ -43,48 +45,12 @@ else:
     jax.config.update("jax_enable_x64", True)
 
 
-class Backend:
+class Backend(CodeGenerator):
     """Abstract class exposing methods to interact with Pyrometheus' different
     implementations ("backends")."""
 
     def __init__(self, pyro):
         self.pyro = pyro
-
-    @staticmethod
-    @abstractmethod
-    def get_name():
-        """Returns the name of the backend."""
-        pass
-
-    @abstractmethod
-    def fix_arg(self, x: typing.Any) -> typing.Any:
-        """Casts types, passed as arguments to the underlying Pyrometheus module,
-        to types appropriate for the backend."""
-        return x
-
-    @abstractmethod
-    def fix_result(self, result: typing.Any):
-        """Casts types, returned from calls to the underlying Pyrometheus module,
-        to types appropriate for use in Python. Ideally, the type should be the
-        same as the one which would have been returned by the original Pyrometheus
-        Python implementation."""
-        return result
-
-    @staticmethod
-    @abstractmethod
-    def generate_code(sol: ct.Solution, name: str) -> str:
-        """Invokes Pyrometheus to generate the thermochemistry code for this
-        backend and mechanism contained in the passed Cantera Solution object.
-
-        Parameters
-        ----------
-        sol : ct.Solution
-            The Cantera Solution object containing the mechanism to generate
-            thermochemistry code for.
-        name : str
-            A module, class, or namespace name for the generated code.
-        """
-        pass
 
     @staticmethod
     @abstractmethod
@@ -106,10 +72,7 @@ class Backend:
         return module
 
 
-class PythonBackend(Backend):
-    def get_name():
-        return "python"
-
+class PythonBackend(Backend, PythonCodeGenerator):
     @staticmethod
     def _gen_jax_wrapper(base_cls):
         class JaxPyroWrapper(base_cls):
@@ -164,10 +127,6 @@ class PythonBackend(Backend):
         return JaxPyroWrapper
 
     @staticmethod
-    def generate_code(sol: ct.Solution, name: str) -> str:
-        return pyrometheus.codegen.python.gen_thermochem_code(sol=sol)
-
-    @staticmethod
     def extract_interface(module, mechname: str, user_np):
         base_cls = module.Thermochemistry
 
@@ -177,38 +136,14 @@ class PythonBackend(Backend):
         return base_cls(user_np)
 
 
-class CppBackend(Backend):
-    def get_name():
-        return "cpp"
-
-    def fix_arg(self, x):
-        if isinstance(x, Iterable) and not isinstance(x, str):
-            return self.pyro.VectorDouble(x)
-        return super().fix_arg(x)
-
-    def fix_result(self, result):
-        if isinstance(result, self.pyro.VectorDouble):
-            return np.array(result)
-        return super().fix_result(result)
-
-    @staticmethod
-    def generate_code(sol: ct.Solution, name: str) -> str:
-        return pyrometheus.codegen.cpp.gen_thermochem_code(sol=sol, namespace=name)
+class CppBackend(Backend, CppCodeGenerator):
+    pass
 
 
-class FortranBackend(Backend):
-    def get_name():
-        return "fortran90"
-
+class FortranBackend(Backend, FortranCodeGenerator):
     @staticmethod
     def extract_interface(module, mechname: str, user_np):
-        return getattr(module, f"libpyro_fortran90_{mechname}")
-
-    @staticmethod
-    def generate_code(sol: ct.Solution, name: str) -> str:
-        return pyrometheus.codegen.fortran90.gen_thermochem_code(
-            sol=sol, module_name=name
-        )
+        return getattr(module, f"libpyro_fortran_{mechname}")
 
 
 BACKENDS: typing.Dict[str, Backend] = {
@@ -246,23 +181,11 @@ class Pyrometheus:
 
     def __getattr__(self, name: str):
         """Intercepts attribute accesses and method calls to this Pyrometheus
-        interface so that the casting of arguments and return values can be
-        performed, enabling seamless interaction with the underlying backend."""
-        attrib = getattr(self.pyro, name)
-        if not callable(attrib):
-            return attrib
+        interface to forward them to the underlying backend."""
+        if getattr(self.backend, name, None) is not None:
+            return getattr(self.backend, name)
 
-        def wrapper(*args, **kwargs):
-            """Wraps the method call to cast arguments and return values."""
-            assert (len(kwargs) == 0)
-
-            backend_instance = self.backend(self.pyro)
-
-            return backend_instance.fix_result(
-                attrib(*[backend_instance.fix_arg(x) for x in args])
-            )
-
-        return wrapper
+        return getattr(self.pyro, name)
 
 
 def pyro_init(mechname: str, user_np,

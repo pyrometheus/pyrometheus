@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name    = "pyrometheus"
-version = "1.0.2"
+version = "2.0.0"
 readme  = "README.rst"
 authors = [
   { name="Esteban Cisneros",  email="ecisnerosg88@gmail.com" },
@@ -36,6 +36,9 @@ dependencies = [
 Documentation = "https://pyrometheus.readthedocs.io"
 Source = "https://github.com/pyrometheus/pyrometheus"
 Issues = "https://github.com/pyrometheus/pyrometheus/issues"
+
+[project.scripts]
+pyrometheus = "pyrometheus.cli:main"
 
 [tool.flake8]
 ignore = [
