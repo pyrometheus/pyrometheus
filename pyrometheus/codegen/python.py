@@ -255,7 +255,7 @@ class Thermochemistry:
     def species_name(self, species_index):
         return self.species_name[species_index]
 
-    def species_index(self, species_name):
+    def get_species_index(self, species_name):
         return self.species_indices[species_name]
 
     def get_specific_gas_constant(self, mass_fractions):
