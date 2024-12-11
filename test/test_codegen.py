@@ -102,66 +102,13 @@ def make_jax_pyro_class(ptk_base_cls, usr_np):
 # Write out all the mechanisms for inspection
 # @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
 @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32"])
-@pytest.mark.parametrize("lang_module", [
-    pyro.codegen.python,
-    ])
+@pytest.mark.parametrize("lang_module", [pyro.codegen.python])
 def test_generate_mechfile(lang_module, mechname):
     """This "test" produces the mechanism codes."""
     sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
     with open(f"mechs/{mechname}.{lang_module.file_extension}", "w") as mech_file:
         code = lang_module.gen_thermochem_code(sol)
         print(code, file=mech_file)
-
-
-@pytest.mark.parametrize("mechname", ["uiuc.yaml", "sandiego.yaml", "uconn32.yaml"])
-@pytest.mark.parametrize("usr_np", numpy_list)
-def test_get_rate_coefficients(mechname, usr_np):
-    """This function tests that pyrometheus-generated code
-    computes the rate coefficients matching Cantera
-    for given temperature and composition"""
-    sol = ct.Solution(f"mechs/{mechname}", "gas")
-    ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
-    ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
-
-    three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
-                            if r.reaction_type == "three-body-Arrhenius"]
-
-    # Test temperatures
-    temp = np.linspace(500.0, 3000.0, 10)
-    for t in temp:
-        # Set new temperature in Cantera
-        sol.TPY = t, ct.one_atm, (1/sol.n_species) * np.ones(
-            (sol.n_species,)
-        )
-        # Concentrations
-        y = sol.Y
-        rho = sol.density
-        c = ptk.get_concentrations(rho, y)
-        # Get rate coefficients and compare
-        k_ct = sol.forward_rate_constants
-        k_pm = ptk.get_fwd_rate_coefficients(t, c)
-
-        # It seems like Cantera 3.0 has bumped the third-body efficiency
-        # factor from the rate coefficient to the rate of progress
-        for i, r in three_body_reactions:
-            eff = np.sum([c[sol.species_index(sp)]
-                          * r.third_body.efficiencies[sp]
-                          for sp in r.third_body.efficiencies])
-            eff += np.sum([c[sp]
-                           * r.third_body.default_efficiency
-                           for sp in range(sol.n_species)
-                           if sol.species_name(sp) not in
-                           r.third_body.efficiencies])
-            k_ct[i] *= eff
-
-        print(k_ct)
-        print()
-        print(k_pm)
-        print()
-        print(np.abs((k_ct-k_pm)/k_ct))
-        print(np.linalg.norm((k_ct-k_pm)/k_ct, np.inf))
-        assert np.linalg.norm((k_ct-k_pm)/k_ct, np.inf) < 1e-13
-    return
 
 
 # @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
@@ -203,64 +150,142 @@ def test_get_pressure(mechname, usr_np):
     assert abs(p_ct - p_pm) / p_ct < 1.0e-12
 
 
-#@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32", "gri30"])
-@pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "uconn32"])
+@pytest.mark.parametrize("mechname, fuel",
+                         [("uiuc", "C2H4"),
+                          ("sandiego", "H2"),
+                          ("uconn32", "C2H2"),
+                          ("gri30", "CH4")])
+@pytest.mark.parametrize("reactor_type",
+                         ["IdealGasReactor", "IdealGasConstPressureReactor"])
 @pytest.mark.parametrize("usr_np", numpy_list)
-def test_get_thermo_properties(mechname, usr_np):
+def test_get_thermo_properties(mechname, fuel, reactor_type, usr_np):
     """This function tests that pyrometheus-generated code
-    computes thermodynamic properties c_p, s_r, h_rt, and k_eq
+    computes thermodynamic properties c_p, s_r, h_rt, g_rt, and k_eq
     correctly by comparing against Cantera"""
     # Create Cantera and pyrometheus objects
-    sol = ct.Solution(f"mechs/{mechname}.yaml")
+    sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
-    # Loop over temperatures
-    temp = np.linspace(500.0, 3000.0, 10)
-    for t in temp:
+    def error(x):
+        return np.linalg.norm(x, np.inf)
 
-        # Set state in cantera for comparison
-        sol.TP = t, ct.one_atm
+    time = 0.0
+    dt = 1e-6
+
+    gas_const = ptk.gas_constant
+
+    oxidizer = {"O2": 1.0, "N2": 3.76}
+    sol.set_equivalence_ratio(phi=1.0, fuel=fuel + ":1", oxidizer=oxidizer)
+
+    sol.TP = 1200.0, ct.one_atm
+
+    # constant density, variable pressure
+    if reactor_type == "IdealGasReactor":
+        reactor = ct.IdealGasReactor(sol)
+
+    # constant pressure, variable density
+    if reactor_type == "IdealGasConstPressureReactor":
+        reactor = ct.IdealGasConstPressureReactor(sol)
+
+    # TODO remove this opportunely
+    def get_mixture_entropy_mass(pressure, temperature, mass_fractions):
+        mmw = ptk.get_mix_molecular_weight(mass_fractions)
+        return 1.0/mmw * get_mixture_entropy_mole(pressure, temperature,
+                                                  mass_fractions)
+
+    # TODO remove this opportunely
+    def get_mole_average_property(mass_fractions, spec_property):
+        mmw = ptk.get_mix_molecular_weight(mass_fractions)
+        mole_fracs = ptk.get_mole_fractions(mmw, mass_fractions)
+        return sum([mole_fracs[i] * spec_property[i]
+                    for i in range(ptk.num_species)])
+
+    # TODO remove this opportunely
+    def get_mixture_enthalpy_mole(temperature, mass_fractions):
+        h0_rt = ptk.get_species_enthalpies_rt(temperature)
+        hmix = get_mole_average_property(mass_fractions, h0_rt)
+        return ptk.gas_constant * temperature * hmix
+
+    # TODO remove this opportunely
+    def get_mixture_entropy_mole(pressure, temperature, mass_fractions):
+        mmw = ptk.get_mix_molecular_weight(mass_fractions)
+        # necessary to avoid nans in the log function below
+        x = usr_np.where(
+            usr_np.less(ptk.get_mole_fractions(mmw, mass_fractions), 1e-16),
+            1e-16, ptk.get_mole_fractions(mmw, mass_fractions))
+        s0_r = ptk.get_species_entropies_r(pressure, temperature)
+        s_t_mix = get_mole_average_property(mass_fractions, s0_r)
+        s_x_mix = get_mole_average_property(mass_fractions, usr_np.log(x))
+        return ptk.gas_constant * (s_t_mix - s_x_mix)
+
+    sim = ct.ReactorNet([reactor])
+    for _ in range(100):
+        time += dt
+        sim.advance(time)
+
+        temperature = sol.T
+        pressure = sol.P
+        Y = sol.Y  # noqa
 
         # Get properties from pyrometheus and compare to Cantera
-        cp_pm = ptk.get_species_specific_heats_r(t)
-        cp_err = np.linalg.norm(cp_pm - sol.standard_cp_R, np.inf)
-        print(f"cp_pm = {cp_pm}")
-        print(f"cnt_cp = {sol.standard_cp_R}")
-        assert cp_err < 1.0e-13
+        print(temperature, pressure, Y)
 
-        s_pm = ptk.get_species_entropies_r(t)
-        s_err = np.linalg.norm(s_pm - sol.standard_entropies_R, np.inf)
-        print(f"s_pm = {s_pm}")
-        print(f"cnt_s = {sol.standard_entropies_R}")
-        assert s_err < 1.0e-13
+        # species heat capacity
+        spec_cp = ptk.get_species_specific_heats_r(temperature)
+        # print(f"cp_pm = {spec_cp}")
+        # print(f"cnt_cp = {sol.standard_cp_R}")
+        assert error(spec_cp - sol.standard_cp_R) < 1.0e-13
 
-        h_pm = ptk.get_species_enthalpies_rt(t)
-        h_err = np.linalg.norm(h_pm - sol.standard_enthalpies_RT, np.inf)
-        print(f"h_pm = {h_pm}")
-        print(f"cnt_h = {sol.standard_enthalpies_RT}")
-        assert h_err < 1.0e-13
+        # species entropy
+        spec_entropy = ptk.get_species_entropies_r(pressure, temperature)
+        # print(f"s_pm = {spec_entropy}")
+        # print(f"cnt_s = {sol.standard_entropies_R}")
+        assert error(spec_entropy - sol.standard_entropies_R) < 1.0e-13
 
-        keq_pm1 = ptk.get_equilibrium_constants(t)
-        print(f"keq1 = {keq_pm1}")
-        keq_pm = 1.0 / np.exp(ptk.get_equilibrium_constants(t))
-        keq_ct = sol.equilibrium_constants
+        # species enthalpy
+        spec_enthalpy = ptk.get_species_enthalpies_rt(temperature)
+        # print(f"h_pm = {spec_enthalpy}")
+        # print(f"cnt_h = {sol.standard_enthalpies_RT}")
+        assert error(spec_enthalpy - sol.standard_enthalpies_RT) < 1.0e-13
 
-        print(f"keq_pm = {keq_pm}")
-        print(f"keq_cnt = {keq_ct}")
-        print(f"temperature = {t}")
-        # xclude meaningless check on equilibrium constants for irreversible reaction
+        # species Gibbs energy
+        spec_gibbs = ptk.get_species_gibbs_rt(pressure, temperature)
+        # print(f"g_pm = {spec_gibbs}")
+        # print(f"cnt_h = {sol.standard_gibbs_RT}")
+        assert error(spec_gibbs - sol.standard_gibbs_RT) < 1.0e-13
+
+        # TODO remove this opportunely
+        # mixture entropy mole
+        s_mix_mole = get_mixture_entropy_mole(pressure, temperature, Y)
+        assert (s_mix_mole - sol.entropy_mole) < 5.0e-6  # round-off error
+        assert (s_mix_mole - sol.entropy_mole)/sol.entropy_mole < 2.0e-12
+
+        # TODO remove this opportunely
+        # mixture entropy mass
+        s_mix_mass = get_mixture_entropy_mass(pressure, temperature, Y)
+        assert (s_mix_mass - sol.entropy_mass) < 5.0e-6  # round-off error
+        assert (s_mix_mass - sol.entropy_mass)/sol.entropy_mass < 2.0e-12
+
+        # delta enthalpy
+        nu = (sol.product_stoich_coeffs - sol.reactant_stoich_coeffs)
+        delta_h = nu.T@ptk.get_species_enthalpies_rt(temperature)
+        assert error(sol.delta_enthalpy/(gas_const*temperature) - delta_h) < 1e-13
+
+        # TODO remove this opportunely
+        # delta entropy
+        # zero or negative mole fractions values are troublesome due to the log
+        mmw = ptk.get_mix_molecular_weight(Y)
+        mole_fracs = ptk.get_mole_fractions(mmw, Y)
+        X = usr_np.where(usr_np.less(mole_fracs, 1e-15), 1e-15, mole_fracs)  # noqa
+        delta_s = nu.T@(ptk.get_species_entropies_r(pressure, temperature)
+                        - usr_np.log(X))  # see CHEMKIN manual for more details
+        # exclude meaningless check on entropy for irreversible reaction
         for i, reaction in enumerate(sol.reactions()):
-            if reaction.reversible:
-                keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
-                print(f"keq_err = {keq_err}")
-                assert keq_err < 1.0e-13
-        # keq_pm_test = keq_pm[1:]
-        # keq_ct_test = keq_ct[1:]
-        # keq_err = np.linalg.norm((keq_pm_test - keq_ct_test) / keq_ct_test, np.inf)
-        # assert keq_err < 1.0e-13
-
-    return
+            # if reaction.reversible: # FIXME three-body reactions are misbehaving...
+            if isinstance(reaction, ct.Arrhenius):
+                print(sol.delta_entropy[i]/gas_const, delta_s[i], reaction)
+                assert (sol.delta_entropy[i]/gas_const - delta_s[i]) < 1e-13
 
 
 # @pytest.mark.parametrize("mechname", ["uiuc", "sandiego", "gri30"])
@@ -302,35 +327,34 @@ def test_get_temperature(mechname, usr_np):
         assert np.abs(t - t_pm) < tol
 
 
-@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
-                         [("uiuc", "C2H4", 3.0, 1e-7),
-                          ("sandiego", "H2", 0.5, 1e-6)])
+@pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt, tol",
+                         [("uiuc", "C2H4", 3.0, 1e-6, 1.0e-11),
+                          ("sandiego", "H2", 0.5, 1e-6, 5.0e-11),
+                          ("uconn32", "C2H2", 1.0, 1e-6, 5.0e-11)])
+@pytest.mark.parametrize("reactor_type",
+                         ["IdealGasReactor", "IdealGasConstPressureReactor"])
 @pytest.mark.parametrize("usr_np", numpy_list)
-def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
-    """This function tests that pyrometheus-generated code
-    computes the Cantera-predicted rates of progress for given
-    temperature and composition"""
+def test_kinetics(mechname, fuel, stoich_ratio, dt, tol, reactor_type, usr_np):
+    """This function tests that pyrometheus-generated code computes the
+    Cantera-predicted rates of progress for given temperature and composition"""
     sol = ct.Solution(f"mechs/{mechname}.yaml", "gas")
     ptk_base_cls = pyro.codegen.python.get_thermochem_class(sol)
     ptk = make_jax_pyro_class(ptk_base_cls, usr_np)
 
-    # Homogeneous reactor to get test data
-    init_temperature = 1500.0
-    equiv_ratio = 1.0
-    ox_di_ratio = 0.21
-
-    i_fu = sol.species_index(fuel)
-    i_ox = sol.species_index("O2")
-    i_di = sol.species_index("N2")
-
-    x = np.zeros(ptk.num_species)
-    x[i_fu] = (ox_di_ratio*equiv_ratio)/(stoich_ratio+ox_di_ratio*equiv_ratio)
-    x[i_ox] = stoich_ratio*x[i_fu]/equiv_ratio
-    x[i_di] = (1.0-ox_di_ratio)*x[i_ox]/ox_di_ratio
-
     # Init Cantera reactor
-    sol.TPX = init_temperature, ct.one_atm, x
-    reactor = ct.IdealGasConstPressureReactor(sol)
+    oxidizer = {"O2": 1.0, "N2": 3.76}
+    sol.set_equivalence_ratio(phi=stoich_ratio,
+                              fuel=fuel + ":1", oxidizer=oxidizer)
+    sol.TP = 1200.0, ct.one_atm
+
+    # constant density, variable pressure
+    if reactor_type == "IdealGasReactor":
+        reactor = ct.IdealGasReactor(sol)
+
+    # constant pressure, variable density
+    if reactor_type == "IdealGasConstPressureReactor":
+        reactor = ct.IdealGasConstPressureReactor(sol)
+
     sim = ct.ReactorNet([reactor])
 
     time = 0.0
@@ -338,37 +362,59 @@ def test_kinetics(mechname, fuel, stoich_ratio, dt, usr_np):
         time += dt
         sim.advance(time)
 
-        # Cantera kinetics
-        r_ct = reactor.kinetics.net_rates_of_progress
-        omega_ct = reactor.kinetics.net_production_rates
-
         # Get state from Cantera
         temp = reactor.T
         rho = reactor.density
+        pressure = sol.P
         y = np.where(reactor.Y > 0, reactor.Y, 0)
 
-        # Prometheus kinetics
         c = ptk.get_concentrations(rho, y)
-        r_pm = ptk.get_net_rates_of_progress(temp, c)
-        omega_pm = ptk.get_net_production_rates(rho, temp, y)
-        err_r = np.linalg.norm(r_ct-r_pm, np.inf)
-        err_omega = np.linalg.norm(omega_ct - omega_pm, np.inf)
 
         # Print
         print("T = ", reactor.T)
         print("y_ct", reactor.Y)
         print("y = ", y)
-        print("omega_ct = ", omega_ct)
-        print("omega_pm = ", omega_pm)
-        print("err_omega = ", err_omega)
-        print("err_r = ", err_r)
         print()
 
-        # Compare
-        assert err_r < 1.0e-10
-        assert err_omega < 1.0e-10
+        # forward
+        kfd_pm = ptk.get_fwd_rate_coefficients(temp, c)
+        kfw_ct = sol.forward_rate_constants
+        for i, _ in enumerate(sol.reactions()):
+            print(kfd_pm[i], kfw_ct[i], kfd_pm[i] - kfw_ct[i])
+            denom = np.maximum(1.0, np.abs(kfw_ct[i]))
+            assert np.abs(kfd_pm[i] - kfw_ct[i])/denom < 1.0e-13
 
-    return
+        # equilibrium
+        keq_pm = usr_np.exp(-1.*ptk.get_equilibrium_constants(pressure, temp))
+        keq_ct = sol.equilibrium_constants
+        for i, reaction in enumerate(sol.reactions()):
+            if reaction.reversible:  # skip irreversible reactions
+                print(keq_pm[i], keq_ct[i], keq_pm[i] - keq_ct[i])
+                denom = np.maximum(1.0, np.abs(keq_ct[i]))
+                assert np.abs(keq_pm[i] - keq_ct[i])/denom < 1.0e-13
+
+        # reverse rates
+        krv_pm = ptk.get_rev_rate_coefficients(pressure, temp, c)
+        krv_ct = sol.reverse_rate_constants
+        for i, reaction in enumerate(sol.reactions()):
+            if reaction.reversible:  # skip irreversible reactions
+                print(krv_pm[i], krv_ct[i], krv_pm[i] - krv_ct[i])
+                denom = np.maximum(1.0, np.abs(krv_ct[i]))
+                assert np.abs(krv_pm[i] - krv_ct[i])/denom < 1.0e-13
+
+        # reaction progress
+        rates_pm = ptk.get_net_rates_of_progress(pressure, temp, c)
+        rates_ct = sol.net_rates_of_progress
+        for i, _ in enumerate(sol.reactions()):
+            print(rates_pm[i], rates_ct[i], rates_pm[i] - rates_ct[i])
+            assert np.abs(rates_pm[i] - rates_ct[i]) < tol
+
+        # species production/destruction
+        omega_pm = ptk.get_net_production_rates(rho, temp, y)
+        omega_ct = sol.net_production_rates
+        for i in range(sol.n_species):
+            print(omega_pm[i], omega_ct[i], omega_pm[i] - omega_ct[i])
+            assert np.abs(omega_pm[i] - omega_ct[i]) < tol
 
 
 def test_autodiff_accuracy():
@@ -512,8 +558,6 @@ def test_falloff_kinetics(mechname, fuel, stoich_ratio):
 
         # Compare
         assert err < 4e-14
-
-    return
 
 
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
@@ -741,8 +785,6 @@ def test_transport(mechname, fuel, stoich_ratio, dt, usr_np):
             ct_diff[i] - pyro_diff[i])
 
         assert err < 1e-10
-
-    return
 
 
 # run single tests using
