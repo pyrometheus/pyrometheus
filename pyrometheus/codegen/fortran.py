@@ -2,7 +2,7 @@
 Fortran code generation
 -----------------------
 
-.. autofunction:: gen_thermochem_code
+.. autoclass:: FortranCodeGenerator
 """
 
 import shlex
@@ -16,6 +16,8 @@ from mako.template import Template
 import pyrometheus.chem_expr
 from pymbolic.mapper.stringifier import (
         StringifyMapper, PREC_NONE, PREC_CALL, PREC_PRODUCT)
+
+from . import CodeGenerator, CodeGenerationOptions
 
 
 file_extension = "f90"
@@ -146,18 +148,50 @@ class FortranExpressionMapper(StringifyMapper):
                 enclosing_prec, PREC_CALL)
 
     def map_subscript(self, expr, enclosing_prec):
-        if isinstance(expr.index, tuple):
-            index_str = ", ".join(
-                    "int(%s)" % self.rec(i, PREC_NONE)
-                    for i in expr.index)
-        else:
-            index_str = "%s" % (expr.index+1)  # self.rec(expr.index, PREC_NONE)
+        def get_base_and_indices(expr):
+            if not hasattr(expr, "aggregate") or not hasattr(expr, "index"):
+                return expr, []
 
+            # Get current level indices
+            if isinstance(expr.index, tuple):
+                current_indices = [self.rec(i, PREC_NONE) for i in expr.index]
+            else:
+                current_indices = [self.rec(expr.index, PREC_NONE)]
+
+            # Only recurse if aggregate is another subscript
+            if (hasattr(expr.aggregate, "aggregate")
+            and hasattr(expr.aggregate, "index")):
+                base, prev_indices = get_base_and_indices(expr.aggregate)
+                return base, prev_indices + current_indices
+            else:
+                return expr.aggregate, current_indices
+
+        # Get base array and all indices
+        base_array, all_indices = get_base_and_indices(expr)
+
+        # Convert float indices (ending with 'd0') to integers and add 1
+        def convert_index(idx):
+            idx_str = str(idx)
+            if idx_str.endswith("d0"):
+                # Remove 'd0' suffix and convert to int
+                num = int(float(idx_str.replace("d0", "")))
+                return str(num + 1)
+            try:
+                # Try to convert to int and add 1
+                return str(int(idx_str) + 1)
+            except ValueError:
+                # If it's not a simple number, wrap in a +1
+                return f"({idx_str} + 1)"
+
+        # Format indices, converting floats to integers and adding 1
+        index_str = ", ".join(convert_index(idx) for idx in all_indices)
+
+        # Format the final expression
         return self.parenthesize_if_needed(
-                self.format("%s(%s)",
-                    self.rec(expr.aggregate, PREC_CALL),
-                    index_str),
-                enclosing_prec, PREC_CALL)
+            self.format("%s(%s)", self.rec(base_array, PREC_CALL), index_str),
+            enclosing_prec,
+            PREC_CALL
+        )
 
     def map_product(self, expr, enclosing_prec, *args, **kwargs):
         # This differs from the superclass only by adding spaces
@@ -223,12 +257,12 @@ module ${module_name}
     integer, parameter :: num_falloff = ${len(falloff_reactions)}
     ${real_type}, parameter :: one_atm = ${float_to_fortran(ct.one_atm)}
     ${real_type}, parameter :: gas_constant = ${float_to_fortran(ct.gas_constant)}
-    ${real_type}, parameter :: mol_weights(${sol.n_species}) = &
+    ${real_type}, parameter :: molecular_weights(${sol.n_species}) = &
         (/ ${str_np(sol.molecular_weights)} /)
-    ${real_type}, parameter :: inv_weights(${sol.n_species}) = &
+    ${real_type}, parameter :: inv_molecular_weights(${sol.n_species}) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
-    !$acc declare create(mol_weights, inv_weights)
+    !$acc declare create(molecular_weights, inv_molecular_weights)
 
     character(len=12), parameter :: species_names(${sol.n_species}) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
@@ -290,7 +324,7 @@ contains
 
         specific_gas_constant = gas_constant * ( &
                 %for i in range(sol.n_species):
-                    + inv_weights(${i+1})*mass_fractions(${i+1}) &
+                    + inv_molecular_weights(${i+1})*mass_fractions(${i+1}) &
                 %endfor
                 )
 
@@ -337,7 +371,7 @@ contains
 
         mix_mol_weight = 1.0d0 / ( &
                 %for i in range(sol.n_species):
-                    + inv_weights(${i+1})*mass_fractions(${i+1}) &
+                    + inv_molecular_weights(${i+1})*mass_fractions(${i+1}) &
                 %endfor
                 )
 
@@ -351,9 +385,21 @@ contains
         ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out), dimension(${sol.n_species}) :: concentrations
 
-        concentrations = density * inv_weights * mass_fractions
+        concentrations = density * inv_molecular_weights * mass_fractions
 
     end subroutine get_concentrations
+
+    subroutine get_mole_fractions(mix_mol_weight, mass_fractions, mole_fractions)
+
+        GPU_ROUTINE(get_mole_fractions)
+
+        ${real_type}, intent(in) :: mix_mol_weight
+        ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: mole_fractions
+
+        mole_fractions = inv_molecular_weights * mass_fractions * mix_mol_weight
+
+    end subroutine get_mole_fractions
 
     subroutine get_mass_averaged_property(&
         & mass_fractions, spec_property, mix_property)
@@ -364,11 +410,7 @@ contains
         ${real_type}, intent(in), dimension(${sol.n_species}) :: spec_property
         ${real_type}, intent(out) :: mix_property
 
-        mix_property = ( &
-            %for i in range(sol.n_species):
-                + inv_weights(${i+1})*mass_fractions(${i+1})*spec_property(${i+1}) &
-            %endfor
-        )
+        mix_property = sum(inv_molecular_weights*mass_fractions*spec_property)
 
     end subroutine get_mass_averaged_property
 
@@ -703,39 +745,188 @@ contains
 
     end subroutine get_net_production_rates
 
-end module
+    subroutine get_species_viscosities(temperature, viscosities)
+
+        GPU_ROUTINE(get_species_viscosities)
+
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: viscosities
+
+        %for sp in range(sol.n_species):
+        viscosities(${sp+1}) = ${cgm(ce.viscosity_polynomial_expr(
+            sol.get_viscosity_polynomial(sp),
+            Variable("temperature")))}
+        %endfor
+
+    end subroutine get_species_viscosities
+
+    subroutine get_species_thermal_conductivities(temperature, conductivities)
+
+        GPU_ROUTINE(get_species_thermal_conductivities)
+
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: conductivities
+
+        %for sp in range(sol.n_species):
+        conductivities(${sp+1}) = ${cgm(ce.conductivity_polynomial_expr(
+            sol.get_thermal_conductivity_polynomial(sp),
+            Variable("temperature")))}
+        %endfor
+
+    end subroutine get_species_thermal_conductivities
+
+    subroutine get_species_binary_mass_diffusivities(temperature, diffusivities)
+
+        GPU_ROUTINE(get_species_binary_mass_diffusivities)
+
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(out), dimension(${sol.n_species}, ${sol.n_species})&
+            :: diffusivities
+
+        %for i in range(sol.n_species):
+        %for j in range(sol.n_species):
+        diffusivities(${i + 1}, ${j + 1}) = ${cgm(ce.diffusivity_polynomial_expr(
+            sol.get_binary_diff_coeffs_polynomial(i, j),
+            Variable("temperature")))}
+        %endfor
+        %endfor
+
+    end subroutine get_species_binary_mass_diffusivities
+
+    subroutine get_mixture_viscosity_mixavg(&
+        temperature, mass_fractions, mixture_viscosity_mixavg)
+
+        GPU_ROUTINE(get_mixture_viscosity_mixavg)
+
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out) :: mixture_viscosity_mixavg
+
+        ${real_type} :: mix_mol_weight
+        ${real_type}, dimension(${sol.n_species}) :: &
+            mole_fractions, viscosities, mix_rule_f
+
+        call get_mixture_molecular_weight(mass_fractions, mix_mol_weight)
+        call get_mole_fractions(mix_mol_weight, mass_fractions, mole_fractions)
+        call get_species_viscosities(temperature, viscosities)
+
+        %for sp in range(sol.n_species):
+        mix_rule_f(${sp + 1}) = ${cgm(ce.viscosity_mixture_rule_wilke_expr(sol, sp,
+            Variable("mole_fractions"), Variable("viscosities")))}
+        %endfor
+
+        mixture_viscosity_mixavg = sum(mole_fractions*viscosities/mix_rule_f)
+
+    end subroutine get_mixture_viscosity_mixavg
+
+    subroutine get_mixture_thermal_conductivity_mixavg(temperature, &
+        mass_fractions, mixture_thermal_conductivity_mixavg)
+
+        GPU_ROUTINE(get_mixture_viscosity_mixavg)
+
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out) :: mixture_thermal_conductivity_mixavg
+
+        ${real_type} :: mix_mol_weight
+        ${real_type}, dimension(${sol.n_species}) :: mole_fractions, conductivities
+
+        call get_mixture_molecular_weight(mass_fractions, mix_mol_weight)
+        call get_mole_fractions(mix_mol_weight, mass_fractions, mole_fractions)
+        call get_species_thermal_conductivities(temperature, conductivities)
+
+        mixture_thermal_conductivity_mixavg = 0.5*(&
+            sum(mole_fractions*conductivities) + &
+            1/sum(mole_fractions/conductivities))
+
+    end subroutine get_mixture_thermal_conductivity_mixavg
+
+    subroutine get_species_mass_diffusivities_mixavg(&
+        pressure, temperature, mass_fractions, mass_diffusivities_mixavg)
+
+        GPU_ROUTINE(get_species_mass_diffusivities_mixavg)
+
+        ${real_type}, intent(in) :: pressure, temperature
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: &
+            mass_diffusivities_mixavg
+
+        ${real_type} :: mix_mol_weight
+        ${real_type}, dimension(${sol.n_species}) :: mole_fractions, x_sum, denom
+        ${real_type}, dimension(${sol.n_species}, ${sol.n_species}) :: bdiff_ij
+
+        call get_mixture_molecular_weight(mass_fractions, mix_mol_weight)
+        call get_mole_fractions(mix_mol_weight, mass_fractions, mole_fractions)
+        call get_species_binary_mass_diffusivities(temperature, bdiff_ij)
+
+        %for sp in range(sol.n_species):
+        x_sum(${sp + 1}) = ${cgm(ce.diffusivity_mixture_rule_denom_expr(
+                sol, sp, Variable("mole_fractions"), Variable("bdiff_ij")))}
+        %endfor
+
+        %for sp in range(sol.n_species):
+        denom(${sp + 1}) = x_sum(${sp + 1}) - &
+            mole_fractions(${sp + 1})/bdiff_ij(${sp + 1}, ${sp + 1})
+        %endfor
+
+        %for sp in range(sol.n_species):
+        if (denom(${sp + 1}) .gt. 0d0) then
+        mass_diffusivities_mixavg(${sp + 1}) = &
+            (mix_mol_weight - &
+                mole_fractions(${sp + 1})*molecular_weights(${sp + 1}))&
+            /(pressure * mix_mol_weight * denom(${sp + 1}))
+        else
+        mass_diffusivities_mixavg(${sp + 1}) = &
+            bdiff_ij(${sp + 1}, ${sp + 1}) / pressure
+        end if
+        %endfor
+
+    end subroutine get_species_mass_diffusivities_mixavg
+
+end module ${module_name}
 """)
 
 # }}}
 
 
-def gen_thermochem_code(sol: ct.Solution, real_type="real(dp)",
-        module_name="thermochem") -> str:
-    """For the mechanism given by *sol*, return Fortran source code.
-    """
+class FortranCodeGenerator(CodeGenerator):
+    @staticmethod
+    def get_name() -> str:
+        return "fortran"
 
-    falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                   if r.reaction_type.startswith("falloff")]
-    three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                      if r.reaction_type == "three-body-Arrhenius"]
+    @staticmethod
+    def supports_overloading() -> bool:
+        return False
 
-    return wrap_code(module_tpl.render(
-        ct=ct,
-        sol=sol,
+    @staticmethod
+    def generate(name: str,
+                 sol: ct.Solution,
+                 opts: CodeGenerationOptions = None) -> str:
+        if opts is None:
+            opts = CodeGenerationOptions()
 
-        str_np=str_np,
-        cgm=FortranExpressionMapper(),
-        Variable=p.Variable,
-        float_to_fortran=float_to_fortran,
+        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                    if r.reaction_type.startswith("falloff")]
+        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                        if r.reaction_type == "three-body-Arrhenius"]
 
-        real_type=real_type,
-        module_name=module_name,
+        return wrap_code(module_tpl.render(
+            ct=ct,
+            sol=sol,
 
-        ce=pyrometheus.chem_expr,
+            str_np=str_np,
+            cgm=FortranExpressionMapper(),
+            Variable=p.Variable,
+            float_to_fortran=float_to_fortran,
 
-        falloff_reactions=falloff_rxn,
-        three_body_reactions=three_body_rxn
-    ))
+            real_type=opts.scalar_type or "real(dp)",
+            module_name=name,
+
+            ce=pyrometheus.chem_expr,
+
+            falloff_reactions=falloff_rxn,
+            three_body_reactions=three_body_rxn
+        ))
 
 
 # vim: foldmethod=marker

@@ -28,8 +28,13 @@ jobs:
         - name: Flake8
           run: |
             python3 -m pip install .[dev]
-            python3 .ci/generate-test-mech.py
-            flake8 --extend-ignore E501,Q000 test/mechs
+            for mech in test/mechs/*.yaml; do
+              python3 -m pyrometheus                            \
+                  --language python      --mechanism "$mech"    \
+                  --name     pyrometheus --output    "$mech.py" \
+                  --phase    gas
+            done
+            python3 -m flake8 --extend-ignore E501,Q000 test/mechs
 
     pytest:
         name: Pytest Conda Py${{ matrix.python_version }}
@@ -49,7 +54,7 @@ jobs:
                 python3 -m pip install .[test]
                 cmake -S test -B build -Dpybind11_DIR=`python3 -m pybind11 --cmakedir`
                 cmake --build build --parallel $(nproc)
-                ctest --test-dir build
+                ctest --test-dir build --output-on-failure -j $(nproc)
 
     docs:
         name: Documentation
@@ -62,5 +67,8 @@ jobs:
         - name: 'Build Docs'
           run: |
             python3 -m pip install -e .[docs]
-            python3 .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
+            python3 -m pyrometheus                                                   \
+                --language python      --mechanism test/mechs/sandiego.yaml          \
+                --name     pyrometheus --output    pyrometheus/thermochem_example.py \
+                --phase    gas
             cd doc && make html SPHINXOPTS='-W --keep-going -n'

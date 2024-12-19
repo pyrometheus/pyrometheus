@@ -2,7 +2,7 @@
 .. automodule:: pyrometheus.chem_expr
 .. automodule:: pyrometheus.codegen.python
 .. automodule:: pyrometheus.codegen.cpp
-.. automodule:: pyrometheus.codegen.fortran90
+.. automodule:: pyrometheus.codegen.fortran
 """
 
 __copyright__ = """
@@ -29,7 +29,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+import typing
 
-import pyrometheus.codegen.python  # noqa: F401
-import pyrometheus.codegen.cpp  # noqa: F401
-import pyrometheus.codegen.fortran90  # noqa: F401
+from .codegen import CodeGenerator, CodeGenerationOptions  # noqa: F401
+from .codegen.python import PythonCodeGenerator
+from .codegen.cpp import CppCodeGenerator
+from .codegen.fortran import FortranCodeGenerator
+
+
+def get_code_generators() -> typing.Dict[str, CodeGenerator]:
+    return {
+        PythonCodeGenerator.get_name(): PythonCodeGenerator,
+        CppCodeGenerator.get_name(): CppCodeGenerator,
+        FortranCodeGenerator.get_name(): FortranCodeGenerator,
+    }
+
+
+# Python is the default code generator, expose its CodeGenerator's static methods
+# globally in this module.
+for name, method in PythonCodeGenerator.__dict__.items():
+    if isinstance(method, staticmethod):
+        globals()[name] = method
