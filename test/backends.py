@@ -107,7 +107,7 @@ class PythonBackend(Backend, PythonCodeGenerator):
                 # 'result[:] = res_list' may look tempting, however:
                 # https://github.com/numpy/numpy/issues/16564
                 for idx in range(len(res_list)):
-                    result[idx] = res_list[idx]
+                    result = result.at[idx].set(res_list[idx])
 
                 return result
 
