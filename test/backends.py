@@ -95,10 +95,15 @@ class PythonBackend(Backend, PythonCodeGenerator):
                     for e in res_list)
 
                 if all_numbers:
-                    return self.usr_np.array(res_list, dtype=self.usr_np.float64)
+                    return self.usr_np.array(
+                        res_list, dtype=self.usr_np.float64
+                    )
 
-                result = self.usr_np.empty_like(res_list, dtype=object,
-                                                shape=(len(res_list),))
+                result = self.usr_np.empty_like(
+                    self.usr_np.array(res_list),
+                    dtype=object,
+                    shape=(len(res_list),)
+                )
 
                 # 'result[:] = res_list' may look tempting, however:
                 # https://github.com/numpy/numpy/issues/16564

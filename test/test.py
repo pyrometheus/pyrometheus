@@ -77,9 +77,12 @@ request: pytest.FixtureRequest):
             sol.Y = sp_name + ":1"
             # Errors
             err_visc = user_np.abs(pyro_visc[sp_idx] - sol.viscosity)
-            err_cond = user_np.abs(pyro_cond[sp_idx] - sol.thermal_conductivity)
-            err_diff = user_np.abs(pyro_diff[sp_idx][sp_idx]/pres
-                                  - ct_diff[sp_idx, sp_idx])
+            err_cond = user_np.abs(
+                pyro_cond[sp_idx] - sol.thermal_conductivity
+            )
+            err_diff = user_np.abs(
+                pyro_diff[sp_idx][sp_idx]/pres - ct_diff[sp_idx, sp_idx]
+            )
             assert err_visc < 1e-12
             assert err_cond < 1e-12
             assert err_diff < 1e-12
@@ -107,7 +110,9 @@ request: pytest.FixtureRequest):
 
         pyro_visc = ptk.get_mixture_viscosity_mixavg(sol.T, sol.Y)
         pyro_cond = ptk.get_mixture_thermal_conductivity_mixavg(sol.T, sol.Y)
-        pyro_diff = ptk.get_species_mass_diffusivities_mixavg(sol.P, sol.T, sol.Y)
+        pyro_diff = ptk.get_species_mass_diffusivities_mixavg(
+            sol.P, sol.T, sol.Y
+        )
         err_visc = user_np.abs(pyro_visc - sol.viscosity)
         err_cond = user_np.abs(pyro_cond - sol.thermal_conductivity)
         err_diff = user_np.linalg.norm(pyro_diff - sol.mix_diff_coeffs)
@@ -134,7 +139,9 @@ request: pytest.FixtureRequest):
     temp = t_mix * user_np.ones(num_points)
 
     if ptk.supports_overloading():
-        pyro_diff_cold = ptk.get_species_mass_diffusivities_mixavg(pres, temp, y)
+        pyro_diff_cold = ptk.get_species_mass_diffusivities_mixavg(
+            pres, temp, y
+        )
     else:
         pyro_diff_cold = np.zeros([sol.n_species, num_points])
         for i in range(num_points):
