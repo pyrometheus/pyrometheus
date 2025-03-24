@@ -51,9 +51,6 @@ def test_get_rate_coefficients(mechname: str, user_np,
     sol, ptk = pyro_init(mechname, user_np, request)
     three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
                             if r.reaction_type == "three-body-Arrhenius"]
-
-    import sys
-    print(10 * '==', ptk, file=sys.stderr)
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
@@ -129,7 +126,7 @@ def test_get_pressure(mechname: str, user_np, request: pytest.FixtureRequest):
 ])
 @pytest.mark.parametrize("user_np", numpy_list)
 def test_get_thermo_properties(mechname: str, user_np,
-request: pytest.FixtureRequest):
+                               request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes thermodynamic properties c_p, s_r, h_rt, and k_eq
     correctly by comparing against Cantera"""
@@ -171,17 +168,14 @@ request: pytest.FixtureRequest):
                 keq_err = np.abs((keq_pm[i] - keq_ct[i]) / keq_ct[i])
                 print(f"i = {i}, keq_err = {keq_err}")
                 assert keq_err < 1.0e-13
-        # keq_pm_test = keq_pm[1:]
-        # keq_ct_test = keq_ct[1:]
-        # keq_err = np.linalg.norm((keq_pm_test - keq_ct_test) / keq_ct_test, np.inf)
-        # assert keq_err < 1.0e-13
 
 
 @pytest.mark.parametrize("mechname", [
     "uiuc", "sandiego", "gri30", "hong"
 ])
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_get_temperature(mechname: str, user_np, request: pytest.FixtureRequest):
+def test_get_temperature(mechname: str, user_np,
+                         request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted temperature for given internal energy
     and mass fractions"""
@@ -222,7 +216,7 @@ def test_get_temperature(mechname: str, user_np, request: pytest.FixtureRequest)
 )
 @pytest.mark.parametrize("user_np", numpy_list)
 def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
-user_np, request: pytest.FixtureRequest):
+                  user_np, request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted rates of progress for given
     temperature and composition"""
@@ -313,7 +307,9 @@ def test_autodiff_accuracy(request: pytest.FixtureRequest):
     def chemical_source_term(mass_fractions):
         temperature = ptk.get_temperature(enthalpy, guess_temp, mass_fractions)
         density = ptk.get_density(ptk.one_atm, temperature, mass_fractions)
-        return ptk.get_net_production_rates(density, temperature, mass_fractions)
+        return ptk.get_net_production_rates(
+            density, temperature, mass_fractions
+        )
 
     from jax import jacfwd
     chemical_jacobian = jacfwd(chemical_source_term)
@@ -322,8 +318,8 @@ def test_autodiff_accuracy(request: pytest.FixtureRequest):
 
         # Second-order (central) difference
         return jnp.array([
-            (chemical_source_term(mass_fractions+delta_y*v)
-                    - chemical_source_term(mass_fractions-delta_y*v))/(2*delta_y)
+            (chemical_source_term(mass_fractions+delta_y*v) -
+             chemical_source_term(mass_fractions-delta_y*v))/(2*delta_y)
             for v in jnp.eye(len(mass_fractions))
         ]).T
 
@@ -355,8 +351,8 @@ def test_autodiff_accuracy(request: pytest.FixtureRequest):
      ("hong", "H2", 0.5)]
 )
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_falloff_kinetics(mechname: str, fuel: str, stoich_ratio: float, user_np,
-request: pytest.FixtureRequest):
+def test_falloff_kinetics(mechname: str, fuel: str, stoich_ratio: float,
+                          user_np, request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the Cantera-predicted falloff rate coefficients"""
 
@@ -405,7 +401,9 @@ request: pytest.FixtureRequest):
 
         # Prometheus kinetics
         concentrations = ptk.get_concentrations(density, mass_fractions)
-        k_pm = np.array(ptk.get_fwd_rate_coefficients(temperature, concentrations))
+        k_pm = np.array(
+            ptk.get_fwd_rate_coefficients(temperature, concentrations)
+        )
         err = np.linalg.norm(
             np.where(
                 k_ct[i_falloff],
