@@ -173,7 +173,7 @@ class Thermochemistry:
         self.num_species = ${sol.n_species}
         self.num_reactions = ${sol.n_reactions}
         self.num_falloff = ${
-            sum(1 if isinstance(r, ct.FalloffReaction) else 0
+            sum(1 if isinstance(r.rate, ct.FalloffRate) else 0
             for r in sol.reactions())}
 
         self.one_atm = ${ct.one_atm}
