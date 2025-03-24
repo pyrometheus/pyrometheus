@@ -3,7 +3,7 @@ Welcome to pyrometheus's documentation!
 
 .. When you update this description, consider also updating the one in the README.
 
-Pyrometheus is a code generator for chemical mechanisms, based on :ref:`cantera <https://cantera.org/3.1/index.html>`_.
+Pyrometheus is a code generator for chemical mechanisms, based on `cantera <https://cantera.org/3.1/index.html>`_.
 
 Here’s an example to give you an impression:
 
