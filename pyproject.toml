@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: Software Development :: Code Generators"
 ]
 dependencies = [
-    "cantera == 3.0.1",
+    "cantera == 3.1.0",
     "pymbolic",
     "mako",
 ]
