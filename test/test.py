@@ -318,8 +318,8 @@ def test_autodiff_accuracy(request: pytest.FixtureRequest):
 
         # Second-order (central) difference
         return jnp.array([
-            (chemical_source_term(mass_fractions+delta_y*v) -
-             chemical_source_term(mass_fractions-delta_y*v))/(2*delta_y)
+            (chemical_source_term(mass_fractions+delta_y*v)
+             - chemical_source_term(mass_fractions-delta_y*v))/(2*delta_y)
             for v in jnp.eye(len(mass_fractions))
         ]).T
 
