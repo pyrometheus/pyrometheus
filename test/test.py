@@ -44,13 +44,16 @@ from backends import PythonBackend, pyro_init, BACKENDS
 ])
 @pytest.mark.parametrize("user_np", numpy_list)
 def test_get_rate_coefficients(mechname: str, user_np,
-request: pytest.FixtureRequest):
+                               request: pytest.FixtureRequest):
     """This function tests that pyrometheus-generated code
     computes the rate coefficients matching Cantera
     for given temperature and composition"""
     sol, ptk = pyro_init(mechname, user_np, request)
     three_body_reactions = [(i, r) for i, r in enumerate(sol.reactions())
                             if r.reaction_type == "three-body-Arrhenius"]
+
+    import sys
+    print(10 * '==', ptk, file=sys.stderr)
     # Test temperatures
     temp = np.linspace(500.0, 3000.0, 10)
     for t in temp:
