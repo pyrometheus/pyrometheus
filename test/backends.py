@@ -101,7 +101,6 @@ class PythonBackend(Backend, PythonCodeGenerator):
 
                 result = self.usr_np.empty_like(
                     self.usr_np.array(res_list),
-                    shape=(len(res_list),)
                 )
 
                 # 'result[:] = res_list' may look tempting, however:

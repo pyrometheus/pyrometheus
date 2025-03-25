@@ -18,18 +18,19 @@ def main():
     )
     version = pkg_resources.get_distribution("pyrometheus").version
     parser.add_argument("--version",
-        action="version", version=f"%(prog)s {version}")
+                        action="version", version=f"%(prog)s {version}")
     parser.add_argument("-l", "--lang", "--language",
-        help="Language to generate code for.",
-        choices=generators.keys(), required=True)
+                        help="Language to generate code for.",
+                        choices=generators.keys(), required=True)
     parser.add_argument("-m", "--mech", "--mechanism",
-        help="Path to the mechanism file.", required=True)
+                        help="Path to the mechanism file.", required=True)
     parser.add_argument("-o", "--output",
-        help="Path to the output file.", required=True)
+                        help="Path to the output file.", required=True)
     parser.add_argument("-n", "--name", "--namespace",
-        help="Namespace to use for the generated code.", required=True)
+                        help="Namespace to use for the generated code.",
+                        required=True)
     parser.add_argument("-p", "--phase",
-        help="Phase name to use for the generated code.")
+                        help="Phase name to use for the generated code.")
 
     args = parser.parse_args()
 

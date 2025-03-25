@@ -40,12 +40,12 @@ from backends import pyro_init
 
 
 @pytest.mark.parametrize("mechname, fuel, stoich_ratio, dt",
-[("uiuc", "C2H4", 1.0, 1e-7),
- ("sandiego", "H2", 0.5, 1e-7),
- ("uconn32", "C2H4", 3, 1e-7)])
+                         [("uiuc", "C2H4", 1.0, 1e-7),
+                          ("sandiego", "H2", 0.5, 1e-7),
+                          ("uconn32", "C2H4", 3, 1e-7)])
 @pytest.mark.parametrize("user_np", numpy_list)
-def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float, user_np,
-request: pytest.FixtureRequest):
+def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
+                   user_np, request: pytest.FixtureRequest):
     """This function tests multiple aspects of pyro transport
     1. Transport properties of individual species
     2. Transport properties of species mixtures
