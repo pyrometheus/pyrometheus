@@ -192,13 +192,18 @@ def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
     # Get pyro values
     temp = t_mix * user_np.ones([num_points, num_points])
     if ptk.supports_overloading():
-        pyro_diff_cold = ptk.get_species_mass_diffusivities_mixavg(pres, temp, y)
+        pyro_diff_cold = ptk.get_species_mass_diffusivities_mixavg(
+            pres, temp, y
+        )
     else:
         pyro_diff_cold = np.zeros([sol.n_species, num_points, num_points])
         for i in range(num_points):
             for j in range(num_points):
-                pyro_diff_cold[:, i, j] = ptk.get_species_mass_diffusivities_mixavg(
-                    pres, temp[i, j], y[:, i, j])
+                pyro_diff_cold[:, i, j] = (
+                    ptk.get_species_mass_diffusivities_mixavg(
+                        pres, temp[i, j], y[:, i, j]
+                    )
+                )
 
     # Equilibrium values (from 1D test)
     temp_equil = np.tile(temp_equil, (num_points, 1))
@@ -230,8 +235,10 @@ def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         pyro_diff_equil = np.zeros([sol.n_species, num_points, num_points])
         for i in range(num_points):
             for j in range(num_points):
-                pyro_diff_equil[:, i, j] = ptk.get_species_mass_diffusivities_mixavg(
-                    pres, temp_equil[i, j], y_equil[:, i, j])
+                pyro_diff_equil[:, i, j] = (
+                    ptk.get_species_mass_diffusivities_mixavg(
+                        pres, temp_equil[i, j], y_equil[:, i, j])
+                )
 
     # Compare
     for i in range(sol.n_species):
