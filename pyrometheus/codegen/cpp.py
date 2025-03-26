@@ -113,7 +113,7 @@ struct ${name}
     constexpr static int num_species = ${sol.n_species};
     constexpr static int num_reactions = ${sol.n_reactions};
     constexpr static int num_falloff = ${
-        sum(1 if isinstance(r, ct.FalloffReaction) else 0
+        sum(1 if isinstance(r.rate, ct.FalloffRate) else 0
         for r in sol.reactions())};
 
     constexpr static const char* species_names[] = {
