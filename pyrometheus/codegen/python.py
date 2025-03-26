@@ -109,7 +109,6 @@ code_tpl = Template(
 \"""
 
 
-from warnings import warn
 import numpy as np
 
 
