@@ -2,8 +2,7 @@
 Python code generation
 ----------------------
 
-.. autofunction:: gen_thermochem_code
-.. autofunction:: get_thermochem_class
+.. autoclass:: PythonCodeGenerator
 
 """
 
@@ -42,6 +41,10 @@ import numpy as np  # noqa: F401
 
 from mako.template import Template
 import pyrometheus.chem_expr
+
+from itertools import product
+
+from . import CodeGenerator, CodeGenerationOptions
 
 
 file_extension = "py"
@@ -128,12 +131,19 @@ class Thermochemistry:
     .. automethod:: get_specific_gas_constant
     .. automethod:: get_density
     .. automethod:: get_pressure
-    .. automethod:: get_mix_molecular_weight
+    .. automethod:: get_mixture_molecular_weight
     .. automethod:: get_concentrations
+    .. automethod:: get_mole_fractions
     .. automethod:: get_mixture_specific_heat_cp_mass
     .. automethod:: get_mixture_specific_heat_cv_mass
     .. automethod:: get_mixture_enthalpy_mass
     .. automethod:: get_mixture_internal_energy_mass
+    .. automethod:: get_species_viscosities
+    .. automethod:: get_mixture_viscosity_mixavg
+    .. automethod:: get_species_thermal_conductivities
+    .. automethod:: get_mixture_thermal_conductivity_mixavg
+    .. automethod:: get_species_binary_mass_diffusivities
+    .. automethod:: get_species_mass_diffusivities_mixavg
     .. automethod:: get_species_specific_heats_r
     .. automethod:: get_species_enthalpies_rt
     .. automethod:: get_species_entropies_r
@@ -251,27 +261,27 @@ class Thermochemistry:
 
     def get_specific_gas_constant(self, mass_fractions):
         return self.gas_constant * (
-                %for i in range(sol.n_species):
-                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
-                %endfor
-                )
+            %for i in range(sol.n_species):
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+            %endfor
+            )
 
     def get_density(self, p, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
         rt = self.gas_constant * temperature
         return p * mmw / rt
 
     def get_pressure(self, rho, temperature, mass_fractions):
-        mmw = self.get_mix_molecular_weight(mass_fractions)
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
         rt = self.gas_constant * temperature
         return rho * rt / mmw
 
-    def get_mix_molecular_weight(self, mass_fractions):
+    def get_mixture_molecular_weight(self, mass_fractions):
         return 1/(
-                %for i in range(sol.n_species):
-                    + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
-                %endfor
-                )
+            %for i in range(sol.n_species):
+            + self.inv_molecular_weights[${i}]*mass_fractions[${i}]
+            %endfor
+            )
 
     def get_concentrations(self, rho, mass_fractions):
         return self._pyro_make_array([
@@ -280,11 +290,16 @@ class Thermochemistry:
             %endfor
         ])
 
+    def get_mole_fractions(self, mix_mol_weight, mass_fractions):
+        return self._pyro_make_array([
+            %for i in range(sol.n_species):
+            self.inv_molecular_weights[${i}] * mass_fractions[${i}] * mix_mol_weight,
+            %endfor
+            ])
+
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([
-            mass_fractions[i]
-            * spec_property[i]
-            * self.inv_molecular_weights[i]
+            mass_fractions[i] * spec_property[i] * self.inv_molecular_weights[i]
             for i in range(self.num_species)])
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
@@ -333,21 +348,21 @@ class Thermochemistry:
             % for sp in sol.species():
             ${cgm(ce.poly_to_expr(sp.thermo, "temperature"))},
             % endfor
-                ])
+            ])
 
     def get_species_enthalpies_rt(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             % endfor
-                ])
+            ])
 
     def get_species_entropies_r(self, temperature):
         return self._pyro_make_array([
             % for sp in sol.species():
-                ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+            ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
             % endfor
-                ])
+            ])
 
     def get_species_gibbs_rt(self, temperature):
         h0_rt = self.get_species_enthalpies_rt(temperature)
@@ -361,14 +376,13 @@ class Thermochemistry:
         g0_rt = self.get_species_gibbs_rt(temperature)
         return self._pyro_make_array([
             %for i, react in enumerate(sol.reactions()):
-                %if react.reversible:
-                    ${cgm(ce.equilibrium_constants_expr(
-                        sol, i, Variable("g0_rt")))},
-                %else:
-                    -0.17364695002734*temperature,
-                %endif
+            %if react.reversible:
+            ${cgm(ce.equilibrium_constants_expr(sol, i, Variable("g0_rt")))},
+            %else:
+            -0.17364695002734*temperature,
+            %endif
             %endfor
-                ])
+            ])
 
     def get_temperature(self, enthalpy_or_energy, t_guess, y, do_energy=False):
         if do_energy is False:
@@ -401,27 +415,27 @@ class Thermochemistry:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.high_rate, Variable("temperature")))},
         %endfor
-                ])
+        ])
 
         k_low = self._pyro_make_array([
         %for _, react in falloff_reactions:
             ${cgm(ce.rate_coefficient_expr(
                 react.rate.low_rate, Variable("temperature")))},
         %endfor
-                ])
+        ])
 
         reduced_pressure = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
             (${cgm(ce.third_body_efficiencies_expr(
                 sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
         %endfor
-                            ])
+        ])
 
         falloff_center = self._pyro_make_array([
         %for _, react in falloff_reactions:
             ${cgm(ce.troe_falloff_center_expr(react, Variable("temperature")))},
         %endfor
-                        ])
+        ])
 
         falloff_factor = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
@@ -437,7 +451,7 @@ class Thermochemistry:
                 Variable("falloff_factor"),
                 Variable("falloff_center")))},
         %endfor
-                            ])*reduced_pressure/(1+reduced_pressure)
+        ])*reduced_pressure/(1+reduced_pressure)
 
         %for j, (i, react) in enumerate(falloff_reactions):
         k_fwd[${i}] = k_high[${j}]*falloff_function[${j}]*ones
@@ -456,7 +470,7 @@ class Thermochemistry:
                                         Variable("temperature")))} * ones,
         %endif
         %endfor
-                ]
+        ]
         %if falloff_reactions:
         self.get_falloff_rates(temperature, concentrations, k_fwd)
         %endif
@@ -471,12 +485,12 @@ class Thermochemistry:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
         return self._pyro_make_array([
-                %for i in range(sol.n_reactions):
-                    ${cgm(ce.rate_of_progress_expr(sol, i,
-                        Variable("concentrations"),
-                        Variable("k_fwd"), Variable("log_k_eq")))},
-                %endfor
-               ])
+            %for i in range(sol.n_reactions):
+            ${cgm(ce.rate_of_progress_expr(sol, i,
+                Variable("concentrations"),
+                Variable("k_fwd"), Variable("log_k_eq")))},
+            %endfor
+            ])
 
     def get_net_production_rates(self, rho, temperature, mass_fractions):
         c = self.get_concentrations(rho, mass_fractions)
@@ -484,60 +498,146 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
-                ${cgm(ce.production_rate_expr(
-                    sol, sp.name, Variable("r_net")))} * ones,
+            ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
             %endfor
-               ])""", strict_undefined=True)
+            ])
+
+    def get_species_viscosities(self, temperature):
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            ${cgm(ce.viscosity_polynomial_expr(
+                sol.get_viscosity_polynomial(sp),
+                Variable("temperature")))},
+            % endfor
+            ])
+
+    def get_species_thermal_conductivities(self, temperature):
+        return self._pyro_make_array([
+            % for sp in range(sol.n_species):
+            ${cgm(ce.conductivity_polynomial_expr(
+                sol.get_thermal_conductivity_polynomial(sp),
+                Variable("temperature")))},
+            % endfor
+            ])
+
+    def get_species_binary_mass_diffusivities(self, temperature):
+        return self._pyro_make_array([
+            %for i in range(sol.n_species):
+            self._pyro_make_array([
+                %for j in range(sol.n_species):
+                ${cgm(ce.diffusivity_polynomial_expr(
+                      sol.get_binary_diff_coeffs_polynomial(i, j),
+                      Variable("temperature")))},
+                %endfor
+            ]),
+            %endfor
+        ])
+
+    def get_mixture_viscosity_mixavg(self, temperature, mass_fractions):
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        viscosities = self.get_species_viscosities(temperature)
+        mix_rule_f = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.viscosity_mixture_rule_wilke_expr(sol, sp,
+                Variable("mole_fractions"), Variable("viscosities")))},
+            %endfor
+            ])
+        return sum(mole_fractions*viscosities/mix_rule_f)
+
+    def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        conductivities = self.get_species_thermal_conductivities(temperature)
+        return 0.5*(sum(mole_fractions*conductivities)
+            + 1/sum(mole_fractions/conductivities))
+
+    def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
+            mass_fractions):
+        mmw = self.get_mixture_molecular_weight(mass_fractions)
+        mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
+        zeros = self._pyro_zeros_like(temperature)
+
+        x_sum = self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            ${cgm(ce.diffusivity_mixture_rule_denom_expr(
+                sol, sp, Variable("mole_fractions"), Variable("bdiff_ij")))},
+            %endfor
+            ])
+        denom = self._pyro_make_array([
+            %for s in range(sol.n_species):
+            x_sum[${s}] - mole_fractions[${s}]/bdiff_ij[${s}][${s}],
+            %endfor
+            ])
+
+        return self._pyro_make_array([
+            %for sp in range(sol.n_species):
+            self.usr_np.where(self.usr_np.greater(denom[${sp}], zeros), <%
+                %>(mmw - mole_fractions[${sp}] * self.molecular_weights[${sp}])/(<%
+                    %>pressure * mmw * denom[${sp}]), <%
+                %>bdiff_ij[${sp}][${sp}] / pressure),
+            %endfor
+            ])
+""", strict_undefined=True)
 
 # }}}
 
 
-def gen_thermochem_code(sol: ct.Solution) -> str:
-    """For the mechanism given by *sol*, return Python source code for a class
-    conforming to a module containing a class called ``Thermochemistry``
-    adhering to the :class:`~pyrometheus.thermochem_example.Thermochemistry`
-    interface.
-    """
+class PythonCodeGenerator(CodeGenerator):
+    @staticmethod
+    def get_name() -> str:
+        return "python"
 
-    falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                   if r.reaction_type.startswith("falloff")]
-    three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                      if r.reaction_type == "three-body-Arrhenius"]
+    @staticmethod
+    def supports_overloading() -> bool:
+        return True
 
-    return code_tpl.render(
-        ct=ct,
-        sol=sol,
+    @staticmethod
+    def generate(name: str, sol: ct.Solution,
+                 opts: CodeGenerationOptions = None) -> str:
+        if opts is None:
+            opts = CodeGenerationOptions()
 
-        str_np=str_np,
-        cgm=CodeGenerationMapper(),
-        Variable=p.Variable,
+        falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                    if r.reaction_type.startswith("falloff")]
+        three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
+                        if r.reaction_type == "three-body-Arrhenius"]
 
-        ce=pyrometheus.chem_expr,
+        return code_tpl.render(
+            ct=ct,
+            sol=sol,
 
-        falloff_reactions=falloff_rxn,
-        three_body_reactions=three_body_rxn,
-    )
+            product=product,
 
+            str_np=str_np,
+            cgm=CodeGenerationMapper(),
+            Variable=p.Variable,
 
-def compile_class(code_str, class_name="Thermochemistry"):
-    exec_dict = {}
-    exec(compile(code_str, "<generated code>", "exec"), exec_dict)
-    exec_dict["_MODULE_SOURCE_CODE"] = code_str
+            ce=pyrometheus.chem_expr,
 
-    return exec_dict[class_name]
+            falloff_reactions=falloff_rxn,
+            three_body_reactions=three_body_rxn,
+        )
 
+    @staticmethod
+    def compile_class(name: str, source: str):
+        """Compile the generated Python source code into a class definition"""
+        exec_dict = {}
+        exec(compile(source, "<generated code>", "exec"), exec_dict)
+        exec_dict["_MODULE_SOURCE_CODE"] = source
 
-def get_thermochem_class(sol: ct.Solution):
-    """For the mechanism given by *sol*, return a class conforming to the
-    :class:`~pyrometheus.thermochem_example.Thermochemistry` interface.
-    """
-    return compile_class(gen_thermochem_code(sol))
+        return exec_dict[name]
 
-
-def cti_to_mech_file(cti_file_name, mech_file_name):
-    """Write python file for mechanism specified by CTI file."""
-    with open(mech_file_name, "w") as outf:
-        code = gen_thermochem_code(ct.Solution(cti_file_name, "gas"))
-        print(code, file=outf)
+    @staticmethod
+    def get_thermochem_class(sol: ct.Solution):
+        """For the mechanism given by *sol*, return an instance of Pyrometheus'
+        generated Python class for thermochemistry.
+        """
+        name = "Thermochemistry"
+        return PythonCodeGenerator.compile_class(
+            name=name,
+            source=PythonCodeGenerator.generate(name, sol)
+        )
 
 # vim: foldmethod=marker
