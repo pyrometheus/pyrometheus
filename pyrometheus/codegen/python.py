@@ -67,12 +67,12 @@ class CodeGenerationMapper(StringifyMapper):
             }
 
     def map_comparison(self, expr, enclosing_prec, *args, **kwargs):
-        return (f"self.usr_np.{self.OP_NAMES[expr.operator]}"
-            f"({self.rec(expr.left, PREC_NONE, *args, **kwargs)}, "
-            f"{self.rec(expr.right, PREC_NONE, *args, **kwargs)})")
+        return (f"self.pyro_np.{self.OP_NAMES[expr.operator]}"
+                f"({self.rec(expr.left, PREC_NONE, *args, **kwargs)}, "
+                f"{self.rec(expr.right, PREC_NONE, *args, **kwargs)})")
 
     def map_if(self, expr, enclosing_prec, *args, **kwargs):
-        return "self.usr_np.where(%s, %s, %s)" % (
+        return "self.pyro_np.where(%s, %s, %s)" % (
             self.rec(expr.condition, PREC_NONE, *args, **kwargs),
             self.rec(expr.then, PREC_NONE, *args, **kwargs),
             self.rec(expr.else_, PREC_NONE, *args, **kwargs),
@@ -80,7 +80,7 @@ class CodeGenerationMapper(StringifyMapper):
 
     def map_call(self, expr, enclosing_prec, *args, **kwargs):
         return self.format(
-            "self.usr_np.%s(%s)",
+            "self.pyro_np.%s(%s)",
             self.rec(expr.function, PREC_CALL, *args, **kwargs),
             self.join_rec(", ", expr.parameters, PREC_NONE, *args, **kwargs),
         )
@@ -109,7 +109,6 @@ code_tpl = Template(
 \"""
 
 
-from warnings import warn
 import numpy as np
 
 
@@ -153,31 +152,32 @@ class Thermochemistry:
     .. automethod:: __init__
     \"""
 
-    def __init__(self, usr_np=np):
+    def __init__(self, pyro_np=np):
         \"""Initialize thermochemistry object for a mechanism.
 
         Parameters
         ----------
-        usr_np
-            :mod:`numpy`-like namespace providing at least the following functions,
+        pyro_np
+            :mod:`numpy`-like namespace providing at least the following <%
+            %>functions
             for any array ``X`` of the bulk array type:
 
-            - ``usr_np.log(X)`` (like :data:`numpy.log`)
-            - ``usr_np.log10(X)`` (like :data:`numpy.log10`)
-            - ``usr_np.exp(X)`` (like :data:`numpy.exp`)
-            - ``usr_np.where(X > 0, X_yes, X_no)`` (like :func:`numpy.where`)
-            - ``usr_np.linalg.norm(X, np.inf)`` (like :func:`numpy.linalg.norm`)
+            - ``pyro_np.log(X)`` (like :data:`numpy.log`)
+            - ``pyro_np.log10(X)`` (like :data:`numpy.log10`)
+            - ``pyro_np.exp(X)`` (like :data:`numpy.exp`)
+            - ``pyro_np.where(X > 0, X_yes, X_no)`` (like :func:`numpy.where`)
+            - ``pyro_np.linalg.norm(X)`` (like :func:`numpy.linalg.norm`)
 
-            where the "bulk array type" is a type that offers arithmetic analogous
-            to :class:`numpy.ndarray` and is used to hold all types of (potentialy
-            volumetric) "bulk data", such as temperature, pressure, mass fractions,
-            etc. This parameter defaults to *actual numpy*, so it can be ignored
+            where "bulk array type" is a type that offers arithmetic analogous
+            to :class:`numpy.ndarray` and is used to hold all types of
+            "bulk data", such as temperature, and mass fractions, etc.
+            This parameter defaults to *actual numpy*, so it can be ignored
             unless it is needed by the user (e.g. for purposes of
             GPU processing or automatic differentiation).
 
         \"""
 
-        self.usr_np = usr_np
+        self.pyro_np = pyro_np
         self.model_name = ${repr(sol.source)}
         self.num_elements = ${sol.n_elements}
         self.num_species = ${sol.n_species}
@@ -197,20 +197,6 @@ class Thermochemistry:
 
         self.molecular_weights = ${str_np(sol.molecular_weights)}
         self.inv_molecular_weights = 1/self.molecular_weights
-
-    @property
-    def wts(self):
-        warn("Thermochemistry.wts is deprecated and will go away in 2024. "
-             "Use molecular_weights instead.", DeprecationWarning, stacklevel=2)
-
-        return self.molecular_weights
-
-    @property
-    def iwts(self):
-        warn("Thermochemistry.iwts is deprecated and will go away in 2024. "
-             "Use inv_molecular_weights instead.", DeprecationWarning, stacklevel=2)
-
-        return self.inv_molecular_weights
 
     def _pyro_zeros_like(self, argument):
         # FIXME: This is imperfect, as a NaN will stay a NaN.
@@ -243,7 +229,7 @@ class Thermochemistry:
         \"""This works around numpy.linalg norm not working with scalars.
 
         If the argument is a regular ole number, it uses :func:`numpy.abs`,
-        otherwise it uses ``usr_np.linalg.norm``.
+        otherwise it uses ``pyro_np.linalg.norm``.
         \"""
         # Wrap norm for scalars
 
@@ -251,7 +237,7 @@ class Thermochemistry:
 
         if isinstance(argument, Number):
             return np.abs(argument)
-        return self.usr_np.linalg.norm(argument, normord)
+        return self.pyro_np.linalg.norm(argument, normord)
 
     def get_species_name(self, species_index):
         return self.species_name[species_index]
@@ -293,13 +279,15 @@ class Thermochemistry:
     def get_mole_fractions(self, mix_mol_weight, mass_fractions):
         return self._pyro_make_array([
             %for i in range(sol.n_species):
-            self.inv_molecular_weights[${i}] * mass_fractions[${i}] * mix_mol_weight,
+            self.inv_molecular_weights[${i}] * mass_fractions[${i}] * <%
+            %>mix_mol_weight,
             %endfor
             ])
 
     def get_mass_average_property(self, mass_fractions, spec_property):
         return sum([
-            mass_fractions[i] * spec_property[i] * self.inv_molecular_weights[i]
+            mass_fractions[i] * spec_property[i] * <%
+            %>self.inv_molecular_weights[i]
             for i in range(self.num_species)])
 
     def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
@@ -371,7 +359,7 @@ class Thermochemistry:
 
     def get_equilibrium_constants(self, temperature):
         rt = self.gas_constant * temperature
-        c0 = self.usr_np.log(self.one_atm / rt)
+        c0 = self.pyro_np.log(self.one_atm / rt)
 
         g0_rt = self.get_species_gibbs_rt(temperature)
         return self._pyro_make_array([
@@ -427,13 +415,14 @@ class Thermochemistry:
         reduced_pressure = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
             (${cgm(ce.third_body_efficiencies_expr(
-                sol, react, Variable("concentrations")))})*k_low[${i}]/k_high[${i}],
+                sol, react, Variable("concentrations")))})*k_low[${i}]/<%
+                %>k_high[${i}],
         %endfor
         ])
 
         falloff_center = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            ${cgm(ce.troe_falloff_center_expr(react, Variable("temperature")))},
+            ${cgm(ce.troe_falloff_center_expr(react,Variable("temperature")))},
         %endfor
         ])
 
@@ -498,7 +487,8 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(r_net[0]) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
-            ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))} * ones,
+            ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))} <%
+            %>* ones,
             %endfor
             ])
 
@@ -545,7 +535,8 @@ class Thermochemistry:
             ])
         return sum(mole_fractions*viscosities/mix_rule_f)
 
-    def get_mixture_thermal_conductivity_mixavg(self, temperature, mass_fractions):
+    def get_mixture_thermal_conductivity_mixavg(self, temperature,
+                                                mass_fractions):
         mmw = self.get_mixture_molecular_weight(mass_fractions)
         mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
         conductivities = self.get_species_thermal_conductivities(temperature)
@@ -573,9 +564,9 @@ class Thermochemistry:
 
         return self._pyro_make_array([
             %for sp in range(sol.n_species):
-            self.usr_np.where(self.usr_np.greater(denom[${sp}], zeros), <%
-                %>(mmw - mole_fractions[${sp}] * self.molecular_weights[${sp}])/(<%
-                    %>pressure * mmw * denom[${sp}]), <%
+            self.pyro_np.where(self.pyro_np.greater(denom[${sp}], zeros), <%
+                %>(mmw - mole_fractions[${sp}]*self.molecular_weights[${sp}]<%
+                %>)/(pressure * mmw * denom[${sp}]), <%
                 %>bdiff_ij[${sp}][${sp}] / pressure),
             %endfor
             ])
@@ -600,9 +591,9 @@ class PythonCodeGenerator(CodeGenerator):
             opts = CodeGenerationOptions()
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                    if r.reaction_type.startswith("falloff")]
+                       if r.reaction_type.startswith("falloff")]
         three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
-                        if r.reaction_type == "three-body-Arrhenius"]
+                          if r.reaction_type == "three-body-Arrhenius"]
 
         return code_tpl.render(
             ct=ct,
