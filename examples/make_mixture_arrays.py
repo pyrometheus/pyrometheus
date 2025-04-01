@@ -1,8 +1,3 @@
-import cantera as ct
-from reactors import Flame
-from domain import Mesh
-
-
 def from_equiv_ratio(equiv_ratio, pyro_gas, usr_np):
     # Some constants
     equiv_ratio = 1.0
@@ -54,15 +49,3 @@ def from_ignition_file(pyro_gas):
     density = pyro_gas.get_density(pyro_gas.one_atm, temp, y)
     energy = pyro_gas.get_mixture_internal_energy_mass(temp, y)
     return density, energy, pyro_gas._pyro_make_array(y)
-
-
-def homogeneous_mixture(equiv_ratio, pyro_gas):
-    return
-
-
-def init_flame(config: dict, mesh: Mesh, reactor: Flame, sol: ct.Solution):
-
-    file_name = form_file_name(config['init_step'])
-    db = h5py.File(file_name, 'r')
-    
-    return

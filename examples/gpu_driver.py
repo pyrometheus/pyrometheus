@@ -63,7 +63,6 @@ def execute_kernel(pyro_gas, inner_length, num_x, num_y, kernel, knl_tag,):
     print(f'Device name: {drv.Device(0).name()}')
 
     # Compile cuda code
-    entry_kernel = kernel['chemical_source_terms']
     prg = SourceModule(
         hack_pow_code_str(code_str),
         options=['-maxrregcount=32']

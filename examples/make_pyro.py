@@ -82,7 +82,7 @@ def make_pyro_object(pyro_cls, usr_np):
                     iter_temp += dt
 
                 return iter_temp
-                    
+
         return PyroPytato(usr_np)
 
     elif usr_np == jnp:
