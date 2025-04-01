@@ -1,0 +1,21 @@
+name: pyro-tutorial
+channels:
+  - conda-forge
+dependencies:
+  - python ==3.11
+  - pip
+  - emacs
+  - jupyterlab
+  - numpy
+  - h5py
+  - pocl
+  - pyopencl
+  - islpy
+  - pip:
+    - jax
+    - matplotlib
+    - "git+https://github.com/inducer/pymbolic.git#egg=pymbolic"
+    - "git+https://github.com/inducer/loopy.git#egg=loopy"
+    - "git+https://github.com/inducer/pytato.git#egg=pytato"
+    - "git+https://github.com/inducer/arraycontext.git@torch-actx"
+    - "git+https://github.com/pyrometheus/pyrometheus"

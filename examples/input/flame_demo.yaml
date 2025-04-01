@@ -1,0 +1,7 @@
+initial_time: 0
+final_time: 1.0e-2
+step_size: 1.0e-8
+num_snapshots: 100001
+write_freq: 100
+init_step: 24400
+transport_model: mixavg
