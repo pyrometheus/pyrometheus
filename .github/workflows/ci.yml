@@ -15,7 +15,7 @@ jobs:
           with:
             python-version: '3.x'
         - name: Flake8
-          run:  python3 -m pip install .[dev] && flake8 --per-file-ignores="examples/gpu_driver.py:F401"
+          run:  python3 -m pip install .[dev] && flake8 --exclude examples
 
     flake8_gen:
         name: Flake8 on Generated Code
