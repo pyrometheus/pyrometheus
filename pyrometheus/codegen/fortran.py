@@ -259,10 +259,10 @@ module ${module_name}
     ${real_type}, parameter :: gas_constant = ${float_to_fortran(ct.gas_constant)}
     ${real_type}, parameter :: molecular_weights(${sol.n_species}) = &
         (/ ${str_np(sol.molecular_weights)} /)
-    ${real_type}, parameter :: inv_molecular_weights(${sol.n_species}) = &
+    ${real_type}, parameter :: inv_weights(${sol.n_species}) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
-    !$acc declare create(molecular_weights, inv_molecular_weights)
+    !$acc declare create(molecular_weights, inv_weights)
 
     character(len=12), parameter :: species_names(${sol.n_species}) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
@@ -324,7 +324,7 @@ contains
 
         specific_gas_constant = gas_constant * ( &
                 %for i in range(sol.n_species):
-                    + inv_molecular_weights(${i+1})*mass_fractions(${i+1}) &
+                    + inv_weights(${i+1})*mass_fractions(${i+1}) &
                 %endfor
                 )
 
@@ -371,7 +371,7 @@ contains
 
         mix_mol_weight = 1.0d0 / ( &
                 %for i in range(sol.n_species):
-                    + inv_molecular_weights(${i+1})*mass_fractions(${i+1}) &
+                    + inv_weights(${i+1})*mass_fractions(${i+1}) &
                 %endfor
                 )
 
@@ -385,7 +385,7 @@ contains
         ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out), dimension(${sol.n_species}) :: concentrations
 
-        concentrations = density * inv_molecular_weights * mass_fractions
+        concentrations = density * inv_weights * mass_fractions
 
     end subroutine get_concentrations
 
@@ -397,7 +397,7 @@ contains
         ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out), dimension(${sol.n_species}) :: mole_fractions
 
-        mole_fractions = inv_molecular_weights * mass_fractions * mix_mol_weight
+        mole_fractions = inv_weights * mass_fractions * mix_mol_weight
 
     end subroutine get_mole_fractions
 
@@ -410,7 +410,11 @@ contains
         ${real_type}, intent(in), dimension(${sol.n_species}) :: spec_property
         ${real_type}, intent(out) :: mix_property
 
-        mix_property = sum(inv_molecular_weights*mass_fractions*spec_property)
+        mix_property =  ( &
+            %for i in range(sol.n_species):
+                + inv_weights(${i+1})*mass_fractions(${i+1})*spec_property(${i+1}) &
+            %endfor
+        )
 
     end subroutine get_mass_averaged_property
 
