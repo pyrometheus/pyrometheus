@@ -412,7 +412,8 @@ contains
 
         mix_property =  ( &
             %for i in range(sol.n_species):
-                + inv_molecular_weights(${i+1})*mass_fractions(${i+1})*spec_property(${i+1}) &
+                + inv_molecular_weights(${i+1})*mass_fractions(${i+1}) &
+                *spec_property(${i+1}) &
             %endfor
         )
 
