@@ -15,6 +15,9 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 .. image:: https://img.shields.io/badge/License-MIT-red.svg
     :alt: MIT License
     :target: https://opensource.org/license/mit
+.. image:: https://img.shields.io/badge/arXiv-2503.24286-b31b1b.svg
+   :target: https://arxiv.org/abs/2503.24286
+   :alt: arXiv:2503.24286
 
 .. When you update this description, consider also updating the one in doc/index.rst.
 
