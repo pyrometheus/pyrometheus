@@ -8,12 +8,6 @@ on:
 jobs:
   github:
     name: Github
-    strategy:
-      matrix:
-        mpi:         ['mpi','no-mpi']
-
-      fail-fast: false
-    continue-on-error: true
     runs-on: ubuntu-latest
 
     steps:
@@ -30,8 +24,8 @@ jobs:
 
       - name: Build
         run:  |
-          /bin/bash mfc.sh test --dry-run -j $(nproc) --${{ matrix.mpi }}
+          /bin/bash mfc.sh test --dry-run -j $(nproc) --mpi
 
       - name: Test
         run:  |
-          /bin/bash mfc.sh test -o Chemistry --max-attempts 3 -j $(nproc) --test-all --${{ matrix.mpi }}
+          /bin/bash mfc.sh test -o Chemistry --max-attempts 3 -j $(nproc) --test-all
