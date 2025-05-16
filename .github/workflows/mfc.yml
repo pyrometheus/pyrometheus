@@ -24,7 +24,8 @@ jobs:
     steps:
       - name: Clone
         uses: actions/checkout@v4
-        repository: MFlowCode/MFC
+        with:
+          repository: MFlowCode/MFC
 
       - name: Setup Ubuntu
         run: |
