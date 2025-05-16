@@ -6,6 +6,9 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 .. image:: https://github.com/pyrometheus/pyrometheus/actions/workflows/ci.yml/badge.svg
     :alt: Github Build Status
     :target: https://github.com/pyrometheus/pyrometheus/actions
+.. image:: https://github.com/pyrometheus/pyrometheus/actions/workflows/mfc.yml/badge.svg
+    :alt: Github Build Status
+    :target: https://github.com/pyrometheus/pyrometheus/actions
 .. image:: https://readthedocs.org/projects/pyrometheus/badge/?version=latest
     :alt: Documentation Status
     :target: https://pyrometheus.readthedocs.io/en/latest/?badge=latest
