@@ -7,25 +7,23 @@ jobs:
     name: Github
     strategy:
       matrix:
-        os:    ['ubuntu']
         mpi:   ['mpi']
         precision: ['']
 
         include:
-          - os:    ubuntu
-            mpi:   no-mpi
+          - mpi:   no-mpi
             precision: single
 
       fail-fast: false
     continue-on-error: true
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Clone
         uses: actions/checkout@v4
+        repository: MFlowCode/MFC
 
       - name: Setup Ubuntu
-        if:   matrix.os == 'ubuntu'
         run: |
            sudo apt update -y
            sudo apt install -y cmake gcc g++ python3 python3-dev hdf5-tools \
@@ -37,6 +35,6 @@ jobs:
 
       - name: Test
         run:  |
-          /bin/bash mfc.sh test --max-attempts 3 -j $(nproc) $OPT1
+          /bin/bash mfc.sh test -o Chemistry --max-attempts 3 -j $(nproc) $OPT1
         env:
           OPT1: ${{ matrix.mpi == 'mpi' && '--test-all' || '' }}
