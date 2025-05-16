@@ -10,12 +10,8 @@ jobs:
     name: Github
     strategy:
       matrix:
-        mpi:   ['mpi']
-        precision: ['']
-
-        include:
-          - mpi:   no-mpi
-            precision: single
+        mpi:         ['mpi','no-mpi']
+        precision:   ['single','no-single']
 
       fail-fast: false
     continue-on-error: true
@@ -35,10 +31,8 @@ jobs:
 
       - name: Build
         run:  |
-          /bin/bash mfc.sh test --dry-run -j $(nproc) --${{ matrix.mpi }} --${{ matrix.precision }} 
+          /bin/bash mfc.sh test --dry-run -j $(nproc) --${{ matrix.mpi }}
 
       - name: Test
         run:  |
-          /bin/bash mfc.sh test -o Chemistry --max-attempts 3 -j $(nproc) $OPT1
-        env:
-          OPT1: ${{ matrix.mpi == 'mpi' && '--test-all' || '' }}
+          /bin/bash mfc.sh test -o Chemistry --max-attempts 3 -j $(nproc) --test-all --${{ matrix.mpi }} --${{ matrix.precision}}
