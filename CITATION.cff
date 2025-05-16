@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+title: "Pyrometheus: Symbolic abstractions for XPU and automatically differentiated computation of combustion kinetics and thermodynamics"
+authors:
+  - family-names: Cisneros-Garibay
+    given-names: Esteban
+  - family-names: Le Berre
+    given-names: Henry
+  - family-names: Adam
+    given-names: Dimitrios
+  - family-names: Bryngelson
+    given-names: Spencer H.
+  - family-names: Freund
+    given-names: Jonathan B.
+date-released: 2025-03-29
+type: preprint
+doi: 10.48550/arXiv.2503.24286
