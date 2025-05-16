@@ -1,7 +1,10 @@
-name: 'MFC Integration'
-
-on: [push, pull_request, workflow_dispatch]
-    
+name: MFC-Integration
+on:
+    push:
+    pull_request:
+    schedule:
+        - cron: '17 3 * * 0'
+ 
 jobs:
   github:
     name: Github
