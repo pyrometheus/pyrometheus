@@ -44,6 +44,21 @@ Pyrometheus is a code generator for chemical mechanisms based on `Cantera
       -p PHASE, --phase PHASE
                             Phase name to use for the generated code.
 
+Cite me:
+
+.. code-block:: bibtex
+
+    @article{cisneros-garibay2025pyrometheus,
+      title={Pyrometheus: {S}ymbolic abstractions for {XPU} and automatically differentiated computation of combustion kinetics and thermodynamics},
+      author={Esteban Cisneros-Garibay and Henry {Le Berre} and Dimitrios Adam and Spencer H. Bryngelson and Jonathan B. Freund},
+      year={2025},
+      eprint={2503.24286},
+      archivePrefix={arXiv},
+      primaryClass={physics.comp-ph},
+      url={https://arxiv.org/abs/2503.24286}
+    }
+
+
 Links:
 
 * `Documentation <https://pyrometheus.readthedocs.io/en/latest/>`__
