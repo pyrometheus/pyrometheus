@@ -1,0 +1,42 @@
+name: 'MFC Integration'
+
+on: [push, pull_request, workflow_dispatch]
+    
+jobs:
+  github:
+    name: Github
+    strategy:
+      matrix:
+        os:    ['ubuntu']
+        mpi:   ['mpi']
+        precision: ['']
+
+        include:
+          - os:    ubuntu
+            mpi:   no-mpi
+            precision: single
+
+      fail-fast: false
+    continue-on-error: true
+    runs-on: ${{ matrix.os }}-latest
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Setup Ubuntu
+        if:   matrix.os == 'ubuntu'
+        run: |
+           sudo apt update -y
+           sudo apt install -y cmake gcc g++ python3 python3-dev hdf5-tools \
+                    libfftw3-dev libhdf5-dev openmpi-bin libopenmpi-dev
+
+      - name: Build
+        run:  |
+          /bin/bash mfc.sh test --dry-run -j $(nproc) --${{ matrix.mpi }} --${{ matrix.precision }} 
+
+      - name: Test
+        run:  |
+          /bin/bash mfc.sh test --max-attempts 3 -j $(nproc) $OPT1
+        env:
+          OPT1: ${{ matrix.mpi == 'mpi' && '--test-all' || '' }}
