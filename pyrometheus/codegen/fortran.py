@@ -410,7 +410,12 @@ contains
         ${real_type}, intent(in), dimension(${sol.n_species}) :: spec_property
         ${real_type}, intent(out) :: mix_property
 
-        mix_property = sum(inv_molecular_weights*mass_fractions*spec_property)
+        mix_property =  ( &
+            %for i in range(sol.n_species):
+                + inv_molecular_weights(${i+1})*mass_fractions(${i+1}) &
+                *spec_property(${i+1}) &
+            %endfor
+        )
 
     end subroutine get_mass_averaged_property
 
