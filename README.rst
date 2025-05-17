@@ -6,6 +6,9 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 .. image:: https://github.com/pyrometheus/pyrometheus/actions/workflows/ci.yml/badge.svg
     :alt: Github Build Status
     :target: https://github.com/pyrometheus/pyrometheus/actions
+.. image:: https://github.com/pyrometheus/pyrometheus/actions/workflows/mfc.yml/badge.svg
+    :alt: Github Build Status
+    :target: https://github.com/pyrometheus/pyrometheus/actions
 .. image:: https://readthedocs.org/projects/pyrometheus/badge/?version=latest
     :alt: Documentation Status
     :target: https://pyrometheus.readthedocs.io/en/latest/?badge=latest
@@ -15,6 +18,9 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 .. image:: https://img.shields.io/badge/License-MIT-red.svg
     :alt: MIT License
     :target: https://opensource.org/license/mit
+.. image:: https://img.shields.io/badge/arXiv-2503.24286-b31b1b.svg
+   :target: https://arxiv.org/abs/2503.24286
+   :alt: arXiv:2503.24286
 
 .. When you update this description, consider also updating the one in doc/index.rst.
 
@@ -40,6 +46,21 @@ Pyrometheus is a code generator for chemical mechanisms based on `Cantera
                             Namespace to use for the generated code.
       -p PHASE, --phase PHASE
                             Phase name to use for the generated code.
+
+Cite me:
+
+.. code-block:: bibtex
+
+    @article{cisneros-garibay2025pyrometheus,
+      title={Pyrometheus: {S}ymbolic abstractions for {XPU} and automatically differentiated computation of combustion kinetics and thermodynamics},
+      author={Esteban Cisneros-Garibay and Henry {Le Berre} and Dimitrios Adam and Spencer H. Bryngelson and Jonathan B. Freund},
+      year={2025},
+      eprint={2503.24286},
+      archivePrefix={arXiv},
+      primaryClass={physics.comp-ph},
+      url={https://arxiv.org/abs/2503.24286}
+    }
+
 
 Links:
 
