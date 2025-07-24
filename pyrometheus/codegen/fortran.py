@@ -237,12 +237,7 @@ module_tpl = Template("""
 #define PYROMETHEUS_CALLER_INDEXING 0
 #endif
 
-#ifdef _CRAYFTN
-#define GPU_ROUTINE(name) !DIR$ INLINEALWAYS name
-#else
-#define GPU_ROUTINE(name) !$acc routine seq
-#endif
-
+${gpu_routine}
 
 module ${module_name}
 
@@ -262,7 +257,7 @@ module ${module_name}
     ${real_type}, parameter :: inv_molecular_weights(${sol.n_species}) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
-    !$acc declare create(molecular_weights, inv_molecular_weights)
+    ${gpu_create}(molecular_weights, inv_molecular_weights)
 
     character(len=12), parameter :: species_names(${sol.n_species}) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
@@ -542,7 +537,7 @@ contains
 
     subroutine get_equilibrium_constants(temperature, k_eq)
 
-        !$acc routine seq
+        GPU_ROUTINE(get_equilibrium_constants)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(out), dimension(${sol.n_reactions}) :: k_eq
@@ -910,6 +905,26 @@ class FortranCodeGenerator(CodeGenerator):
         if opts is None:
             opts = CodeGenerationOptions()
 
+        if opts.gpu == "acc":
+            gpu_routine = """
+                #ifdef _CRAYFTN
+                #define GPU_ROUTINE(name) !DIR$ INLINEALWAYS name
+                #else
+                #define GPU_ROUTINE(name) !$acc routine seq
+                #endif
+                """
+            gpu_create = "!$acc declare create"
+        elif opts.gpu == "mp":
+            gpu_routine = """"
+                #define GPU_ROUTINE(name) !$omp declare target device_type(any)
+                """
+            gpu_create = "!$omp declare target"
+        else:
+            gpu_routine = """
+                #define GPU_ROUTINE(name) ! name
+            """
+            gpu_create = "! GPU Create "
+
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
                     if r.reaction_type.startswith("falloff")]
         three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
@@ -925,6 +940,9 @@ class FortranCodeGenerator(CodeGenerator):
             float_to_fortran=float_to_fortran,
 
             real_type=opts.scalar_type or "real(dp)",
+            gpu_routine=gpu_routine,
+            gpu_create=gpu_create,
+
             module_name=name,
 
             ce=pyrometheus.chem_expr,
