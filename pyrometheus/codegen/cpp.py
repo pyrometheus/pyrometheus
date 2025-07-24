@@ -599,7 +599,7 @@ class CppCodeGenerator(CodeGenerator):
         if opts is None:
             opts = CodeGenerationOptions()
 
-        if opts.gpu != "":
+        if opts.gpu != None:
             raise TypeError("GPU code generation not supported for C++")
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())

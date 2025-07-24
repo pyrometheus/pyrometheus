@@ -8,7 +8,7 @@ import cantera as ct
 @dataclass(frozen=True)
 class CodeGenerationOptions:
     scalar_type: Optional[str] = None
-
+    gpu: Optional[str] = ""
 
 class CodeGenerator:
     @staticmethod
