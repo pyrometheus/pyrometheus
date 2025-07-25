@@ -591,7 +591,10 @@ class PythonCodeGenerator(CodeGenerator):
             opts = CodeGenerationOptions()
 
         if opts.directive_offload is not None:
-            raise TypeError("OpenMP/ACC directive based offloading is not supported for Python code generation")
+            raise TypeError(
+                "OpenMP/ACC directive based offloading is not supported for "
+                "Python code generation"
+                )
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
                        if r.reaction_type.startswith("falloff")]

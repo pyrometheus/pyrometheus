@@ -923,7 +923,7 @@ class FortranCodeGenerator(CodeGenerator):
             gpu_routine_str = """
 #define GPU_ROUTINE(name) ! name
 """
-            gpu_create = "! GPU Create "
+            gpu_create_str = "! GPU Create "
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
                     if r.reaction_type.startswith("falloff")]
