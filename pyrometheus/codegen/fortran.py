@@ -907,22 +907,22 @@ class FortranCodeGenerator(CodeGenerator):
 
         if opts.gpu == "acc":
             gpu_routine = """
-                #ifdef _CRAYFTN
-                #define GPU_ROUTINE(name) !DIR$ INLINEALWAYS name
-                #else
-                #define GPU_ROUTINE(name) !$acc routine seq
-                #endif
-            """
+#ifdef _CRAYFTN
+#define GPU_ROUTINE(name) !DIR$ INLINEALWAYS name
+#else
+#define GPU_ROUTINE(name) !$acc routine seq
+#endif
+"""
             gpu_create = "!$acc declare create"
         elif opts.gpu == "mp":
             gpu_routine = """
-                #define GPU_ROUTINE(name) !$omp declare target device_type(any)
-            """
+#define GPU_ROUTINE(name) !$omp declare target device_type(any)
+"""
             gpu_create = "!$omp declare target"
         else:
             gpu_routine = """
-                #define GPU_ROUTINE(name) ! name
-            """
+#define GPU_ROUTINE(name) ! name
+"""
             gpu_create = "! GPU Create "
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
