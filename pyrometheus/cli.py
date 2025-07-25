@@ -31,10 +31,6 @@ def main():
                         required=True)
     parser.add_argument("-p", "--phase",
                         help="Phase name to use for the generated code.")
-    parser.add_argument("--gpu", type=str,
-                        help="GPU approach for device offload",
-                        default="",
-                        choices=["", "acc", "mp"])
 
     args = parser.parse_args()
 
