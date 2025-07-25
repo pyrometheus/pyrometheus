@@ -905,22 +905,22 @@ class FortranCodeGenerator(CodeGenerator):
         if opts is None:
             opts = CodeGenerationOptions()
 
-        if opts.gpu == "acc":
-            gpu_routine = """
+        if opts.directive_offload == "acc":
+            gpu_routine_str = """
 #ifdef _CRAYFTN
 #define GPU_ROUTINE(name) !DIR$ INLINEALWAYS name
 #else
 #define GPU_ROUTINE(name) !$acc routine seq
 #endif
 """
-            gpu_create = "!$acc declare create"
-        elif opts.gpu == "mp":
-            gpu_routine = """
+            gpu_create_str = "!$acc declare create"
+        elif opts.directive_offload == "mp":
+            gpu_routine_str = """
 #define GPU_ROUTINE(name) !$omp declare target device_type(any)
 """
-            gpu_create = "!$omp declare target"
+            gpu_create_str = "!$omp declare target"
         else:
-            gpu_routine = """
+            gpu_routine_str = """
 #define GPU_ROUTINE(name) ! name
 """
             gpu_create = "! GPU Create "
@@ -940,8 +940,8 @@ class FortranCodeGenerator(CodeGenerator):
             float_to_fortran=float_to_fortran,
 
             real_type=opts.scalar_type or "real(dp)",
-            gpu_routine=gpu_routine,
-            gpu_create=gpu_create,
+            gpu_routine=gpu_routine_str,
+            gpu_create=gpu_create_str,
 
             module_name=name,
 
