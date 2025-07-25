@@ -590,7 +590,7 @@ class PythonCodeGenerator(CodeGenerator):
         if opts is None:
             opts = CodeGenerationOptions()
 
-        if opts.gpu != None:
+        if opts.gpu is not None:
             raise TypeError("GPU code generation not supported for C++")
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())

@@ -10,6 +10,7 @@ class CodeGenerationOptions:
     scalar_type: Optional[str] = None
     gpu: Optional[str] = None
 
+
 class CodeGenerator:
     @staticmethod
     @abstractmethod
