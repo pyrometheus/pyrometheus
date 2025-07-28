@@ -599,6 +599,12 @@ class CppCodeGenerator(CodeGenerator):
         if opts is None:
             opts = CodeGenerationOptions()
 
+        if opts.directive_offload is not None:
+            raise TypeError(
+                "OpenMP/ACC directive based offloading is not supported for "
+                "C++ code generation"
+                )
+
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
                     if r.reaction_type.startswith("falloff")]
         three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())

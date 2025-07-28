@@ -37,5 +37,6 @@ def main():
     source = generators[args.lang].generate(
         args.name, ct.Solution(args.mech, args.phase)
     )
+
     with open(args.output, "w") as f:
         f.write(source)

@@ -8,6 +8,7 @@ import cantera as ct
 @dataclass(frozen=True)
 class CodeGenerationOptions:
     scalar_type: Optional[str] = None
+    directive_offload: Optional[str] = None
 
 
 class CodeGenerator:
