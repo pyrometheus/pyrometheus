@@ -913,7 +913,7 @@ class FortranCodeGenerator(CodeGenerator):
 """
         elif opts.directive_offload == "mp":
             gpu_routine_str = """
-#define GPU_ROUTINE(name) !$omp declare target device_type(any)
+#define GPU_ROUTINE(name) !$omp declare target
 """
         else:
             gpu_routine_str = """
