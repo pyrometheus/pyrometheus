@@ -379,7 +379,7 @@ contains
         ${real_type}, intent(out), dimension(${sol.n_species}) :: concentrations
 
         %for i in range(sol.n_species):
-            concentrations(${i+1}) = density(${i+1}) * &
+            concentrations(${i+1}) = density * &
                 inv_molecular_weights(${i+1}) * mass_fractions(${i+1})
         %endfor
 
