@@ -252,12 +252,10 @@ module ${module_name}
     integer, parameter :: num_falloff = ${len(falloff_reactions)}
     ${real_type}, parameter :: one_atm = ${float_to_fortran(ct.one_atm)}
     ${real_type}, parameter :: gas_constant = ${float_to_fortran(ct.gas_constant)}
-!$omp declare target
     ${real_type}, parameter :: molecular_weights(${sol.n_species}) = &
         (/ ${str_np(sol.molecular_weights)} /)
     ${real_type}, parameter :: inv_molecular_weights(${sol.n_species}) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
-!$omp end declare target
 
     character(len=12), parameter :: species_names(${sol.n_species}) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
