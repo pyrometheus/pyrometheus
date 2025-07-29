@@ -588,6 +588,7 @@ contains
         iter_deriv = 1.d0
         iter_temp = t_guess
 
+        ${gpu_seq}
         do iter = 1, num_iter
             if(do_energy) then
                 call get_mixture_specific_heat_cv_mass(&
@@ -914,16 +915,19 @@ class FortranCodeGenerator(CodeGenerator):
 #endif
 """
             gpu_create_str = "!$acc declare create"
+            gpu_seq_str = "!$acc loop seq"
         elif opts.directive_offload == "mp":
             gpu_routine_str = """
 #define GPU_ROUTINE(name) !$omp declare target device_type(any)
 """
             gpu_create_str = "!$omp declare target"
+            gpu_seq_str = "!$omp loop bind(thread)"
         else:
             gpu_routine_str = """
 #define GPU_ROUTINE(name) ! name
 """
             gpu_create_str = "! GPU Create "
+            gpu_seq_str = "! GPU Seq"
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
                     if r.reaction_type.startswith("falloff")]
@@ -942,6 +946,7 @@ class FortranCodeGenerator(CodeGenerator):
             real_type=opts.scalar_type or "real(dp)",
             gpu_routine=gpu_routine_str,
             gpu_create=gpu_create_str,
+            gpu_seq=gpu_seq_str,
 
             module_name=name,
 
