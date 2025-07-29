@@ -545,7 +545,7 @@ contains
         call get_species_entropies_r(temperature, s0_r)
 
         %for i in range(sol.n_species):
-            g0_rt(${i+1}) = h0_rt(${i+1}) - s0_r({i+1})
+            g0_rt(${i+1}) = h0_rt(${i+1}) - s0_r(${i+1})
         %endfor
 
     end subroutine get_species_gibbs_rt
