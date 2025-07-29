@@ -257,8 +257,6 @@ module ${module_name}
     ${real_type}, parameter :: inv_molecular_weights(${sol.n_species}) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
-    ${gpu_create}(molecular_weights, inv_molecular_weights)
-
     character(len=12), parameter :: species_names(${sol.n_species}) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
 
@@ -914,20 +912,14 @@ class FortranCodeGenerator(CodeGenerator):
 #define GPU_ROUTINE(name) !$acc routine seq
 #endif
 """
-            gpu_create_str = "!$acc declare create"
-            gpu_seq_str = "!$acc loop seq"
         elif opts.directive_offload == "mp":
             gpu_routine_str = """
 #define GPU_ROUTINE(name) !$omp declare target device_type(any)
 """
-            gpu_create_str = "!$omp declare target"
-            gpu_seq_str = "!$omp loop bind(thread)"
         else:
             gpu_routine_str = """
 #define GPU_ROUTINE(name) ! name
 """
-            gpu_create_str = "! GPU Create "
-            gpu_seq_str = "! GPU Seq"
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
                     if r.reaction_type.startswith("falloff")]
@@ -945,8 +937,6 @@ class FortranCodeGenerator(CodeGenerator):
 
             real_type=opts.scalar_type or "real(dp)",
             gpu_routine=gpu_routine_str,
-            gpu_create=gpu_create_str,
-            gpu_seq=gpu_seq_str,
 
             module_name=name,
 
