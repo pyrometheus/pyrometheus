@@ -586,7 +586,6 @@ contains
         iter_deriv = 1.d0
         iter_temp = t_guess
 
-        ${gpu_seq}
         do iter = 1, num_iter
             if(do_energy) then
                 call get_mixture_specific_heat_cv_mass(&
