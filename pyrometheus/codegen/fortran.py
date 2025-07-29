@@ -378,7 +378,10 @@ contains
         ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out), dimension(${sol.n_species}) :: concentrations
 
-        concentrations = density * inv_molecular_weights * mass_fractions
+        %for i in range(sol.n_species):
+            concentrations(${i+1}) = density(${i+1}) * &
+                inv_molecular_weights(${i+1}) * mass_fractions(${i+1})
+        %endfor
 
     end subroutine get_concentrations
 
@@ -390,7 +393,10 @@ contains
         ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out), dimension(${sol.n_species}) :: mole_fractions
 
-        mole_fractions = inv_molecular_weights * mass_fractions * mix_mol_weight
+        %for i in range(sol.n_species):
+            mole_fractions(${i+1}) = inv_molecular_weights(${i+1}) * &
+                mass_fractions(${i+1}) * mix_mol_weight
+        %endfor
 
     end subroutine get_mole_fractions
 
