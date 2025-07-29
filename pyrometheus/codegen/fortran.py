@@ -445,7 +445,11 @@ contains
         ${real_type}, dimension(${sol.n_species}) :: cp0_r
 
         call get_species_specific_heats_r(temperature, cp0_r)
-        cp0_r(:) = cp0_r(:) - 1.d0
+
+        %for i in range(sol.n_species):
+            cp0_r(${i+1}) = cp0_r(${i+1}) - 1.d0
+        %endfor
+
         call get_mass_averaged_property(mass_fractions, cp0_r, cv_mix)
         cv_mix = cv_mix * gas_constant
 
@@ -478,7 +482,11 @@ contains
         ${real_type}, dimension(${sol.n_species}) :: h0_rt
 
         call get_species_enthalpies_rt(temperature, h0_rt)
-        h0_rt(:) = h0_rt - 1.d0
+
+        %for i in range(sol.n_species):
+            h0_rt(${i+1}) = h0_rt(${i+1}) - 1.d0
+        %endfor
+
         call get_mass_averaged_property(mass_fractions, h0_rt, e_mix)
         e_mix = e_mix * gas_constant * temperature
 
@@ -535,7 +543,10 @@ contains
 
         call get_species_enthalpies_rt(temperature, h0_rt)
         call get_species_entropies_r(temperature, s0_r)
-        g0_rt(:) = h0_rt(:) - s0_r(:)
+
+        %for i in range(sol.n_species):
+            g0_rt(${i+1}) = h0_rt(${i+1}) - s0_r({i+1})
+        %endfor
 
     end subroutine get_species_gibbs_rt
 
