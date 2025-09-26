@@ -251,8 +251,8 @@ def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
     w = sol.molecular_weights
     sqrt = p.Variable("sqrt")
     return sum([x[j]*(
-        1 + sqrt((mu[sp]/mu[j])*sqrt(w[j]/w[sp]))
-    )**2 / sqrt(
+        1 + sqrt((mu[sp]/mu[j])*np.sqrt(w[j]/w[sp]))
+    )**2 / np.sqrt(
         8*(1 + (w[sp]/w[j]))
     ) for j in range(sol.n_species)])
 
