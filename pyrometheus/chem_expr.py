@@ -74,7 +74,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 @singledispatch
 def poly_to_enthalpy_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_to_enthalpy_expr: "
-            f"{type(poly)}")
+                    f"{type(poly)}")
 
 
 @poly_to_enthalpy_expr.register
@@ -96,7 +96,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 @singledispatch
 def poly_to_entropy_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_to_entropy_expr: "
-            f"{type(poly)}")
+                    f"{type(poly)}")
 
 
 @poly_to_entropy_expr.register
@@ -120,7 +120,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 @singledispatch
 def poly_deriv_to_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_deriv_to_expr: "
-            f"{type(poly)}")
+                    f"{type(poly)}")
 
 
 @poly_deriv_to_expr.register
@@ -135,7 +135,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 @singledispatch
 def poly_deriv_to_enthalpy_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_deriv_to_enthalpy_expr: "
-            f"{type(poly)}")
+                    f"{type(poly)}")
 
 
 @poly_deriv_to_enthalpy_expr.register
@@ -156,7 +156,7 @@ def _(poly: ct.NasaPoly2, arg_name):
 @singledispatch
 def poly_deriv_to_entropy_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_deriv_to_entropy_expr: "
-            f"{type(poly)}")
+                    f"{type(poly)}")
 
 
 @poly_deriv_to_entropy_expr.register
@@ -290,9 +290,9 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
                for sp in sol.reaction(reaction_index).products]
 
     sum_r = sum(nu_reac_i * gibbs_rt[indices_reac_i]
-            for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
+                for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
     sum_p = sum(nu_prod_i * gibbs_rt[indices_prod_i]
-            for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod))
+                for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod))
 
     # Check if reaction is termolecular
     sum_nu_net = sum(nu_prod) - sum(nu_reac)
@@ -326,8 +326,8 @@ def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
     """
-    :returns: The third-body concentration expression for reaction *react* in terms
-        of the species concentrations *c* as a
+    :returns: The third-body concentration expression for reaction *react* in
+    terms of the species concentrations *c* as a
         :class:`pymbolic.primitives.Expression`
     """
 
@@ -347,8 +347,9 @@ def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
 
 def troe_falloff_center_expr(react: ct.Reaction, t):
     """
-    :returns: The Troe falloff center expression for reaction *react* in terms of the
-        temperature *t* as a :class:`pymbolic.primitives.Expression`
+    :returns: The Troe falloff center expression for reaction *react* in
+    terms of the temperature *t* as a
+    :class:`pymbolic.primitives.Expression`
     """
 
     if isinstance(react.rate, ct.TroeRate):
@@ -427,9 +428,10 @@ def falloff_function_expr(react: ct.Reaction, i,
 def rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
                           k_fwd, log_k_eq):
     """
-    :returns: Rate of progress expression for reaction with index *reaction_index*
-        in terms of species concentrations *c* with rate coefficients *k_fwd*
-        and equilbrium constants *k_eq* as a :class:`pymbolic.primitives.Expression`
+    :returns: Rate of progress expression for reaction with
+    index *reaction_index* in terms of species concentrations *c*
+    with rate coefficients *k_fwd* and equilbrium constants *k_eq*
+    as a :class:`pymbolic.primitives.Expression`
     """
     indices_reac = [sol.species_index(sp)
                     for sp in sol.reaction(reaction_index).reactants]
@@ -448,7 +450,9 @@ def rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
     if sol.reaction(reaction_index).reversible:
         nu_prod = [sol.reaction(reaction_index).products[sp]
                    for sp in sol.reaction(reaction_index).products]
-        r_rev = np.prod([c[index]**nu for index, nu in zip(indices_prod, nu_prod)])
+        r_rev = np.prod([
+            c[index]**nu for index, nu in zip(indices_prod, nu_prod)
+        ])
         return k_fwd[reaction_index] * (
                 r_fwd
                 - p.Variable("exp")(log_k_eq[reaction_index]) * r_rev)
@@ -471,8 +475,11 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
                    if species in react.reactants]
     indices_rev = [i for i, react in enumerate(sol.reactions())
                    if species in react.products]
-    nu_fwd = [sol.reactant_stoich_coeff(sol.species_index(species), react_index)
-              for react_index in indices_fwd]
+    nu_fwd = [
+        sol.reactant_stoich_coeff(
+            sol.species_index(species), react_index
+        ) for react_index in indices_fwd
+    ]
     nu_rev = [sol.product_stoich_coeff(sol.species_index(species), prod_index)
               for prod_index in indices_rev]
     sum_fwd = sum(nu*r_net[index] for nu, index in zip(nu_fwd, indices_fwd))

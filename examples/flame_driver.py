@@ -185,7 +185,7 @@ def time_integration():
     time_integ = RungeKutta(reactor,)
 
     assert time_integ.rxr.species_mass_flux == reactor.species_mass_flux_mixavg
-    
+
     if config['filter']:
         time_integ.configure(config, post_step=reactor.filter_state)
 
@@ -220,7 +220,10 @@ def time_integration():
     time_integ.timer.record('outer_time_loop', time_integ.timer.stop(my_t))
     time_integ.timer.report(total='outer_time_loop')
 
-    time_integ.rxr.timer.record('outer_time_loop', time_integ.rxr.timer.stop(my_t))
+    time_integ.rxr.timer.record(
+        'outer_time_loop',
+        time_integ.rxr.timer.stop(my_t)
+    )
     time_integ.rxr.timer.report(total='outer_time_loop')
 
     return
@@ -249,7 +252,7 @@ if __name__ == '__main__':
         sol = ct.Solution(f'mech/{mech}.yaml')
         pyro_cls = pyro.get_thermochem_class(sol)
         pyro_gas = make_pyro_object(pyro_cls, np)
-        
+
         def make_array(res_list):
             return np.stack(res_list)
 
@@ -257,8 +260,10 @@ if __name__ == '__main__':
         pyro_gas.molecular_weights = pyro_gas.molecular_weights.reshape(
             -1, 1
         )
-        pyro_gas.inv_molecular_weights = pyro_gas.inv_molecular_weights.reshape(
-            -1, 1
+        pyro_gas.inv_molecular_weights = (
+            pyro_gas.inv_molecular_weights.reshape(
+                -1, 1
+            )
         )
 
         time_integration()

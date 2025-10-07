@@ -36,7 +36,6 @@ class TimeIntegrator:
     def time_march(self, initial_time, final_time, step_size,
                    initial_state, *params,):
 
-        from numpy import ceil
         win_size = final_time - initial_time
         num_steps = int(
             round(win_size / step_size)
@@ -52,7 +51,10 @@ class TimeIntegrator:
             if self.post_step:
                 my_t = self.timer.start()
                 state = self.post_step(state)
-                self.timer.record('tiem_integ::post_step', self.timer.stop(my_t))
+                self.timer.record(
+                    'time_integ::post_step',
+                    self.timer.stop(my_t)
+                )
 
         return state
 

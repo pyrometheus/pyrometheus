@@ -136,10 +136,10 @@ class Flame(Reactor):
         self.op = op
         self.timer = SerialTimer()
         if transport_model == 'le':
-            print(f'WARNING: TRANSPORT MODEL: UNITYLE')
+            print('WARNING: TRANSPORT MODEL: UNITYLE')
             self.species_mass_flux = self.species_mass_flux_consle
         elif transport_model == 'mixavg':
-            print(f'WARNING: TRANSPORT MODEL: MIXAVG')
+            print('WARNING: TRANSPORT MODEL: MIXAVG')
             self.species_mass_flux = self.species_mass_flux_mixavg
         else:
             print(f'WARNING: DEFAULT TRANSPORT MODEL: {transport_model}')
@@ -186,13 +186,13 @@ class Flame(Reactor):
             cons_vars, prim_vars, density, temperature
         )
         self.timer.record('rhs::inv_flux_div', self.timer.stop(my_t))
-        
+
         my_t = self.timer.start()
         d_fvis_dx = self.viscous_flux_divergence(
             cons_vars, prim_vars, density, temperature
         )
         self.timer.record('rhs::vis_flux_div', self.timer.stop(my_t))
-        
+
         my_t = self.timer.start()
         omega = self.chemical_source_term(
             prim_vars, density, temperature

@@ -422,7 +422,9 @@ class Thermochemistry:
 
         falloff_center = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            ${cgm(ce.troe_falloff_center_expr(react,Variable("temperature")))} * ones,
+            ${cgm(
+                ce.troe_falloff_center_expr(react,Variable("temperature"))
+            )} * ones,
         %endfor
         ])
 
