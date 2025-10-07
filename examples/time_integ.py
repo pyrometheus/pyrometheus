@@ -2,6 +2,7 @@ import jax.numpy as jnp
 from functools import partial
 from jax import jit, jacfwd
 from reactors import Reactor
+from profiling import SerialTimer
 
 
 def create_time_windows(initial_time, final_time, num_snapshots):
@@ -20,6 +21,7 @@ class TimeIntegrator:
     def __init__(self, rxr: Reactor):
         self.rxr = rxr
         self.post_step = None
+        self.timer = SerialTimer()
 
     def configure(self, config: dict, **kwargs):
         if 'post_step' in kwargs:
@@ -35,16 +37,22 @@ class TimeIntegrator:
                    initial_state, *params,):
 
         from numpy import ceil
-        num_steps = 1 + int(
-            ceil(abs(final_time - initial_time) / abs(step_size))
+        win_size = final_time - initial_time
+        num_steps = int(
+            round(win_size / step_size)
         )
         state = initial_state
-        self.step_size = step_size
+        self.step_size = win_size / num_steps
 
         for i in range(num_steps):
+            my_t = self.timer.start()
             state = self.step(state, *params)
+            self.timer.record('time_integ::rhs', self.timer.stop(my_t))
+
             if self.post_step:
+                my_t = self.timer.start()
                 state = self.post_step(state)
+                self.timer.record('tiem_integ::post_step', self.timer.stop(my_t))
 
         return state
 

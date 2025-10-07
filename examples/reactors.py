@@ -8,6 +8,7 @@ from arraycontext import (
 from dataclasses import field, dataclass
 from domain import Operators
 from characteristics import outflow_nscbc
+from profiling import SerialTimer
 
 
 # {{{ AoS wrapper for autoignition simulations
@@ -82,6 +83,7 @@ class Reactor:
 
     def __init__(self, pyro_gas):
         self.pyro_gas = pyro_gas
+        self.timer = SerialTimer()
 
     def rhs(self, state):
         raise NotImplementedError
@@ -128,15 +130,25 @@ class Flame(Reactor):
     def __init__(self,
                  pyro_gas,
                  op: Operators,
-                 transport_model):
+                 transport_model,
+                 clip=False):
         self.pyro_gas = pyro_gas
         self.op = op
+        self.timer = SerialTimer()
         if transport_model == 'le':
+            print(f'WARNING: TRANSPORT MODEL: UNITYLE')
             self.species_mass_flux = self.species_mass_flux_consle
         elif transport_model == 'mixavg':
+            print(f'WARNING: TRANSPORT MODEL: MIXAVG')
             self.species_mass_flux = self.species_mass_flux_mixavg
         else:
-            self.species_mass_flux = self.species_mass_flux_consle
+            print(f'WARNING: DEFAULT TRANSPORT MODEL: {transport_model}')
+            self.species_mass_flux = self.species_mass_flux_mixavg
+
+        if clip:
+            self.clip = lambda y: np.where(y > 0, y, 0)
+        else:
+            self.clip = lambda y: y
 
     def configure_buffer_zones(self,
                                buffer_support,
@@ -162,25 +174,38 @@ class Flame(Reactor):
         )
 
     def rhs(self, cons_vars: FlameState):
+
+        my_t = self.timer.start()
         prim_vars, density, temperature = self.equation_of_state(
             cons_vars
         )
+        self.timer.record('rhs::eos', self.timer.stop(my_t))
+
+        my_t = self.timer.start()
         d_finv_dx = self.inviscid_flux_divergence(
             cons_vars, prim_vars, density, temperature
         )
+        self.timer.record('rhs::inv_flux_div', self.timer.stop(my_t))
+        
+        my_t = self.timer.start()
         d_fvis_dx = self.viscous_flux_divergence(
             cons_vars, prim_vars, density, temperature
         )
+        self.timer.record('rhs::vis_flux_div', self.timer.stop(my_t))
+        
+        my_t = self.timer.start()
         omega = self.chemical_source_term(
             prim_vars, density, temperature
         )
+        self.timer.record('rhs::chem', self.timer.stop(my_t))
+
         return omega - d_fvis_dx - d_finv_dx
 
     def equation_of_state(self, cons_vars: FlameState) -> FlameState:
         """
         Evaluate primitive variables from conserved variables.
         """
-        density = self.pyro_gas.usr_np.sum(
+        density = self.pyro_gas.pyro_np.sum(
             cons_vars.densities, axis=0
         )
         mass_fractions = cons_vars.densities / density
@@ -204,14 +229,15 @@ class Flame(Reactor):
     def chemical_source_term(self,
                              prim_vars: FlameState,
                              density, temperature):
+        mass_fractions = self.clip(prim_vars.mass_fractions)
         return FlameState(
-            self.pyro_gas.usr_np.zeros_like(prim_vars.momentum),
-            self.pyro_gas.usr_np.zeros_like(prim_vars.total_energy),
+            self.pyro_gas.pyro_np.zeros_like(prim_vars.momentum),
+            self.pyro_gas.pyro_np.zeros_like(prim_vars.total_energy),
             (
                 self.pyro_gas.molecular_weights *
                 self.pyro_gas.get_net_production_rates(
                     density, temperature,
-                    prim_vars.mass_fractions
+                    mass_fractions
                 )
             )
         )
@@ -330,7 +356,7 @@ class Flame(Reactor):
         ) * self.pyro_gas.gas_constant * temperature
 
         # Species mole fractions
-        mol_weight = self.pyro_gas.get_mix_molecular_weight(
+        mol_weight = self.pyro_gas.get_mixture_molecular_weight(
             prim_vars.mass_fractions
         )
         mole_frac = self.pyro_gas.get_mole_fractions(
@@ -350,12 +376,12 @@ class Flame(Reactor):
                 for d, x in zip(diff, mole_frac)
             ], dtype=np.float64)
         )
-        corr_flux = -prim_vars.mass_fractions * self.pyro_gas.usr_np.sum(
+        corr_flux = -prim_vars.mass_fractions * self.pyro_gas.pyro_np.sum(
             mixavg_flux, axis=0
         )
         mass_flux = mixavg_flux + corr_flux
 
-        heat_flux = self.op.usr_np.sum(
+        heat_flux = self.op.pyro_np.sum(
             enthalpies * mass_flux,
             axis=0
         )

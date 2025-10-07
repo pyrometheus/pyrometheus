@@ -422,14 +422,14 @@ class Thermochemistry:
 
         falloff_center = self._pyro_make_array([
         %for _, react in falloff_reactions:
-            ${cgm(ce.troe_falloff_center_expr(react,Variable("temperature")))},
+            ${cgm(ce.troe_falloff_center_expr(react,Variable("temperature")))} * ones,
         %endfor
         ])
 
         falloff_factor = self._pyro_make_array([
         %for i, (_, react) in enumerate(falloff_reactions):
             ${cgm(ce.troe_falloff_factor_expr(react, i,
-            Variable("reduced_pressure"), Variable("falloff_center")))},
+            Variable("reduced_pressure"), Variable("falloff_center")))} * ones,
         %endfor
         ])
 
@@ -438,7 +438,7 @@ class Thermochemistry:
             ${cgm(ce.falloff_function_expr(
                 react, i,
                 Variable("falloff_factor"),
-                Variable("falloff_center")))},
+                Variable("falloff_center")))} * ones,
         %endfor
         ])*reduced_pressure/(1+reduced_pressure)
 

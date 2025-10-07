@@ -1,8 +1,9 @@
 import sys
 import yaml
 import h5py
+import numpy as np
 import cantera as ct
-import pyrometheus as pyro
+from pyrometheus.codegen.python import PythonCodeGenerator as pyro
 from dataclasses import dataclass
 from make_pyro import make_pyro_object
 from reactors import Flame, FlameState
@@ -25,7 +26,7 @@ class bcolor:
     UNDERLINE = '\033[4m'
 
 
-def form_file_name(step):
+def form_file_name(config, step):
     if step:
         from numpy import floor, log10
         num_zeros = floor(log10(step)).astype(int)
@@ -33,18 +34,19 @@ def form_file_name(step):
     else:
         step_str = 9*'0'
 
-    return 'output/flame/flame_' + step_str + '.h5'
+    dir_id = config['output_dir']
+    return f'output/flame_{dir_id}/flame_{step_str}.h5'
 
 
-def initialize(config, pyro_gas):
+def restart(config):
 
     # Open h5 database
-    db = h5py.File(form_file_name(config['init_step']), 'r')
+    db = h5py.File(form_file_name(config, config['restart_step']), 'r')
 
     # Mesh
     x = db['domain/mesh/x'][:]
     mesh = Mesh(x=x)
-    op = Operators(mesh, pyro_gas.usr_np)
+    op = Operators(mesh, pyro_gas.pyro_np)
     reactor = Flame(pyro_gas, op, config['transport_model'])
 
     # Guess temperature
@@ -60,10 +62,72 @@ def initialize(config, pyro_gas):
 
     # Time
     t_offset = db['time/time_and_step'][0]
-    return t_offset, cons_vars, mesh, reactor
+    return t_offset, config['restart_step'], cons_vars, mesh, reactor
 
 
-def write_to_file(step,
+def initialize(config):
+
+    # Grid
+    import numpy as np
+    x = np.linspace(0, config['x_max'], config['num_x'])
+
+    # Mixture states
+    fuel = config['fuel']
+    pres = ct.one_atm
+    temp_c = 300
+    temp_h = 1600
+
+    sol.TP = temp_c, pres
+    sol.set_equivalence_ratio(
+        config['equiv_ratio'],
+        f'{fuel}:1',
+        'O2:0.21, N2:0.79'
+    )
+    mass_frac_c = sol.Y
+
+    sol.TPY = temp_h, ct.one_atm, mass_frac_c
+    sol.equilibrate('TP')
+    mass_frac_h = sol.Y
+
+    # Mollifier
+    blend_factor = 1e2 / x.max()
+    mollifier = 0.5 * (
+        1 - np.tanh(blend_factor * (
+            x - 0.5 * config['x_max']
+        ))
+    )
+
+    temp = temp_c + (temp_h - temp_c) * mollifier
+    mass_frac = np.array([
+        y_c + (y_h - y_c) * mollifier
+        for y_c, y_h in zip(mass_frac_c, mass_frac_h)
+    ])
+    density = pyro_gas.get_density(
+        pres * np.ones_like(temp), temp, mass_frac
+    )
+    energy = pyro_gas.get_mixture_internal_energy_mass(
+        temp, mass_frac
+    )
+
+    # Create objects
+    mesh = Mesh(x=x)
+    op = Operators(mesh, pyro_gas.pyro_np)
+    reactor = Flame(pyro_gas, op, config['transport_model'])
+    reactor.set_temperature_guess(temp)
+
+    cons_vars = FlameState(
+        momentum=np.zeros_like(temp),
+        total_energy=density * energy,
+        densities=np.array([
+            density * y for y in mass_frac
+        ])
+    )
+
+    return 0, 0, cons_vars, mesh, reactor
+
+
+def write_to_file(config,
+                  step,
                   time,
                   step_size,
                   reactor,
@@ -72,7 +136,7 @@ def write_to_file(step,
                   temperature):
 
     # Write to file
-    file_name = form_file_name(step)
+    file_name = form_file_name(config, step)
     db = h5py.File(file_name, 'w')
     # Time
     g = db.create_group('time')
@@ -97,10 +161,22 @@ def write_to_file(step,
     return
 
 
-def time_integration(scheme: int, config: dict, pyro_gas):
+def time_integration():
 
     # Initialize state, mesh, and reactor
-    t_offset, cons_vars, mesh, reactor = initialize(config, pyro_gas)
+    if 'restart_step' in config:
+        restart_step = config['restart_step']
+        print(f'{bcolor.OKGREEN} Initializing from restart file '
+              f'{restart_step} {bcolor.ENDC}')
+        t_offset, init_step, cons_vars, mesh, reactor = restart(config)
+    else:
+        t_offset, init_step, cons_vars, mesh, reactor = initialize(config)
+        prim_vars, dens, temp = reactor.equation_of_state(cons_vars)
+        write_to_file(
+            config, init_step, t_offset, config['step_size'],
+            reactor, cons_vars, prim_vars, temp
+        )
+
     print(f'mesh size: {mesh.num_x}, array shape: {cons_vars.momentum.shape}')
 
     # Time integrator
@@ -108,12 +184,17 @@ def time_integration(scheme: int, config: dict, pyro_gas):
     num_snapshots = config['num_snapshots']
     time_integ = RungeKutta(reactor,)
 
-    time_integ.configure(config, post_step=reactor.filter_state)
+    assert time_integ.rxr.species_mass_flux == reactor.species_mass_flux_mixavg
+    
+    if config['filter']:
+        time_integ.configure(config, post_step=reactor.filter_state)
 
     snap_times, time_windows = create_time_windows(
         config['initial_time'], config['final_time'],
         num_snapshots
     )
+
+    my_t = time_integ.timer.start()
     for i, (ti, tf) in enumerate(time_windows):
         cons_vars = time_integ.time_march(
             ti, tf,
@@ -121,60 +202,63 @@ def time_integration(scheme: int, config: dict, pyro_gas):
             cons_vars,
         )
         prim_vars, dens, temp = reactor.equation_of_state(cons_vars)
-
-        print_step = i + config['init_step']
+        time_integ.rxr.set_temperature_guess(temp)
+        print_step = i + init_step + 1
         print(
             f'Snapshot: {print_step}, Time: {(t_offset + tf):.4e}, '
             f'{bcolor.WARNING}Temperature: {temp.max():.4f} {bcolor.ENDC}'
         )
-
-        if i and not i % config['write_freq']:
-            write_step = i + config['init_step']
+        if not i % config['write_freq']:
+            write_step = i + init_step + 1
             print(f'{bcolor.OKGREEN}>-->--> Writing snapshot {write_step} '
                   f'to file{bcolor.ENDC}')
             write_to_file(
-                write_step, t_offset + tf, step_size,
+                config, write_step, t_offset + tf, step_size,
                 reactor, cons_vars, prim_vars, temp
             )
 
+    time_integ.timer.record('outer_time_loop', time_integ.timer.stop(my_t))
+    time_integ.timer.report(total='outer_time_loop')
+
+    time_integ.rxr.timer.record('outer_time_loop', time_integ.rxr.timer.stop(my_t))
+    time_integ.rxr.timer.report(total='outer_time_loop')
+
     return
 
 
-def run_flame(input_file, pyro_cls, sol):
-
-    import numpy as np
-    pyro_gas = make_pyro_object(pyro_cls, np)
-
-    def make_array(res_list):
-        return np.stack(res_list)
-
-    pyro_gas._pyro_make_array = make_array
-    pyro_gas.molecular_weights = pyro_gas.molecular_weights.reshape(
-        -1, 1
-    )
-    pyro_gas.inv_molecular_weights = pyro_gas.inv_molecular_weights.reshape(
-        -1, 1
-    )
+def run_flame(input_file):
 
     with open(input_file, 'r') as f:
         config = yaml.safe_load(f)
-        time_integration('explicit', config, pyro_gas)
+
+        time_integration('explicit', config)
 
     return
 
 
-def run_pyro():
-
-    sol = ct.Solution('sandiego.yaml')
-    pyro_cls = pyro.codegen.python.get_thermochem_class(sol)
+if __name__ == '__main__':
 
     if len(sys.argv) > 1:
         input_file = sys.argv[1]
     else:
         input_file = 'input/flame_demo.yaml'
 
-    run_flame(input_file, pyro_cls, sol)
+    with open(input_file, 'r') as f:
+        config = yaml.safe_load(f)
+        mech = config['mech']
+        sol = ct.Solution(f'mech/{mech}.yaml')
+        pyro_cls = pyro.get_thermochem_class(sol)
+        pyro_gas = make_pyro_object(pyro_cls, np)
+        
+        def make_array(res_list):
+            return np.stack(res_list)
 
+        pyro_gas._pyro_make_array = make_array
+        pyro_gas.molecular_weights = pyro_gas.molecular_weights.reshape(
+            -1, 1
+        )
+        pyro_gas.inv_molecular_weights = pyro_gas.inv_molecular_weights.reshape(
+            -1, 1
+        )
 
-if __name__ == '__main__':
-    run_pyro()
+        time_integration()

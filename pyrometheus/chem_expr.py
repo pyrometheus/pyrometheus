@@ -367,7 +367,7 @@ def troe_falloff_center_expr(react: ct.Reaction, t):
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
         return p.Variable("log10")(troe_1 + troe_2 + troe_3)
     else:
-        raise ValueError("Unexpected length of 'tro_params': "
+        raise ValueError("Unexpected length of 'troe_params': "
                          f" '{len(troe_params)}'")
     return
 
