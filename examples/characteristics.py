@@ -14,7 +14,7 @@ def characteristic_decomposition(cons_vars, prim_vars,
         (pyro_gas.get_species_enthalpies_rt(temperature) - 1) *
         pyro_gas.gas_constant * temperature
     )
-    mol_weight = pyro_gas.get_mix_molecular_weight(
+    mol_weight = pyro_gas.get_mixture_molecular_weight(
         prim_vars.mass_fractions
     )
     cp_mass = pyro_gas.get_mixture_specific_heat_cp_mass(
@@ -28,7 +28,7 @@ def characteristic_decomposition(cons_vars, prim_vars,
     )
     gamma = cp_mass / cv_mass
 
-    sound_speed = pyro_gas.usr_np.sqrt(
+    sound_speed = pyro_gas.pyro_np.sqrt(
         gamma * prim_vars.pressure / density
     )
     total_enthalpy = (
@@ -54,16 +54,16 @@ def characteristic_decomposition(cons_vars, prim_vars,
     )
 
     #
-    sign = pyro_gas.usr_np.array([-1, 1])
+    sign = pyro_gas.pyro_np.array([-1, 1])
     num_variables = pyro_gas.num_species + 2
 
-    wave_speeds = pyro_gas.usr_np.array([
+    wave_speeds = pyro_gas.pyro_np.array([
         prim_vars.velocity - sound_speed, prim_vars.velocity,
         prim_vars.velocity + sound_speed
     ])
 
     # eigenvalues: u - a, u + a
-    eigenvec_r = pyro_gas.usr_np.zeros((num_variables, num_variables))
+    eigenvec_r = pyro_gas.pyro_np.zeros((num_variables, num_variables))
     eigenvec_r[0, [0, -1]] = prim_vars.velocity + sign * sound_speed
     eigenvec_r[1, [0, -1]] = (
         total_enthalpy + sign * prim_vars.velocity * sound_speed
@@ -77,7 +77,7 @@ def characteristic_decomposition(cons_vars, prim_vars,
         (cons_vars.total_energy / density) -
         density * (dp_ddi / dp_de)
     )
-    eigenvec_r[2:, 1:-1] = pyro_gas.usr_np.eye(pyro_gas.num_species)
+    eigenvec_r[2:, 1:-1] = pyro_gas.pyro_np.eye(pyro_gas.num_species)
     return wave_speeds, eigenvec_r
 
 
@@ -87,12 +87,12 @@ def outflow_nscbc(flux_div, cons_vars, prim_vars, density, temperature,
     ws, r = characteristic_decomposition(
         cons_vars, prim_vars, density, temperature, pyro_gas,
     )
-    df_dx = pyro_gas.usr_np.hstack((
+    df_dx = pyro_gas.pyro_np.hstack((
         flux_div.momentum,
         flux_div.total_energy,
         flux_div.densities
     ))
-    l_vec = pyro_gas.usr_np.linalg.solve(r, df_dx)
+    l_vec = pyro_gas.pyro_np.linalg.solve(r, df_dx)
 
     # Subsonic outflow
     if normal == 1:
