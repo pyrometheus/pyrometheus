@@ -837,7 +837,7 @@ contains
     subroutine get_mixture_thermal_conductivity_mixavg(temperature, &
         mass_fractions, mixture_thermal_conductivity_mixavg)
 
-        GPU_ROUTINE(get_mixture_viscosity_mixavg)
+        GPU_ROUTINE(get_mixture_thermal_conductivity_mixavg)
 
         ${real_type}, intent(in) :: temperature
         ${real_type}, intent(in), dimension(${sol.n_species}) :: mass_fractions
