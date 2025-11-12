@@ -38,12 +38,12 @@ class Mesh:
 
 class Operators:
 
-    def __init__(self, mesh: Mesh, usr_np):
+    def __init__(self, mesh: Mesh, pyro_np):
         self.mesh = mesh
-        self.usr_np = usr_np
+        self.pyro_np = pyro_np
 
     def filt(self, f):
-        return self.usr_np.concatenate((
+        return self.pyro_np.concatenate((
             # i = 0
             [
                 0.5 * (f[0] + f[1])
@@ -90,8 +90,33 @@ class Operators:
             ],
         ))
 
+    def filt_loword(self, f):
+        return self.pyro_np.concatenate((
+            # i = 0
+            [
+                0.5 * (f[0] + f[1])
+            ],
+            # i = 1
+            [
+                0.5 * f[1] + 0.25 * (f[0] + f[2])
+            ],
+            # i = 2:-2
+            (
+                (5/8) * f[2:-2] + (1/4) * (f[1:-3] + f[3:-1]) -
+                (1/16) * (f[:-4] + f[4:])
+            ),
+            # i = -2
+            [
+                0.5 * f[-2] + 0.25 * (f[-1] + f[-3])
+            ],
+            # i = -1
+            [
+                0.5 * (f[-1] + f[-2])
+            ],
+        ))
+
     def d_dx(self, f):
-        return self.usr_np.concatenate((
+        return self.pyro_np.concatenate((
             # i = 0
             [
                 -90 * f[0] + 120 * f[1] - 30 * f[2]
@@ -116,7 +141,7 @@ class Operators:
         )) / (60 * self.mesh.dx)
 
     def laplacian(self, f):
-        return self.usr_np.concatenate((
+        return self.pyro_np.concatenate((
             [2 * f[0] - 5 * f[1] + 4 * f[2] - f[3]],
             f[2:] - 2 * f[1:-1] + f[:-2],
             [-f[-4] + 4 * f[-3] - 5 * f[-2] + 2 * f[-1]]
