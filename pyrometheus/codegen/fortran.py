@@ -257,8 +257,6 @@ module ${module_name}
     ${real_type}, parameter :: inv_molecular_weights(${sol.n_species}) = &
         (/ ${str_np(1/sol.molecular_weights)} /)
 
-    ${gpu_create}(molecular_weights, inv_molecular_weights)
-
     character(len=12), parameter :: species_names(${sol.n_species}) = &
         (/ ${", ".join('"'+'{0: <12}'.format(s)+'"' for s in sol.species_names)} /)
 
@@ -380,7 +378,10 @@ contains
         ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out), dimension(${sol.n_species}) :: concentrations
 
-        concentrations = density * inv_molecular_weights * mass_fractions
+        %for i in range(sol.n_species):
+            concentrations(${i+1}) = density * &
+                inv_molecular_weights(${i+1}) * mass_fractions(${i+1})
+        %endfor
 
     end subroutine get_concentrations
 
@@ -392,7 +393,10 @@ contains
         ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
         ${real_type}, intent(out), dimension(${sol.n_species}) :: mole_fractions
 
-        mole_fractions = inv_molecular_weights * mass_fractions * mix_mol_weight
+        %for i in range(sol.n_species):
+            mole_fractions(${i+1}) = inv_molecular_weights(${i+1}) * &
+                mass_fractions(${i+1}) * mix_mol_weight
+        %endfor
 
     end subroutine get_mole_fractions
 
@@ -441,7 +445,11 @@ contains
         ${real_type}, dimension(${sol.n_species}) :: cp0_r
 
         call get_species_specific_heats_r(temperature, cp0_r)
-        cp0_r(:) = cp0_r(:) - 1.d0
+
+        %for i in range(sol.n_species):
+            cp0_r(${i+1}) = cp0_r(${i+1}) - 1.d0
+        %endfor
+
         call get_mass_averaged_property(mass_fractions, cp0_r, cv_mix)
         cv_mix = cv_mix * gas_constant
 
@@ -474,7 +482,11 @@ contains
         ${real_type}, dimension(${sol.n_species}) :: h0_rt
 
         call get_species_enthalpies_rt(temperature, h0_rt)
-        h0_rt(:) = h0_rt - 1.d0
+
+        %for i in range(sol.n_species):
+            h0_rt(${i+1}) = h0_rt(${i+1}) - 1.d0
+        %endfor
+
         call get_mass_averaged_property(mass_fractions, h0_rt, e_mix)
         e_mix = e_mix * gas_constant * temperature
 
@@ -531,7 +543,10 @@ contains
 
         call get_species_enthalpies_rt(temperature, h0_rt)
         call get_species_entropies_r(temperature, s0_r)
-        g0_rt(:) = h0_rt(:) - s0_r(:)
+
+        %for i in range(sol.n_species):
+            g0_rt(${i+1}) = h0_rt(${i+1}) - s0_r(${i+1})
+        %endfor
 
     end subroutine get_species_gibbs_rt
 
@@ -913,17 +928,14 @@ class FortranCodeGenerator(CodeGenerator):
 #define GPU_ROUTINE(name) !$acc routine seq
 #endif
 """
-            gpu_create_str = "!$acc declare create"
         elif opts.directive_offload == "mp":
             gpu_routine_str = """
-#define GPU_ROUTINE(name) !$omp declare target device_type(any)
+#define GPU_ROUTINE(name) !$omp declare target
 """
-            gpu_create_str = "!$omp declare target"
         else:
             gpu_routine_str = """
 #define GPU_ROUTINE(name) ! name
 """
-            gpu_create_str = "! GPU Create "
 
         falloff_rxn = [(i, r) for i, r in enumerate(sol.reactions())
                     if r.reaction_type.startswith("falloff")]
@@ -941,7 +953,6 @@ class FortranCodeGenerator(CodeGenerator):
 
             real_type=opts.scalar_type or "real(dp)",
             gpu_routine=gpu_routine_str,
-            gpu_create=gpu_create_str,
 
             module_name=name,
 
