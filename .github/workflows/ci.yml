@@ -37,18 +37,18 @@ jobs:
             python3 -m flake8 --extend-ignore E501,Q000 test/mechs
 
     pytest:
-        name: Pytest Conda Py${{ matrix.python_version }}
+        name: Pytest Conda Py${{ matrix.python-version }}
         strategy:
             matrix:
-                python_version: ["3.14"]
+                python-version: ["3.14"]
         runs-on: ubuntu-latest
         env:
-            PYTHON_VERSION: ${{ matrix.python_version }}
+            PYTHON_VERSION: ${{ matrix.python-version }}
         steps:
         - uses: actions/checkout@v4
         - uses: actions/setup-python@v5
           with:
-            python-version: ${{ matrix.python_version }}
+            python-version: ${{ matrix.python-version }}
         -   name: "PyTest"
             run: |
                 python3 -m pip install --upgrade pip
