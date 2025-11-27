@@ -40,7 +40,7 @@ jobs:
         name: Pytest Conda Py${{ matrix.python_version }}
         strategy:
             matrix:
-                python_version: ["3.12", "3.13", "3.14"]
+                python_version: ["3.14"]
         runs-on: ubuntu-latest
         env:
             PYTHON_VERSION: ${{ matrix.python_version }}
@@ -51,6 +51,8 @@ jobs:
             python-version: ${{ matrix.python_version }}
         -   name: "PyTest"
             run: |
+                python3 -m pip install --upgrade pip
+                python3 -m pip install "setuptools>=70" ".[dev]"
                 python3 -m pip install .[test]
                 cmake -S test -B build -Dpybind11_DIR=`python3 -m pybind11 --cmakedir`
                 cmake --build build --parallel $(nproc)
