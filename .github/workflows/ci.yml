@@ -40,7 +40,7 @@ jobs:
         name: Pytest Conda Py${{ matrix.python_version }}
         strategy:
             matrix:
-                python_version: ["3.9", "3.11"]
+                python_version: ["3.12", "3.13", "3.14"]
         runs-on: ubuntu-latest
         env:
             PYTHON_VERSION: ${{ matrix.python_version }}
