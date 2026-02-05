@@ -51,14 +51,14 @@ Cite me:
 
 .. code-block:: bibtex
 
-    @article{cisneros-garibay2025pyrometheus,
-      title={Pyrometheus: {S}ymbolic abstractions for {XPU} and automatically differentiated computation of combustion kinetics and thermodynamics},
-      author={Esteban Cisneros-Garibay and Henry {Le Berre} and Dimitrios Adam and Spencer H. Bryngelson and Jonathan B. Freund},
-      year={2025},
-      eprint={2503.24286},
-      archivePrefix={arXiv},
-      primaryClass={physics.comp-ph},
-      url={https://arxiv.org/abs/2503.24286}
+    @article{cisneros25,
+      author = {Cisneros-Garibay, Esteban and {Le Berre}, H. and Adam, D. and Bryngelson, Spencer H. and Freund, Jonathan B.},
+      title = {{Pyrometheus: S}ymbolic abstractions for {XPU} and automatically differentiated computation of combustion kinetics and thermodynamics},
+      year = {2026},
+      volume = {320},
+      pages = {109987},
+      doi = {10.1016/j.cpc.2025.109987},
+      journal = {Computer Physics Communications}
     }
 
 

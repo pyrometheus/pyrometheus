@@ -12,6 +12,9 @@ authors:
     given-names: Spencer H.
   - family-names: Freund
     given-names: Jonathan B.
-date-released: 2025-03-29
-type: preprint
-doi: 10.48550/arXiv.2503.24286
+date-released: 2026
+type: article
+doi: 10.1016/j.cpc.2025.109987
+journal: "Computer Physics Communications"
+volume: 320
+pages: 109987

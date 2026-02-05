@@ -12,7 +12,7 @@ authors = [
   { name="Henry Le Berre",    email="hberre3@gatech.edu"   },
 ]
 description = "Code generation for combustion thermochemistry, based on Cantera."
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
