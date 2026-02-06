@@ -49,11 +49,45 @@ import numpy as np
 # {{{ polynomial processing
 
 def nasa7_conditional(t, poly, part_gen):
-    # FIXME: Should check minTemp, maxTemp
+    min_temp = poly.min_temp
+    max_temp = poly.max_temp
+    ch = poly.coeffs[1:8]
+    cl = poly.coeffs[8:15]
+    min_coeffs = cl*0.
+    max_coeffs = ch*0.
+
+    # compute coefficients below the lower temperature bound that yield a constant Cp
+    min_coeffs[0] = (cl[0] + cl[1]*min_temp + cl[2]*min_temp ** 2
+                     + cl[3]*min_temp ** 3 + cl[4]*min_temp ** 4)
+    min_coeffs[5] = min_temp*(cl[0] + cl[1]/2.*min_temp + cl[2]/3.*min_temp ** 2
+                          + cl[3]/4.*min_temp ** 3 + cl[4]/5.*min_temp ** 4
+                          + cl[5]/min_temp - min_coeffs[0])
+    min_coeffs[6] = (cl[0]*np.log(min_temp) + cl[1]*min_temp + cl[2]/2.*min_temp ** 2
+                     + cl[3]/3.*min_temp ** 3 + cl[4]/4.*min_temp ** 4
+                     + cl[5]/min_temp - min_coeffs[0]*np.log(min_temp))
+
+    # compute coefficients below the lower temperature bound that yield a constant Cp
+    max_coeffs[0] = (ch[0] + ch[1]*max_temp + ch[2]*max_temp ** 2
+                     + ch[3]*max_temp ** 3 + ch[4]*max_temp ** 4)
+    max_coeffs[5] = max_temp*(ch[0] + ch[1]/2.*max_temp + ch[2]/3.*max_temp ** 2
+                          + ch[3]/4.*max_temp ** 3 + ch[4]/5.*max_temp ** 4
+                          + ch[5]/max_temp - max_coeffs[0])
+    max_coeffs[6] = (ch[0]*np.log(max_temp) + ch[1]*max_temp + ch[2]/2.*max_temp ** 2
+                     + ch[3]/3.*max_temp ** 3 + ch[4]/4.*max_temp ** 4
+                     + ch[5]/max_temp - max_coeffs[0]*np.log(max_temp))
+
+    # nested if loop to get the right temperature range
     return p.If(
-        p.Comparison(t, ">", poly.coeffs[0]),
-        part_gen(poly.coeffs[1:8], t),
-        part_gen(poly.coeffs[8:15], t),
+        p.Comparison(t, ">", poly.max_temp),
+        part_gen(max_coeffs, t),
+        p.If(p.Comparison(t, ">", poly.coeffs[0]),
+            part_gen(ch, t),
+            p.If(p.Comparison(t, ">", poly.min_temp),
+                part_gen(cl, t),
+                part_gen(min_coeffs, t),
+                #part_gen(cl, t),
+                 ),
+             ),
     )
 
 
