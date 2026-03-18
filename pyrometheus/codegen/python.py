@@ -375,30 +375,23 @@ class Thermochemistry:
         r = self.nasa_coeffs[...,0,None] + self.nasa_coeffs[...,1,None]/2*T + self.nasa_coeffs[...,2,None]/3*T**2 + self.nasa_coeffs[...,3,None]/4*T**3 + self.nasa_coeffs[...,4,None]/5*T**4 + self.nasa_coeffs[...,5,None]/T
         return self.usr_np.where(self.usr_np.greater(T, 1000.0), r[1], r[0]).view(*pre_squeeze_shape).squeeze()
     
-    def get_species_enthalpies_deriv(self, temperature, h_rt=None):
-        \"""The derivative of the NASA polynomial for enthalpy is not the 
-        temperature derivative of enthalpy because the NASA polynomials return
-        h_k(T)/RT. So, if we let x_k = h_k(T)/RT, the derivative is dx_k/dT.
-        Because h_k(T) = x_k*R*T, we can get the temperature derivative of
-        h_k(T) by applying the chain and product rules:
-        
-            dh_k(T)/dT = d(x_k*R*T)/dT = R*(x_k + T*dx_k/dT),
-            
-        where x_k is computed using `get_species_enthalpies_rt` and dx_k/dT
-        is the result of differentiating the NASA polynomial.        
+    def get_species_enthalpies_deriv(self, temperature):
         \"""
-        original_shape = temperature.shape
-        pre_squeeze_shape = (self.num_species, *original_shape)
-        total_tensor_elements = math.prod(original_shape)
-        T = self.usr_np.atleast_1d(temperature).view(total_tensor_elements)
-        r = self.nasa_coeffs[...,1,None]/2 + 2*self.nasa_coeffs[...,2,None]/3*T + 3*self.nasa_coeffs[...,3,None]/4*T**2 + 4*self.nasa_coeffs[...,4,None]/5*T**3 + self.nasa_coeffs[...,5,None]/T**2
-        h_rt_T_deriv = self.usr_np.where(self.usr_np.greater(T, 1000.0), r[1], r[0]).view(*pre_squeeze_shape).squeeze()
+        Recall the definition of enthalpy:
             
-        # Makes use of already computed h_rt if available.
-        if h_rt is None:
-            h_rt = self.get_species_enthalpies_rt(temperature)
+            .. math:: h_k(T) = h_k(T_{ref}) + \int \limits_{T_{ref}}^{T} c_{p,k}(\hat{T}) \, \mathrm{d} \hat{T}.
         
-        return self.gas_constant*(h_rt + temperature*h_rt_T_deriv)
+        Using the first fundamental theorem of calculus, we get
+        
+            .. math:: \\\\frac{\mathrm{d} h_k(T)}{\mathrm{d} T} = c_{p,k}(T)
+            
+        Because the NASA polynomial for the specific heat at constant pressure
+        returns that result normalized by the universal gas constant R (i.e.,
+        this is the return result of ``get_species_specific_heats_r``), we 
+        multiply the result by R.
+        \"""
+        return self.get_species_specific_heats_r(temperature)*self.gas_constant
+        
 
     def get_species_entropies_r(self, temperature):
         original_shape = temperature.shape
