@@ -922,11 +922,7 @@ class FortranCodeGenerator(CodeGenerator):
 
         if opts.directive_offload == "acc":
             gpu_routine_str = """
-#ifdef _CRAYFTN
-#define GPU_ROUTINE(name) !DIR$ INLINEALWAYS name
-#else
 #define GPU_ROUTINE(name) !$acc routine seq
-#endif
 """
         elif opts.directive_offload == "mp":
             gpu_routine_str = """
