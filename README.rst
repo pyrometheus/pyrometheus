@@ -25,7 +25,8 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 .. When you update this description, consider also updating the one in doc/index.rst.
 
 Pyrometheus is a code generator for chemical mechanisms based on `Cantera
-<https://cantera.org>`__::
+<https://cantera.org>`__. Install it from PyPI (``pip install pyrometheus``)
+or via `Spack <https://spack.io>`__ (``spack install py-pyrometheus``)::
 
     $ python3 -m pip install pyrometheus
     $ python3 -m pyrometheus --help
