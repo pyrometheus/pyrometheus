@@ -21,6 +21,9 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 .. image:: https://img.shields.io/badge/arXiv-2503.24286-b31b1b.svg
    :target: https://arxiv.org/abs/2503.24286
    :alt: arXiv:2503.24286
+.. image:: https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2025.109987-blue.svg
+   :target: https://doi.org/10.1016/j.cpc.2025.109987
+   :alt: DOI:10.1016/j.cpc.2025.109987
 
 .. When you update this description, consider also updating the one in doc/index.rst.
 
@@ -52,7 +55,7 @@ Cite me:
 
 .. code-block:: bibtex
 
-    @article{cisneros25,
+    @article{Cisneros25,
       author = {Cisneros-Garibay, Esteban and {Le Berre}, H. and Adam, D. and Bryngelson, Spencer H. and Freund, Jonathan B.},
       title = {{Pyrometheus: S}ymbolic abstractions for {XPU} and automatically differentiated computation of combustion kinetics and thermodynamics},
       year = {2026},
