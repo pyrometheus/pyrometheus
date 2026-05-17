@@ -82,8 +82,8 @@ jobs:
                 spack repo add --scope=site spack-packages/repos/spack_repo/builtin
                 spack env create dev
                 spack env activate dev
-                spack add py-pyrometheus@1.0.7
-                spack develop --path "$GITHUB_WORKSPACE" py-pyrometheus@1.0.7
+                spack add py-pyrometheus@main
+                spack develop --path "$GITHUB_WORKSPACE" py-pyrometheus@main
                 spack install --reuse
 
           - name: Smoke test
