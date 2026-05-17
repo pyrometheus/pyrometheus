@@ -12,32 +12,13 @@ jobs:
         steps:
           - uses: actions/checkout@v4
 
-          - name: Check out Spack
-            uses: actions/checkout@v4
+          - name: Set up Spack with buildcache
+            uses: spack/setup-spack@v3
             with:
-                repository: spack/spack
-                path: spack
-
-          - name: Check out spack-packages
-            uses: actions/checkout@v4
-            with:
-                repository: spack/spack-packages
-                path: spack-packages
-
-          - name: Cache Spack store
-            uses: actions/cache@v4
-            with:
-                path: |
-                    spack/opt
-                    spack/var/spack/cache
-                key: spack-released-${{ runner.os }}-${{ hashFiles('spack-packages/repos/spack_repo/builtin/packages/py_pyrometheus/package.py', 'spack-packages/repos/spack_repo/builtin/packages/cantera/package.py') }}
-                restore-keys: spack-released-${{ runner.os }}-
+                buildcache: true
 
           - name: Install py-pyrometheus
-            run: |
-                source spack/share/spack/setup-env.sh
-                spack repo add --scope=site spack-packages/repos/spack_repo/builtin
-                spack install --reuse py-pyrometheus
+            run: spack install --reuse py-pyrometheus
 
           - name: Smoke test
             run: |
@@ -55,31 +36,14 @@ jobs:
         steps:
           - uses: actions/checkout@v4
 
-          - name: Check out Spack
-            uses: actions/checkout@v4
+          - name: Set up Spack with buildcache
+            uses: spack/setup-spack@v3
             with:
-                repository: spack/spack
-                path: spack
-
-          - name: Check out spack-packages
-            uses: actions/checkout@v4
-            with:
-                repository: spack/spack-packages
-                path: spack-packages
-
-          - name: Cache Spack store
-            uses: actions/cache@v4
-            with:
-                path: |
-                    spack/opt
-                    spack/var/spack/cache
-                key: spack-head-${{ runner.os }}-${{ hashFiles('spack-packages/repos/spack_repo/builtin/packages/py_pyrometheus/package.py', 'spack-packages/repos/spack_repo/builtin/packages/cantera/package.py') }}
-                restore-keys: spack-head-${{ runner.os }}-
+                buildcache: true
 
           - name: Install pyrometheus HEAD against spack deps
             run: |
                 source spack/share/spack/setup-env.sh
-                spack repo add --scope=site spack-packages/repos/spack_repo/builtin
                 spack env create dev
                 spack env activate dev
                 spack add py-pyrometheus@main
