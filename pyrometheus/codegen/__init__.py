@@ -1,8 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Optional
-
-import cantera as ct
+from pyrometheus.bandit.general_thermochem import BaseMechanism
 
 
 @dataclass(frozen=True)
@@ -26,7 +25,8 @@ class CodeGenerator:
 
     @staticmethod
     @abstractmethod
-    def generate(name: str, sol: ct.Solution,
+    def generate(name: str,
+                 bandit_mech: BaseMechanism,
                  opts: CodeGenerationOptions = None) -> str:
         """Invokes Pyrometheus to generate the thermochemistry code for this
         generator and mechanism contained in the passed Cantera Solution object.
@@ -35,8 +35,8 @@ class CodeGenerator:
         ----------
         name : str
             A module, class, or namespace name for the generated code.
-        sol : ct.Solution
-            The Cantera Solution object containing the mechanism to generate
+        base_mech : BaseMechanism
+            The object containing the mechanism to generate
             thermochemistry code for.
         opts : CodeGenerationOptions
             Options to pass to the code generator.

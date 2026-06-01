@@ -4,8 +4,8 @@ import yaml
 import h5py
 import numpy as np
 import cantera as ct
-import pyrometheus as pyro
-from flop_counter import FLOPCounter
+from pyrometheus.codegen.python import PythonCodeGenerator as pyro
+# from flop_counter import FLOPCounter
 from make_pyro import make_pyro_object
 from make_mixture_arrays import from_equiv_ratio, from_ignition_file
 from reactors import HomogeneousReactor
@@ -29,7 +29,7 @@ def time_integration(scheme: int, config: dict, reactor: HomogeneousReactor):
     temperature = config['mixture']['temperature']
     mass_fractions = from_equiv_ratio(
         config['mixture']['equiv_ratio'], reactor.pyro_gas,
-        reactor.pyro_gas.usr_np
+        reactor.pyro_gas.pyro_np
     )
     time_integ.rxr.set_density_and_energy(
         reactor.pyro_gas.one_atm, temperature, mass_fractions
@@ -92,7 +92,7 @@ def quick_example_calculation(pyro_gas, sol):
     )
 
     # Compare against Cantera
-    assert pyro_gas.usr_np.linalg.norm(
+    assert pyro_gas.pyro_np.linalg.norm(
         omega - sol.net_production_rates
     ) < 1e-14
 
@@ -103,9 +103,9 @@ def quick_example_calculation(pyro_gas, sol):
     num_x = 256
     num_y = 256
     mass_fractions = pyro_gas._pyro_make_array([
-        pyro_gas.usr_np.tile(y, (num_y, num_x)) for y in sol.Y
+        pyro_gas.pyro_np.tile(y, (num_y, num_x)) for y in sol.Y
     ])
-    temperature = 1200 * pyro_gas.usr_np.ones((num_y, num_x))
+    temperature = 1200 * pyro_gas.pyro_np.ones((num_y, num_x))
 
     # Compute the density and molar net production rates
     density = pyro_gas.get_density(
@@ -118,7 +118,7 @@ def quick_example_calculation(pyro_gas, sol):
 
     for i, w in enumerate(omega):
         print(f'Species {i}: {w.shape}')
-        assert pyro_gas.usr_np.linalg.norm(
+        assert pyro_gas.pyro_np.linalg.norm(
             w - sol.net_production_rates[i]
         ) < 1e-14
 
@@ -147,15 +147,15 @@ def ad_with_jax(pyro_gas, sol):
     delta = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11]
 
     for d in delta:
-        j_fd = pyro_gas.usr_np.array([
+        j_fd = pyro_gas.pyro_np.array([
             (
                 chemical_source_term(mass_fractions + d * v) - w_ad
             ) / d
-            for v in pyro_gas.usr_np.eye(pyro_gas.num_species)
+            for v in pyro_gas.pyro_np.eye(pyro_gas.num_species)
         ]).T
         rel_error = (
-            pyro_gas.usr_np.linalg.norm(j_ad - j_fd, 'fro') /
-            pyro_gas.usr_np.linalg.norm(j_ad, 'fro')
+            pyro_gas.pyro_np.linalg.norm(j_ad - j_fd, 'fro') /
+            pyro_gas.pyro_np.linalg.norm(j_ad, 'fro')
         )
         print(f' Perturbation: {d:.2e}, Error: {rel_error:.4e}')
 
@@ -281,7 +281,6 @@ def run_with_jax_numpy(input_file, pyro_cls, sol):
     # Quick example of a calculation
     quick_example_calculation(pyro_gas, sol)
     ad_with_jax(pyro_gas, sol)
-    exit()
 
     # Implicit time integration
     reactor = HomogeneousReactor(pyro_gas)
@@ -310,8 +309,8 @@ def run_with_numpy(input_file, pyro_cls, sol):
 
 def run_pyro():
 
-    sol = ct.Solution('sandiego.yaml')
-    pyro_cls = pyro.codegen.python.get_thermochem_class(sol)
+    sol = ct.Solution('../test/mechs/sandiego.yaml')
+    pyro_cls = pyro.get_thermochem_class(sol)
 
     if len(sys.argv) > 1:
         input_file = sys.argv[1]

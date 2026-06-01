@@ -1,0 +1,451 @@
+import numpy as np
+from typing import Dict, List, Union, Tuple
+from pymbolic.primitives import Variable
+from pyrometheus.bandit.general_thermochem import BaseNamespace, BaseMechanism
+from pyrometheus.bandit.chem_expr.kinetics import (
+    RateCoefficient,
+    make_arrhenius,
+    reaction_progress_rate_expr,
+    species_production_rate_expr,
+    conc, k_fwd, log_k_eq, exp,
+)
+from pyrometheus.bandit.chem_expr.thermo import (
+    PolynomialParameters,
+    SpeciesThermo,
+    make_species_thermo,
+    equilibrium_constant_expr
+)
+
+# {{{ Map reaction type from human-readable to plato naming convention
+
+_reaction_dict = {
+    "heavy_particle_dissociation": "dh_cat_mt",
+    "exchange": "exc",
+    "electron_impact_dissociation": "de",
+    "electron_impact_ionization": "ie",
+    "associative_ionization": "ai",
+}
+
+# }}}
+
+
+# {{{ Temperature substitutions. Convention taken from plato::kinetics_rate.F90
+
+_temp_map = {
+    "translational": Variable("temperature"),
+    "electron": Variable("temperature")[-1],
+    "geometric_ttv": Variable("sqrt")(
+        Variable("temperature")[0] *
+        Variable("temperature")[1]
+    )
+}
+
+
+_rxn_type_temp = {
+    "dh_cat_mt": "geometric_ttv",
+    "exc": "translational",
+    "de": "electron",
+    "ie": "electron",
+    "ai": "translational",
+}
+
+# }}}
+
+
+class Plato(BaseNamespace):
+
+    gas_constant = 8314
+    one_atm = 101325.0
+
+    def __init__(self, mixture, reaction_set, transfer, plato_db_path):
+        from plato import Thermochemistry
+        self.thermochem = Thermochemistry(
+            solver="thermo",
+            mixture=mixture,
+            reaction=reaction_set,
+            transfer=transfer,
+            db_path=plato_db_path,
+            quiet=True
+        )
+
+    def __getattr__(self, name, *args):
+        if args:
+            return getattr(self.thermochem, name)(*args)
+        else:
+            return getattr(self.thermochem, name)
+
+    def finalize(self):
+        self.thermochem.finalize()
+
+
+class PlatoMechanism(BaseMechanism):
+
+    def __init__(self,
+                 mixture,
+                 reaction_set,
+                 transfer,
+                 plato_db_path,
+                 pyro_np=np,
+                 hardcode_params=True):
+        self.hardcode_params = hardcode_params
+        self.namespace = Plato(mixture, reaction_set, transfer, plato_db_path)
+        self._build_reaction_list()
+        self.make_rates(hardcode_params)
+        self.make_thermo()
+
+    def finalize(self):
+        self.namespace.finalize()
+
+    # {{{ Assemble reactions data
+    def _num_reactions_by_type(self,
+                               rxn_type: str):
+        rxn_label = _reaction_dict[rxn_type]
+        method_name = f"n_reactions_{rxn_label}"
+        return self.namespace.__getattr__(method_name)
+
+    def _reaction_getter_by_type(self,
+                                 rxn_access: str,
+                                 rxn_type: str,
+                                 rxn_index: int):
+        rxn_label = _reaction_dict[rxn_type]
+        method_name = f"get_{rxn_label}_{rxn_access}"
+        return self.namespace.__getattr__(method_name, rxn_index)
+
+    def _build_reaction_list(self):
+        self._reactions = []
+
+        num_rxn = self._num_reactions_by_type(
+            rxn_type="heavy_particle_dissociation",
+        )
+        for r in range(1, num_rxn + 1):
+            i, j, k = self._reaction_getter_by_type(
+                rxn_access="species",
+                rxn_type="heavy_particle_dissociation",
+                rxn_index=r
+            )
+            a, b, c = self._reaction_getter_by_type(
+                rxn_access="arrhenius",
+                rxn_type="heavy_particle_dissociation",
+                rxn_index=r
+            )
+            num_p = self._reaction_getter_by_type(
+                rxn_access="partners",
+                rxn_type="heavy_particle_dissociation",
+                rxn_index=r
+            )
+            partners = [p - 1 for p in num_p]
+            self._reactions.append({
+                "type": "dh_cat_mt",
+                "plato_index": r,
+                "reactant_species": [i - 1],
+                "product_species": [j - 1, k - 1],
+                "partners": partners,
+                "arrhenius": (a, b, c),
+                "reversible": True,
+                "temperature": _rxn_type_temp["dh_cat_mt"],
+            })
+
+        num_rxn = self._num_reactions_by_type(
+            rxn_type="exchange",
+        )
+        for r in range(1, num_rxn + 1):
+            i, j, k, ell = self._reaction_getter_by_type(
+                rxn_access="species",
+                rxn_type="exchange",
+                rxn_index=r
+            )
+            a, b, c = self._reaction_getter_by_type(
+                rxn_access="arrhenius",
+                rxn_type="exchange",
+                rxn_index=r
+            )
+            self._reactions.append({
+                "type": "exc",
+                "plato_index": r,
+                "reactant_species": [i - 1, j - 1],
+                "product_species": [k - 1, ell - 1],
+                "partners": [],
+                "arrhenius": (a, b, c),
+                "reversible": True,
+                "temperature": _rxn_type_temp["exc"],
+            })
+
+        num_rxn = self._num_reactions_by_type(
+            rxn_type="electron_impact_dissociation"
+        )
+        for r in range(1, num_rxn + 1):
+            i, j, k = self._reaction_getter_by_type(
+                rxn_access="species",
+                rxn_type="electron_impact_dissociation",
+                rxn_index=r
+            )
+            a, b, c = self._reaction_getter_by_type(
+                rxn_access="arrhenius",
+                rxn_type="electron_impact_dissociation",
+                rxn_index=r,
+            )
+            self._reactions.append({
+                "type": "de",
+                "plato_index": r,
+                "reactant_species": [i - 1],
+                "product_species": [j - 1, k - 1],
+                "partners": [],
+                "arrhenius": (a, b, c),
+                "reversible": True,
+                "temperature": _rxn_type_temp["de"],
+            })
+
+        num_rxn = self._num_reactions_by_type(
+            rxn_type="electron_impact_ionization"
+        )
+        for r in range(1, num_rxn + 1):
+            i, j = self._reaction_getter_by_type(
+                rxn_access="species",
+                rxn_type="electron_impact_ionization",
+                rxn_index=r
+            )
+            a, b, c = self._reaction_getter_by_type(
+                rxn_access="arrhenius",
+                rxn_type="electron_impact_ionization",
+                rxn_index=r
+            )
+            self._reactions.append({
+                "type": "ie",
+                "plato_index": r,
+                "reactant_species": [i - 1],
+                "product_species": [j - 1],
+                "partners": [],
+                "arrhenius": (a, b, c),
+                "reversible": True,
+                "temperature": _rxn_type_temp["ie"],
+            })
+
+        num_rxn = self._num_reactions_by_type(
+            rxn_type="associative_ionization",
+        )
+        for r in range(1, num_rxn + 1):
+            i, j, k = self._reaction_getter_by_type(
+                rxn_access="species",
+                rxn_type="associative_ionization",
+                rxn_index=r
+            )
+            a, b, c = self._reaction_getter_by_type(
+                rxn_access="arrhenius",
+                rxn_type="associative_ionization",
+                rxn_index=r
+            )
+            self._reactions.append({
+                "type": "ai",
+                "plato_index": r,
+                "reactant_species": [i - 1, j - 1],
+                "product_species": [k - 1],
+                "partners": [],
+                "arrhenius": (a, b, c),
+                "reversible": True,
+                "temperature": _rxn_type_temp["ai"],
+            })
+
+    # }}}
+
+    # {{{ Abstract interface
+
+    @property
+    def num_temp(self):
+        return self.namespace.n_temp
+
+    @property
+    def num_species(self):
+        return self.namespace.n_species
+
+    @property
+    def num_reactions(self):
+        return len(self._reactions)
+
+    @property
+    def molecular_weights(self):
+        return np.array([1/m for m in self.namespace.molar_masses])
+
+    @property
+    def species_names(self):
+        return self.namespace.species_names
+
+    @property
+    def reactions(self):
+        return self._reactions
+
+    def species_thermo_params(self, species_index) -> PolynomialParameters:
+        sp = species_index + 1  # PLATO is 1-based
+        t_bounds = self.namespace.nasa_temp_bounds(sp)
+        cp_coeffs = self.namespace.nasa_cp_coeffs(sp)
+        n_intervals = len(cp_coeffs)
+        # PLATO returns 7 Cp coefficients in NASA9 format (c[0]/T^2 + c[1]/T + ...).
+        # Append integration constants b1 (enthalpy) and b2 (entropy) to form the
+        # full 9-coefficient NASA9 array so Pyrometheus uses the correct formulas.
+        coeffs_list = []
+        for interval in range(1, n_intervals + 1):
+            b1, b2 = self.namespace.nasa_b_consts(sp, interval)
+            coeffs_list.append(np.append(cp_coeffs[interval - 1], [b1, b2]))
+        coeffs = np.column_stack(coeffs_list)  # shape (9, n_intervals)
+        num_coeff, num_intervals = coeffs.shape
+        return PolynomialParameters(
+            num_intervals=num_intervals,
+            num_coeff=num_coeff,
+            t_bounds=t_bounds,
+            coeffs=coeffs
+        )
+
+    def reaction(self, reaction_index: int) -> Dict:
+        return self._reactions[reaction_index]
+
+    def is_reversible(self, reaction_index: int) -> bool:
+        return self._reactions[reaction_index]["reversible"]
+
+    def species_name(self, species_index: int) -> str:
+        return self.species_names[species_index]
+
+    def species_index(self, species_name: str) -> int:
+        return self.species_names.index(species_name)
+
+    def reactants(self, reaction_index: int) -> List[int]:
+        return self.reaction(reaction_index)["reactant_species"]
+
+    def products(self, reaction_index: int) -> List[int]:
+        return self.reaction(reaction_index)["product_species"]
+
+    def stoichiometric_coefficients(
+            self, reaction_index: int) -> Tuple[List[int], List[int]]:
+        rxn = self.reaction(reaction_index)
+        return (
+            [1] * len(rxn["reactant_species"]),
+            [1] * len(rxn["product_species"]),
+        )
+
+    def participation_set(
+            self, species_id: Union[int, str]) -> Tuple[List[int], List[int]]:
+        if isinstance(species_id, str):
+            sp_idx = self.species_index(species_id)
+        else:
+            sp_idx = species_id
+
+        fwd_set = [r for r, rxn in enumerate(self.reactions)
+                   if sp_idx in rxn["reactant_species"]]
+        rev_set = [r for r, rxn in enumerate(self.reactions)
+                   if sp_idx in rxn["product_species"]]
+        return fwd_set, rev_set
+
+    def production_balance(
+            self, species_index: int
+    ) -> Tuple[Tuple[List[int], List[int]], Tuple[List[int], List[int]]]:
+        fwd_set, rev_set = self.participation_set(species_index)
+        # All PLATO stoich coefficients are 1
+        return (fwd_set, rev_set), ([1] * len(fwd_set), [1] * len(rev_set))
+
+    # }}}
+
+    # {{{ Make methods
+
+    def make_rate_coefficient(self,
+                              reaction_index,
+                              hardcode_params) -> RateCoefficient:
+        a, b, c = self.reaction(reaction_index)["arrhenius"]
+        temp_type = self.reaction(reaction_index)["temperature"]
+
+        if self.num_temp > 1 and temp_type == "translational":
+            temp_var = _temp_map[temp_type][0]
+        else:
+            temp_var = _temp_map[temp_type]
+
+        if hardcode_params:
+            params = {
+                "a": np.log(a),
+                "b": b,
+                "t_a": c
+            }
+            k_fwd = make_arrhenius(
+                reaction_index=reaction_index,
+                params=params,
+                temperature=temp_var
+            )
+        else:
+            params = np.array([np.log(a), b, c])
+            k_fwd = make_arrhenius(
+                reaction_index=reaction_index,
+                temperature=temp_var
+            )
+
+        return k_fwd, params
+
+    def make_mass_action_rate(self, reaction_index):
+        rxn = self.reaction(reaction_index)
+        rxn_type = rxn["type"]
+        reac = rxn["reactant_species"]
+        prod = rxn["product_species"]
+        stoich_reac, stoich_prod = self.stoichiometric_coefficients(
+            reaction_index
+        )
+
+        if rxn_type == "dh_cat_mt":
+            # Third-body: sum over collision-partner concentrations
+            m_sum = sum(conc[m] for m in rxn["partners"])
+            r_fwd = k_fwd[reaction_index] * conc[reac[0]]
+            r_rev = exp(log_k_eq[reaction_index]) * (
+                conc[prod[0]] * conc[prod[1]]
+            )
+            return m_sum * (r_fwd - r_rev)
+        else:
+            return reaction_progress_rate_expr(
+                reaction_index,
+                rxn["reversible"],
+                (reac, prod),
+                (stoich_reac, stoich_prod),
+            )
+
+    def make_species_production_rate(self, species_index):
+        part_sets, stoich_coeffs = self.production_balance(species_index)
+        return species_production_rate_expr(
+            species_index,
+            part_sets[0],
+            part_sets[1],
+            stoich_coeffs[0],
+            stoich_coeffs[1],
+        )
+
+    def make_species_thermo(self, species_index) -> SpeciesThermo:
+        sp_name = self.species_names[species_index]
+        poly_params = self.species_thermo_params(species_index)
+        t_var = (
+            Variable("temperature") if self.num_temp == 1 else
+            (
+                Variable("temperature")[-1] if sp_name == 'em' else
+                Variable("temperature")[0]
+            )
+        )
+        return make_species_thermo(
+            poly_params,
+            t_var
+        )
+
+    def make_equilibrium_constant(self, reaction_index):
+        rxn = self.reaction(reaction_index)
+        reac = rxn["reactant_species"]
+        prod = rxn["product_species"]
+        stoich_reac, stoich_prod = self.stoichiometric_coefficients(
+            reaction_index
+        )
+        expr = equilibrium_constant_expr(
+            reaction_index,
+            (reac, prod),
+            (stoich_reac, stoich_prod),
+            self.namespace.one_atm,
+            self.namespace.gas_constant
+        )
+        if self.num_temp > 1:
+            from pymbolic import substitute
+            expr = substitute(
+                expr,
+                {"temperature": Variable("temperature")[0]}
+            )
+
+        return expr
+
+    # }}}

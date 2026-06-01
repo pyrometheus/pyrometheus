@@ -24,3 +24,4 @@ test/generated-mechs/*.py
 test/mechs/*.py
 test/mechs/*.hpp
 *.so
+devel
