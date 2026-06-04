@@ -85,7 +85,7 @@ class FlameletEquations:
         diss_rate = diss_rate.at[-1].set(
             2 * self.laplacian.domain.jac[0]**2
         )
-        
+
     def rhs(self,
             state: FlameletState,
             diss_rate: jnp.ndarray,
@@ -132,8 +132,8 @@ class FlameletEquations:
                 "i,ijk->ijk",
                 0.5 * diss_rate,
                 self.laplacian.central_blocks
-            ) +
-            source_blocks
+            )
+            + source_blocks
         )
         lower_blocks = jnp.einsum(
             "i,ijk->ijk",

@@ -82,7 +82,9 @@ def apply_stencil(
     return sum(
         (
             coeff * shifted_view(s, idx_start, idx_end, axis=axis)
-            for coeff, (idx_start, idx_end) in zip(stencil.coefficients, stencil.ranges)
+            for coeff, (idx_start, idx_end) in zip(
+                    stencil.coefficients, stencil.ranges
+            )
         ),
         start=s.zeros(output_shape),
     )
