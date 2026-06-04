@@ -100,14 +100,14 @@ class FlameletEquations:
             h_ox: jnp.float64,
             h_fu: jnp.float64,):
         return (
-            0.5 * diss_rate * self.laplacian(state) +
-            self.source_terms(
+            0.5 * diss_rate * self.laplacian(state)
+            + self.source_terms(
                 state,
                 viscous_diss,
                 temp_guess,
                 pressure,
-            ) * self.interior_mask -
-            self.boundary_conditions(
+            ) * self.interior_mask
+            - self.boundary_conditions(
                 h_ox,
                 h_fu
             )
@@ -133,19 +133,19 @@ class FlameletEquations:
         ))
         central_blocks = (
             jnp.einsum(
-                'i,ijk->ijk',
+                "i,ijk->ijk",
                 0.5 * diss_rate,
                 self.laplacian.central_blocks
             ) +
             source_blocks
         )
         lower_blocks = jnp.einsum(
-            'i,ijk->ijk',
+            "i,ijk->ijk",
             0.5 * diss_rate[1:],
             self.laplacian.lower_blocks
         )
         upper_blocks = jnp.einsum(
-            'i,ijk->ijk',
+            "i,ijk->ijk",
             0.5 * diss_rate[:-1],
             self.laplacian.upper_blocks
         )
@@ -181,8 +181,8 @@ class FlameletEquations:
             state.mass_fractions
         )
         m_dot = (
-            jnp.expand_dims(self.mol_wts, w_dot.ndim-1) *
-            w_dot
+            jnp.expand_dims(self.mol_wts, w_dot.ndim-1)
+            * w_dot
         ).squeeze()
 
         return FlameletState(
@@ -236,13 +236,13 @@ class FlameletEquations:
             viscous_diss, temp_guess, pressure
         )
         jvp = jnp.einsum(
-            'ijk,ki->ji',
+            "ijk,ki->ji",
             jacobian,  # (nx, nv, nv)
             _state_to_array(v)  # (nv, nx)
         )  # (nv, nx)
         return (
-            0.5 * diss_rate * self.laplacian(v) +
-            _array_to_state(jvp)
+            0.5 * diss_rate * self.laplacian(v)
+            + _array_to_state(jvp)
         )
 
     def adjoint_operator(self,
@@ -280,18 +280,20 @@ class FlameletEquations:
                     0.5 * diss_rate[-1] * self.laplacian.central_blocks[-1],
                     axis=0
                 )
-            )) +
-            source_blocks
+            ))
+            + source_blocks
         )
         lower_blocks = self.laplacian.lower_blocks
         upper_blocks = self.laplacian.upper_blocks
         return (lower_blocks, central_blocks, upper_blocks)
 
     def local_compressible_eos_rt(self,
-                 local_state_as_array: jnp.ndarray,
-                 local_temp_guess: jnp.float64,
-                 pressure: jnp.float64):
-        w_mix = self.pyro_gas.get_mixture_molecular_weight(local_state_as_array[1:])
+                                  local_state_as_array: jnp.ndarray,
+                                  local_temp_guess: jnp.float64,
+                                  pressure: jnp.float64):
+        w_mix = self.pyro_gas.get_mixture_molecular_weight(
+            local_state_as_array[1:]
+        )
         temperature = self.pyro_gas.get_temperature_from_enthalpy(
             local_state_as_array[0], local_state_as_array[1:], local_temp_guess
         )

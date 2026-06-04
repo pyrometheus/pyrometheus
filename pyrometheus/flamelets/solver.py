@@ -60,8 +60,8 @@ class FlameletSolver:
                 *args
             )
             v.enthalpy.block_until_ready()
-            print(f'Newton iteration {it}: time: {(time.time()-t_iter):.4e} s'
-                  f', |v| = {jnp.linalg.norm(_state_to_array(v)):.4e}')
+            print(f"Newton iteration {it}: time: {(time.time()-t_iter):.4e} s"
+                  f", |v| = {jnp.linalg.norm(_state_to_array(v)):.4e}")
             state += v
             delta = jnp.linalg.norm(
                 _state_to_array(v)
@@ -188,20 +188,20 @@ class FlameletSolver:
             )
 
         return self._newton_loop_lax(
-                _crank_nicolson_fn,
-                _crank_nicolson_jac,
-                state,
-                newton_maxiter,
-                newton_tol,
-                state_prev,
-                time_step,
-                diss_rate,
-                viscous_diss,
-                temp_guess,
-                pressure,
-                h_ox,
-                h_fu
-            )
+            _crank_nicolson_fn,
+            _crank_nicolson_jac,
+            state,
+            newton_maxiter,
+            newton_tol,
+            state_prev,
+            time_step,
+            diss_rate,
+            viscous_diss,
+            temp_guess,
+            pressure,
+            h_ox,
+            h_fu
+        )
 
     @partial(jax.jit, static_argnums=0)
     def flamelet_newton_step(self,
@@ -297,23 +297,23 @@ class FlameletSolver:
                 state.mass_fractions,
                 temp_guess
             )
-            print(f'BDF time step {step}: '
-                  f'time: {t_step:.4e} s, '
-                  f'T_max = {temp.max():.3f} K ')
-        print(f'BDF Time march: T_max = {temp.max():.3f} K')
+            print(f"BDF time step {step}: "
+                  f"time: {t_step:.4e} s, "
+                  f"T_max = {temp.max():.3f} K ")
+        print(f"BDF Time march: T_max = {temp.max():.3f} K")
         return state, temp
 
     def warmup(self, warmup_fn_name: str, *args):
-        if warmup_fn_name == 'flamelet_newton_step':
+        if warmup_fn_name == "flamelet_newton_step":
             return self.flamelet_newton_step(
                 *args
             )
-        elif warmup_fn_name == 'flamelet_time_step':
+        elif warmup_fn_name == "flamelet_time_step":
             return self.flamelet_time_step(
                 *args
             )
         else:
-            raise ValueError(f'Unknown warmup function name {warmup_fn_name}')
+            raise ValueError(f"Unknown warmup function name {warmup_fn_name}")
 
     def solve(self,
               newton_maxiter: int,
@@ -345,8 +345,8 @@ class FlameletSolver:
                 h_fu
             )
             if success:
-                print(f'Converged after {newton_it} Newton iterations with '
-                      f'error {newton_err:.4e}')
+                print(f"Converged after {newton_it} Newton iterations with "
+                      f"error {newton_err:.4e}")
                 temp = self.gov_eqns.pyro_gas.get_temperature_from_enthalpy(
                     state.enthalpy,
                     state.mass_fractions,
@@ -357,7 +357,7 @@ class FlameletSolver:
         state = state_guess
         temp = temp_guess
         for i in range(max_attempts):
-            print(f'Attempt {i} of BDF time marching')
+            print(f"Attempt {i} of BDF time marching")
             state, temp = self.flamelet_time_march(
                 bdf_newton_maxiter,
                 bdf_newton_tol,
@@ -388,9 +388,9 @@ class FlameletSolver:
                 temp_guess
             )
             if success:
-                print(f'Converged after {i+1} BDF attempts with '
-                      f'error {newton_err:.4e}')
+                print(f"Converged after {i+1} BDF attempts with "
+                      f"error {newton_err:.4e}")
                 return state_t, temp_t
 
-        print('Flamelet solution did not converge')
+        print("Flamelet solution did not converge")
         return state, temp

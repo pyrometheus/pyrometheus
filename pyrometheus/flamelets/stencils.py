@@ -1,5 +1,5 @@
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple, Union
 from pyrometheus.flamelets.state import StateContainer
 
@@ -21,7 +21,9 @@ class Stencil:
             js = self.offset_start
             je = self.offset_end
             self.ranges = [
-                (r + i + js, -r + i + je) if r != (i + je) else (r + i + js, None)
+                (
+                    r + i + js, -r + i + je
+                ) if r != (i + je) else (r + i + js, None)
                 for i in self.indices
             ]
             self.output_slice = slice(r + js, -r + je)

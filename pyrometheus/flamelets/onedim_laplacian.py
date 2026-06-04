@@ -16,14 +16,17 @@ class Operator:
         else:
             raise ValueError("Stencils must be provided for the operator.")
 
-    def apply_stencils_along_axis(self, s: StateContainer, axis: int) -> StateContainer:
+    def apply_stencils_along_axis(self,
+                                  s: StateContainer,
+                                  axis: int) -> StateContainer:
         out = s.zeros_like()
-        for k, stencil in enumerate(self.stencils):
+        for _, stencil in enumerate(self.stencils):
             view = output_view(stencil.output_slice, axis, s.spatial_dimension)
             out[view] = apply_stencil(s, stencil, axis, s[view].spatial_shape)
         return out
 
-    def apply_operator(self, s: Tuple[StateContainer]) -> Tuple[StateContainer]:
+    def apply_operator(self,
+                       s: Tuple[StateContainer]) -> Tuple[StateContainer]:
         """
         Apply the operator to the array `f`.
         This method should be overridden by subclasses.
@@ -44,9 +47,9 @@ class Laplacian(Operator):
     def __init__(self, domain: Domain):
         self.stencils = [
             Stencil(
-                coefficients=[1],  # [2, -5, 4, -1],
-                indices=[0],  # [0, 1, 2, 3,],
-                tag='near-boundary',
+                coefficients=[1],
+                indices=[0],
+                tag="near-boundary",
                 location=0,
                 dtype=jnp.float64
             ),
@@ -59,9 +62,9 @@ class Laplacian(Operator):
                 dtype=jnp.float64,
             ),
             Stencil(
-                coefficients=[1],  # [2, -5, 4, -1],
-                indices=[0],  # [0, -1, -2, -3],
-                tag='near-boundary',
+                coefficients=[1],
+                indices=[0],
+                tag="near-boundary",
                 location=-1,
                 dtype=jnp.float64
             )
@@ -79,17 +82,17 @@ class Laplacian(Operator):
 
         bc_block = eye_nv / dx_sqr
         self.central_blocks = jnp.stack(
-            (bc_block,) +
-            tuple(-2 * eye_nv / dx_sqr for _ in range(num_x - 2)) +
             (bc_block,)
+            + tuple(-2 * eye_nv / dx_sqr for _ in range(num_x - 2))
+            + (bc_block,)
         )
         self.lower_blocks = jnp.stack(
-            tuple(eye_nv / dx_sqr for _ in range(num_x - 2)) +
-            (zeros_nv,)
+            tuple(eye_nv / dx_sqr for _ in range(num_x - 2))
+            + (zeros_nv,)
         )
         self.upper_blocks = jnp.stack(
-            (zeros_nv,) +
-            tuple(eye_nv / dx_sqr for _ in range(num_x - 2))
+            (zeros_nv,)
+            + tuple(eye_nv / dx_sqr for _ in range(num_x - 2))
         )
 
     def apply_operator(self, s: FlameletState):
@@ -97,8 +100,8 @@ class Laplacian(Operator):
         for stencil in self.stencils:
             view = output_view(stencil.output_slice, 0, s.spatial_dimension)
             res_list += [
-                apply_stencil(s, stencil, 0, s[view].spatial_shape) /
-                self.domain.jac[0]**2
+                apply_stencil(s, stencil, 0, s[view].spatial_shape)
+                / self.domain.jac[0]**2
             ]
         return FlameletState(
             **{f: jnp.hstack(

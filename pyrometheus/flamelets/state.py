@@ -1,9 +1,9 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
 from dataclasses import dataclass
 from typing import Tuple, Any
 from pyrometheus.flamelets.make_pyro import detect_array_library
+
 
 # {{{ Base class
 
@@ -19,7 +19,9 @@ class StateContainer:
     def clone(
         self,
     ):
-        return self.__class__(**{k: v.copy() for k, v in self.__dict__.items()})
+        return self.__class__(
+            **{k: v.copy() for k, v in self.__dict__.items()}
+        )
 
     def zeros(self, shape):
         # Auto-detect array library from first array in container
@@ -31,7 +33,9 @@ class StateContainer:
 
         return self.__class__(
             **{
-                k: pyro_np.zeros(v.shape[:-num_spatial_dims] + shape, dtype=v.dtype,)
+                k: pyro_np.zeros(
+                    v.shape[:-num_spatial_dims] + shape, dtype=v.dtype,
+                )
                 for k, v in self.__dict__.items()
             }
         )
@@ -50,10 +54,14 @@ class StateContainer:
     def _apply_binary_op(self, other, op):
         if isinstance(other, StateContainer):
             return self.__class__(
-                **{k: op(v, getattr(other, k)) for k, v in self.__dict__.items()}
+                **{k: op(
+                    v, getattr(other, k)
+                ) for k, v in self.__dict__.items()}
             )
         else:
-            return self.__class__(**{k: op(v, other) for k, v in self.__dict__.items()})
+            return self.__class__(
+                **{k: op(v, other) for k, v in self.__dict__.items()}
+            )
 
     def __add__(self, other):
         return self._apply_binary_op(other, lambda x, y: x + y)
@@ -86,7 +94,9 @@ class StateContainer:
             idx = (idx,)
         vector_field_idx = (slice(None),) + idx
         return self.__class__(
-            **{k: getattr(self, k)[vector_field_idx] for k, v in self.__dict__.items()}
+            **{k: getattr(
+                self, k
+            )[vector_field_idx] for k, v in self.__dict__.items()}
         )
 
     def __setitem__(self, idx, other):
@@ -95,7 +105,9 @@ class StateContainer:
         vector_field_idx = (slice(None),) + idx
         return self.__class__(
             **{
-                k: getattr(self, k).__setitem__(vector_field_idx, getattr(other, k))
+                k: getattr(
+                    self, k
+                ).__setitem__(vector_field_idx, getattr(other, k))
                 for k, v in self.__dict__.items()
             }
         )
@@ -104,7 +116,9 @@ class StateContainer:
         view = (slice(num_h, -num_h),)
         vector_field_view = (slice(None),) + view
         return self.__class__(
-            **{k: getattr(self, k)[vector_field_view] for k, v in self.__dict__.items()}
+            **{k: getattr(
+                self, k
+            )[vector_field_view] for k, v in self.__dict__.items()}
         )
 
 # }}}
@@ -117,7 +131,7 @@ class StateContainer:
 class FlameletState(StateContainer):
     enthalpy: jnp.ndarray
     mass_fractions: jnp.ndarray
-    
+
     def tree_flatten(self):
         children = (self.enthalpy, self.mass_fractions)
         aux_data = ()

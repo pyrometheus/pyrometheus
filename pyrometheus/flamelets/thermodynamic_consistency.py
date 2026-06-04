@@ -33,17 +33,14 @@ class CompressibleEOS:
 
     def update_config_option(self, option_path: str, option_val):
 
-        keys = option_path.split('/')
+        keys = option_path.split("/")
 
         current = self.config
         for k in keys[:-1]:
             if k not in current:
-                if create_missing:
-                    current[k] = {}
-                else:
-                    raise KeyError(f"Missing key in path: {k}")
+                current[k] = {}
             if not isinstance(current[k], dict):
-                raise TypeError(f"Path segment '{k}' is not a dict")
+                raise TypeError(f"Path segment {k} is not a dict")
             current = current[k]
 
         current[keys[-1]] = option_val
@@ -56,16 +53,11 @@ class CompressibleEOS:
                           viscous_diss: jnp.ndarray,
                           temp_guess: jnp.ndarray,
                           pressure: jnp.float64):
-        
+
         # Get state as array
         state_as_array = _state_to_array(state)
         # Set up the problem
         rt = self.fwd_solver.gov_eqns.compressible_eos_rt(
-            state_as_array,
-            temp_guess,
-            pressure
-        )
-        rt_jacobian = self.fwd_solver.gov_eqns.compressible_eos_rt_jacobian(
             state_as_array,
             temp_guess,
             pressure
@@ -80,7 +72,7 @@ class CompressibleEOS:
                 pressure
             )
         )
-        
+
         ds_dp = self.fwd_solver.gov_eqns.source_gradient_wrt_pressure(
             state_as_array,
             viscous_diss,
@@ -98,25 +90,19 @@ class CompressibleEOS:
         ).T
         adjoint_state_h = _array_to_state(adjoint_h_as_array)
 
-        integrand = jnp.einsum(
-            'ij,ji->i',
-            ds_dp,
-            adjoint_h_as_array
-        )
         h_gradient_ox = (
-            1.5 * adjoint_state_h.enthalpy[0] +
-            2 * adjoint_state_h.enthalpy[1] -
-            0.5 * adjoint_state_h.enthalpy[2]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2  # Replace with a stencil?
+            1.5 * adjoint_state_h.enthalpy[0]
+            + 2 * adjoint_state_h.enthalpy[1]
+            - 0.5 * adjoint_state_h.enthalpy[2]
+        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
         h_gradient_fu = (
-            1.5 * adjoint_state_h.enthalpy[-1] +
-            2 * adjoint_state_h.enthalpy[-2] -
-            0.5 * adjoint_state_h.enthalpy[-3]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2  # Replace with a stencil?
+            1.5 * adjoint_state_h.enthalpy[-1]
+            + 2 * adjoint_state_h.enthalpy[-2]
+            - 0.5 * adjoint_state_h.enthalpy[-3]
+        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
         h_gradient = h_gradient_ox + h_gradient_fu
         return rt, adjoint_state_h, h_gradient
-        
-        
+
     @partial(jax.jit, static_argnums=0)
     def eos_gradient(self,
                      state: FlameletState,
@@ -167,7 +153,7 @@ class CompressibleEOS:
         ).T
         adjoint_state_d = _array_to_state(adjoint_d_as_array)
         integrand = (1/rt) * mixture_fraction_pdf + jnp.einsum(
-            'ij,ji->i',
+            "ij,ji->i",
             ds_dp,
             adjoint_d_as_array,
         )
@@ -178,24 +164,24 @@ class CompressibleEOS:
         # divided out _twice_ in the derivative
         density_gradient_p = trapezoidal_rule(integrand)
         density_gradient_ox = (
-            1.5 * adjoint_state_d.enthalpy[0] +
-            2 * adjoint_state_d.enthalpy[1] -
-            0.5 * adjoint_state_d.enthalpy[2]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2  # Replace with a stencil?
+            1.5 * adjoint_state_d.enthalpy[0]
+            + 2 * adjoint_state_d.enthalpy[1]
+            - 0.5 * adjoint_state_d.enthalpy[2]
+        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
         density_gradient_fu = (
-            1.5 * adjoint_state_d.enthalpy[-1] +
-            2 * adjoint_state_d.enthalpy[-2] -
-            0.5 * adjoint_state_d.enthalpy[-3]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2  # Replace with a stencil?
+            1.5 * adjoint_state_d.enthalpy[-1]
+            + 2 * adjoint_state_d.enthalpy[-2]
+            - 0.5 * adjoint_state_d.enthalpy[-3]
+        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
         density_gradient = jnp.stack((
             density_gradient_p,
             density_gradient_ox + density_gradient_fu
-        ))        
-        
+        ))
+
         # Internal energy
         adj_rhs = -(
-            self.unit_h -
-            rt_jacobian.T
+            self.unit_h
+            - rt_jacobian.T
         ) * mixture_fraction_pdf
         adjoint_e_as_array = block_thomas(
             adj_op_lower,
@@ -206,20 +192,20 @@ class CompressibleEOS:
         adjoint_state_e = _array_to_state(adjoint_e_as_array)
 
         integrand = jnp.einsum(
-            'ij,ji->i',
+            "ij,ji->i",
             ds_dp,
             adjoint_e_as_array
         )
         energy_gradient_p = trapezoidal_rule(integrand)
         energy_gradient_ox = (
-            1.5 * adjoint_state_e.enthalpy[0] +
-            2 * adjoint_state_e.enthalpy[1] -
-            0.5 * adjoint_state_e.enthalpy[2]
+            1.5 * adjoint_state_e.enthalpy[0]
+            + 2 * adjoint_state_e.enthalpy[1]
+            - 0.5 * adjoint_state_e.enthalpy[2]
         ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2  # Replace with a stencil?
         energy_gradient_fu = (
-            1.5 * adjoint_state_e.enthalpy[-1] +
-            2 * adjoint_state_e.enthalpy[-2] -
-            0.5 * adjoint_state_e.enthalpy[-3]
+            1.5 * adjoint_state_e.enthalpy[-1]
+            + 2 * adjoint_state_e.enthalpy[-2]
+            - 0.5 * adjoint_state_e.enthalpy[-3]
         ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2  # Replace with a stencil?
         energy_gradient = jnp.stack((
             energy_gradient_p,
@@ -242,14 +228,14 @@ class CompressibleEOS:
         pressure, h_ox, h_fu = params
         t_solve = time.time()
         state, temp = self.fwd_solver.solve(
-            self.config['newton']['maxiter'],
-            self.config['newton']['tol'],
-            self.config['bdf']['newton']['maxiter'],
-            self.config['bdf']['newton']['tol'],
-            self.config['bdf']['time_step'],
-            self.config['bdf']['maxsteps'],
+            self.config["newton"]["maxiter"],
+            self.config["newton"]["tol"],
+            self.config["bdf"]["newton"]["maxiter"],
+            self.config["bdf"]["newton"]["tol"],
+            self.config["bdf"]["time_step"],
+            self.config["bdf"]["maxsteps"],
             True,
-            self.config['max_attempts'],
+            self.config["max_attempts"],
             diss_rate,
             viscous_diss,
             temp_guess,
@@ -259,19 +245,21 @@ class CompressibleEOS:
             state_guess
         )
         state.enthalpy.block_until_ready()
-        print(f'solve time: {(time.time() - t_solve):.4e} s')
+        print(f"solve time: {(time.time() - t_solve):.4e} s")
 
         t_adj = time.time()
-        (density_gradient, energy_gradient), (adj_d, adj_e) = self.eos_gradient(
-            state,
-            mixture_fraction_pdf,
-            diss_rate,
-            viscous_diss,
-            temp_guess,
-            pressure,
+        (density_gradient, energy_gradient), (adj_d, adj_e) = (
+            self.eos_gradient(
+                state,
+                mixture_fraction_pdf,
+                diss_rate,
+                viscous_diss,
+                temp_guess,
+                pressure,
+            )
         )
         adj_d.enthalpy.block_until_ready()
-        print(f'adjoint time: {(time.time() - t_adj):.4e} s')
+        print(f"adjoint time: {(time.time() - t_adj):.4e} s")
         rt = self.fwd_solver.gov_eqns.compressible_eos_rt(
             _state_to_array(state),
             temp,
@@ -301,7 +289,7 @@ class CompressibleEOS:
                              viscous_diss: jnp.ndarray,
                              temp_guess: jnp.ndarray,
                              state_guess: FlameletState):
-        
+
         state, temp, density, energy, d_grad, e_grad = self.evaluate_flamelet(
             params,
             mixture_fraction_pdf,
@@ -339,14 +327,14 @@ class CompressibleEOS:
         pressure, h_ox, h_fu = params
         t_solve = time.time()
         state, temp = self.fwd_solver.solve(
-            self.config['newton']['maxiter'],
-            self.config['newton']['tol'],
-            self.config['bdf']['newton']['maxiter'],
-            self.config['bdf']['newton']['tol'],
-            self.config['bdf']['time_step'],
-            self.config['bdf']['maxsteps'],
+            self.config["newton"]["maxiter"],
+            self.config["newton"]["tol"],
+            self.config["bdf"]["newton"]["maxiter"],
+            self.config["bdf"]["newton"]["tol"],
+            self.config["bdf"]["time_step"],
+            self.config["bdf"]["maxsteps"],
             True,
-            self.config['max_attempts'],
+            self.config["max_attempts"],
             diss_rate,
             viscous_diss,
             temp_guess,
@@ -356,7 +344,7 @@ class CompressibleEOS:
             state_guess
         )
         state.enthalpy.block_until_ready()
-        print(f'solve time: {(time.time() - t_solve):.4e} s')
+        print(f"solve time: {(time.time() - t_solve):.4e} s")
 
         rt, _, dh_ox = self.enthalpy_gradient(
             state,
@@ -367,7 +355,7 @@ class CompressibleEOS:
             pressure
         )
         density = jnp.sum(
-            (pressure / rt) * mixture_fraction_pdf            
+            (pressure / rt) * mixture_fraction_pdf
         )
         energy = jnp.sum(
             (state.enthalpy - rt) * mixture_fraction_pdf
@@ -386,7 +374,7 @@ class CompressibleEOS:
             density_sim - density,
             energy_sim - energy
         ])
-        return state, temp, update, residual 
+        return state, temp, update, residual
 
     def warmup(self,
                params: jnp.ndarray,
@@ -398,17 +386,17 @@ class CompressibleEOS:
 
         pressure, h_ox, h_fu = params
 
-        print('Compressible EOS: warming up forward solver')
+        print("Compressible EOS: warming up forward solver")
         t_wmp = time.time()
         s_wmp, _ = self.fwd_solver.solve(
-            self.config['newton']['maxiter'],
-            self.config['newton']['tol'],
-            self.config['bdf']['newton']['maxiter'],
-            self.config['bdf']['newton']['tol'],
-            self.config['bdf']['time_step'],
-            self.config['bdf']['maxsteps'],
+            self.config["newton"]["maxiter"],
+            self.config["newton"]["tol"],
+            self.config["bdf"]["newton"]["maxiter"],
+            self.config["bdf"]["newton"]["tol"],
+            self.config["bdf"]["time_step"],
+            self.config["bdf"]["maxsteps"],
             True,
-            self.config['max_attempts'],
+            self.config["max_attempts"],
             diss_rate,
             viscous_diss,
             temp_wmp,
@@ -418,9 +406,9 @@ class CompressibleEOS:
             state_wmp
         )
         s_wmp.enthalpy.block_until_ready()
-        print(f'Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s')
+        print(f"Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s")
 
-        print('Compressible EOS: warming up h-only adjoint solver')
+        print("Compressible EOS: warming up h-only adjoint solver")
         t_wmp = time.time()
         _, adj_wmp, _ = self.enthalpy_gradient(
             state_wmp,
@@ -431,9 +419,9 @@ class CompressibleEOS:
             pressure,
         )
         adj_wmp.enthalpy.block_until_ready()
-        print(f'Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s')
+        print(f"Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s")
 
-        print('Compressible EOS: warming up full adjoint solver')
+        print("Compressible EOS: warming up full adjoint solver")
         t_wmp = time.time()
         _, (adj_wmp, _) = self.eos_gradient(
             state_wmp,
@@ -444,9 +432,9 @@ class CompressibleEOS:
             pressure,
         )
         adj_wmp.enthalpy.block_until_ready()
-        print(f'Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s')
+        print(f"Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s")
         return
-    
+
     def ensure_consistency(self,
                            density_sim: jnp.float64,
                            energy_sim: jnp.float64,
@@ -457,30 +445,26 @@ class CompressibleEOS:
                            temp_guess: jnp.ndarray,
                            state_guess: FlameletState):
 
-        err_prev = jnp.inf
         state = state_guess
         temp = temp_guess
 
-        a = self.config['eos']['update_size']
+        a = self.config["eos"]["update_size"]
 
-        update_method = self.config['eos']['update_method']
-        if update_method == 'gauss_newton':
+        update_method = self.config["eos"]["update_method"]
+        if update_method == "gauss_newton":
             update_fn = self._gauss_newton_update
-            print('Compressible EOS: using Gauss-Newton update')
-        elif update_method == 'picard':
+            print("Compressible EOS: using Gauss-Newton update")
+        elif update_method == "picard":
             update_fn = self._picard_update
-            print('Compressible EOS: using Picard update')
+            print("Compressible EOS: using Picard update")
         else:
-            import warnings
-            warnings.warn('Compressible EOS: invalid update method '
-                          f'{update_method}, defaulting to Gauss-Newton')
-            update_fn = self._gauss_newton_update
+            raise ValueError(f"Available {update_method} not implemented")
 
-        residual = np.full(self.config['eos']['maxiter'], np.nan)
+        residual = np.full(self.config["eos"]["maxiter"], np.nan)
         history = np.full(
-            (self.config['eos']['maxiter'], 2), np.nan
+            (self.config["eos"]["maxiter"], 2), np.nan
         )
-        for it in range(self.config['eos']['maxiter']):
+        for it in range(self.config["eos"]["maxiter"]):
             t_iter = time.time()
             state, temp, v, res = update_fn(
                 density_sim,
@@ -495,23 +479,23 @@ class CompressibleEOS:
             v.block_until_ready()
             cost_val = jnp.linalg.norm(res)**2
             delta = jnp.linalg.norm(v)
-            print(f'Compressible EOS iteration {it}: '
-                  f'time: {(time.time()-t_iter):.4e} s'
-                  f', residual = {cost_val:.4e}'
-                  f', |v| = {delta:.4e}'
-                  ', new params = [{:s}]'.format(
-                      ', '.join([
-                          f'{a:.4e}' for a in params + a * v
+            print(f"Compressible EOS iteration {it}: "
+                  f"time: {(time.time()-t_iter):.4e} s"
+                  f", residual = {cost_val:.4e}"
+                  f", |v| = {delta:.4e}"
+                  ", new params = [{:s}]".format(
+                      ", ".join([
+                          f"{a:.4e}" for a in params + a * v
                       ])
-            ))
+                  ))
             params = params + a * v
             residual[it] = cost_val
             history[it] = np.array([
                 jnp.sum(state.enthalpy * mixture_fraction_pdf),
                 jnp.sum(temp * mixture_fraction_pdf)
             ])
-            if delta < self.config['eos']['tol']:
-                print(f'Compressible EOS converged at iteration {it}')
+            if delta < self.config["eos"]["tol"]:
+                print(f"Compressible EOS converged at iteration {it}")
                 break
 
         return state, temp, params, it, delta, residual, history, False

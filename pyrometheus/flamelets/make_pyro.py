@@ -1,7 +1,6 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
-import warnings
 
 
 jax.config.update("jax_enable_x64", True)
@@ -93,7 +92,7 @@ def make_pyro_object(pyro_cls,
 
                 if isinstance(argument, Number):
                     return self.pyro_np.abs(argument)
-                if isinstance(argument, 
+                if isinstance(argument,
                               self.pyro_np.ndarray) and argument.shape == ():
                     return self.pyro_np.abs(argument)
                 return self.pyro_np.linalg.norm(argument, normord)
@@ -151,6 +150,5 @@ def make_pyro_object(pyro_cls,
     else:
         raise ValueError(
             f"Unsupported array library: {pyro_np}. "
-            f"Supported libraries: numpy, jax.numpy, torch"
-            + (", cupy" if CUPY_AVAILABLE else "")
+            f"Supported libraries: numpy, jax.numpy,"
         )

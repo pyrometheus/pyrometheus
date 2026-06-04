@@ -1,7 +1,5 @@
 import numpy as np
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Union
-from pyroflow.boundary_conditions import BCConfig
+from dataclasses import dataclass
 
 
 @dataclass
