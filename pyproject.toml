@@ -30,6 +30,9 @@ dependencies = [
     "cantera >= 3.1.0",
     "pymbolic",
     "mako",
+    "jax",
+    "jaxlib",
+    "scipy"
 ]
 
 [project.urls]
@@ -61,8 +64,6 @@ dev  = [
     "Flake8-pyproject",
 ]
 test = [
-    "jax",
-    "jaxlib",
     "pytest",
     "pybind11",
 ]

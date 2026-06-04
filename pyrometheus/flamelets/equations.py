@@ -12,14 +12,6 @@ from pyrometheus.flamelets.state import (
 # this class implements: 0.5 * chi * Lap(state)/dx**2 + S = 0
 # where Lap = D1 * D1, with D1 the stencil matrix of first-order
 # finite difference approximation.
-# if self.diss_rate[0]:
-#     self.diss_rate = self.diss_rate.at[0].set(
-#         2 * self.laplacian.domain.jac[0]**2
-#     )
-# if self.diss_rate[-1]:
-#     self.diss_rate = self.diss_rate.at[-1].set(
-#         2 * self.laplacian.domain.jac[0]**2
-#     )
 class FlameletEquations:
 
     def __init__(self,
@@ -29,7 +21,7 @@ class FlameletEquations:
                  y_fu,):
         self.pyro_gas = pyro_gas
         self.laplacian = laplacian
-        self.mol_wts = self.pyro_gas.molecular_weights  # [:, None]
+        self.mol_wts = self.pyro_gas.molecular_weights
         self.laplacian.assemble_block_form(self.pyro_gas.num_species + 1)
 
         # Create boundary conditions
@@ -85,12 +77,15 @@ class FlameletEquations:
             in_axes=(1, 0, None)
         )
 
-    def set_dissipation_rate(self, diss_rate: jnp.ndarray):
-        self.diss_rate = diss_rate
-
-    def set_viscous_dissipation(self, viscous_diss: jnp.ndarray):
-        self.viscous_diss = viscous_diss
-
+    def _enforce_dirichlet_bcs(self,
+                               diss_rate: jnp.ndarray):
+        diss_rate = diss_rate.at[0].set(
+            2 * self.laplacian.domain.jac[0]**2
+        )
+        diss_rate = diss_rate.at[-1].set(
+            2 * self.laplacian.domain.jac[0]**2
+        )
+        
     def rhs(self,
             state: FlameletState,
             diss_rate: jnp.ndarray,
@@ -99,6 +94,7 @@ class FlameletEquations:
             pressure: jnp.float64,
             h_ox: jnp.float64,
             h_fu: jnp.float64,):
+        self._enforce_dirichlet_bcs(diss_rate)
         return (
             0.5 * diss_rate * self.laplacian(state)
             + self.source_terms(
@@ -119,7 +115,7 @@ class FlameletEquations:
             viscous_diss: jnp.ndarray,
             temp_guess: jnp.ndarray,
             pressure: jnp.float64,) -> Tuple[jnp.ndarray, ...]:
-
+        self._enforce_dirichlet_bcs(diss_rate)
         num_v = self.pyro_gas.num_species + 1
         zeros_nv = jnp.zeros((1, num_v, num_v))
         source_jacobian = self.vmap_jacobian(
@@ -231,6 +227,7 @@ class FlameletEquations:
                         viscous_diss: jnp.ndarray,
                         temp_guess: jnp.ndarray,
                         pressure: jnp.float64,):
+        self._enforce_dirichlet_bcs(diss_rate)
         jacobian = self.vmap_jacobian(
             _state_to_array(state),
             viscous_diss, temp_guess, pressure
@@ -251,6 +248,7 @@ class FlameletEquations:
                          viscous_diss: jnp.ndarray,
                          temp_guess: jnp.ndarray,
                          pressure: jnp.float64,) -> Tuple[jnp.ndarray, ...]:
+        self._enforce_dirichlet_bcs(diss_rate)
         num_v = self.pyro_gas.num_species + 1
         zeros_nv = jnp.zeros((1, num_v, num_v))
         source_jacobian = self.vmap_jacobian(

@@ -13,8 +13,8 @@ from pyrometheus.flamelets.linear_solver import block_thomas
 
 def trapezoidal_rule(integrand):
     return (
-        0.5 * (integrand[0] + integrand[-1]) +
-        jnp.sum(integrand[1:-1])
+        0.5 * (integrand[0] + integrand[-1])
+        + jnp.sum(integrand[1:-1])
     )
 
 
@@ -72,13 +72,6 @@ class CompressibleEOS:
                 pressure
             )
         )
-
-        ds_dp = self.fwd_solver.gov_eqns.source_gradient_wrt_pressure(
-            state_as_array,
-            viscous_diss,
-            temp_guess,
-            pressure
-        ) / (0.5 * diss_rate[:, None])
 
         # Adjoint solve for enthalpy
         adj_rhs = -self.unit_h * mixture_fraction_pdf
@@ -201,12 +194,12 @@ class CompressibleEOS:
             1.5 * adjoint_state_e.enthalpy[0]
             + 2 * adjoint_state_e.enthalpy[1]
             - 0.5 * adjoint_state_e.enthalpy[2]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2  # Replace with a stencil?
+        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
         energy_gradient_fu = (
             1.5 * adjoint_state_e.enthalpy[-1]
             + 2 * adjoint_state_e.enthalpy[-2]
             - 0.5 * adjoint_state_e.enthalpy[-3]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2  # Replace with a stencil?
+        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
         energy_gradient = jnp.stack((
             energy_gradient_p,
             energy_gradient_ox + energy_gradient_fu

@@ -383,8 +383,8 @@ class FlameletSolver:
                 h_fu
             )
             temp_t = self.gov_eqns.pyro_gas.get_temperature_from_enthalpy(
-                state.enthalpy,
-                state.mass_fractions,
+                state_t.enthalpy,
+                state_t.mass_fractions,
                 temp_guess
             )
             if success:

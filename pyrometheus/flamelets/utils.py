@@ -11,17 +11,17 @@ def bell_profile(z):
 def stoichiometric_mixture_fraction(sol, y_ox, y_fu):
 
     _bilger_dict = {
-        'C': 2,
-        'H': 0.5,
-        'O': -1
+        "C": 2,
+        "H": 0.5,
+        "O": -1
     }
 
     wts_e = {
-        'C': 12.011,
-        'H': 1.00794,
-        'O': 15.999,
-        'Ar': 39.948,
-        'N': 28.0133
+        "C": 12.011,
+        "H": 1.00794,
+        "O": 15.999,
+        "Ar": 39.948,
+        "N": 28.0133
     }
 
     wts_s = sol.molecular_weights

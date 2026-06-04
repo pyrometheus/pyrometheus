@@ -26,3 +26,5 @@ test/mechs/*.hpp
 *.so
 
 devel
+.ipynb_checkpoints/
+examples/*/.ipynb_checkpoints/
