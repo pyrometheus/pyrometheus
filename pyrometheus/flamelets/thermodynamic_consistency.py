@@ -110,7 +110,7 @@ class CompressibleEOS:
                           viscous_diss: jnp.ndarray,
                           temp_guess: jnp.ndarray,
                           pressure: jnp.float64):
-        """Adjoint-based gradient of the PDF-averaged enthalpy w.r.t. boundary enthalpies.
+        """Adjoint-based enthalpy gradient w.r.t. h_ox, h_fu
 
         Solves the adjoint equation with right-hand side
         ``-unit_h * mixture_fraction_pdf`` and contracts the boundary
@@ -315,7 +315,7 @@ class CompressibleEOS:
                           viscous_diss: jnp.ndarray,
                           temp_guess: jnp.ndarray,
                           state_guess: FlameletState):
-        """Forward-solve the flamelet and compute PDF-averaged ``(rho, e)`` and their gradients.
+        """Solve flamelet to compute ``(rho, e)`` and their gradients.
 
         Used as the inner kernel of the Gauss--Newton update: it
         produces the simulated density and energy along with their
