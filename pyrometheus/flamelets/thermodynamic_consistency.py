@@ -1,3 +1,20 @@
+"""Compressible-EOS consistency layer on top of the flamelet solver.
+
+In a compressible LES/RANS code, the filtered density and energy of a
+non-premixed reacting flow are typically tabulated as moments of the
+flamelet state against a presumed mixture-fraction PDF.  This module
+recovers the flamelet boundary parameters ``(pressure, h_ox, h_fu)``
+that make those filtered quantities consistent with a target
+``(density_sim, energy_sim)`` provided by the host solver.
+
+The :class:`CompressibleEOS` class drives the search with either a
+Gauss--Newton update (using density- *and* energy-gradient information
+from adjoint solves) or a Picard update (using enthalpy gradients
+only).  Sensitivities are computed by solving the adjoint of the
+flamelet operator returned by
+:meth:`FlameletEquations.adjoint_operator`.
+"""
+
 import time
 import jax
 import numpy as np
@@ -12,6 +29,12 @@ from pyrometheus.flamelets.linear_solver import block_thomas
 
 
 def trapezoidal_rule(integrand):
+    """Composite trapezoidal-rule sum on a unit-spacing grid.
+
+    The integrand is assumed to be sampled at the endpoints and at
+    every interior node; the spacing is implicit and absorbed into
+    the calling convention of the gradient routines.
+    """
     return (
         0.5 * (integrand[0] + integrand[-1])
         + jnp.sum(integrand[1:-1])
@@ -19,6 +42,30 @@ def trapezoidal_rule(integrand):
 
 
 class CompressibleEOS:
+    """Driver that enforces compressible-EOS consistency on a flamelet table.
+
+    Parameters
+    ----------
+    config : dict
+        Nested configuration dictionary supplying tolerances,
+        iteration counts and step sizes for the inner Newton, BDF and
+        outer EOS-consistency loops; see :meth:`ensure_consistency`
+        for the schema used.
+    forward_solver : FlameletSolver
+        Pre-built flamelet solver supplying the residual, adjoint
+        operator and compressible-EOS helpers.
+
+    Attributes
+    ----------
+    config : dict
+        Mutable copy of the user-provided configuration.
+    fwd_solver : FlameletSolver
+        The wrapped flamelet solver.
+    unit_h : jnp.ndarray
+        ``(num_vars, num_x)`` selector for the enthalpy component of
+        the state, used to build the right-hand side of the adjoint
+        problem.
+    """
 
     def __init__(self,
                  config: Dict,
@@ -32,6 +79,16 @@ class CompressibleEOS:
         self.unit_h = self.unit_h.at[0].set(jnp.ones(num_x))
 
     def update_config_option(self, option_path: str, option_val):
+        """Set ``config[path][to][option] = option_val``.
+
+        ``option_path`` uses ``"/"`` as a separator.  Intermediate
+        levels that do not yet exist are created as empty dictionaries.
+
+        Raises
+        ------
+        TypeError
+            If an intermediate path segment exists but is not a dict.
+        """
 
         keys = option_path.split("/")
 
@@ -53,6 +110,23 @@ class CompressibleEOS:
                           viscous_diss: jnp.ndarray,
                           temp_guess: jnp.ndarray,
                           pressure: jnp.float64):
+        """Adjoint-based gradient of the PDF-averaged enthalpy w.r.t. boundary enthalpies.
+
+        Solves the adjoint equation with right-hand side
+        ``-unit_h * mixture_fraction_pdf`` and contracts the boundary
+        traces of the adjoint state into the gradient of
+        ``<h>`` (the PDF average of ``h``) with respect to the
+        oxidizer- and fuel-side boundary enthalpies.  The two
+        contributions are combined into a single scalar gradient.
+
+        Returns
+        -------
+        tuple
+            ``(rt, adjoint_state_h, h_gradient)`` where ``rt`` is the
+            point-wise ``R T``, ``adjoint_state_h`` is the adjoint
+            field, and ``h_gradient`` is the combined boundary-enthalpy
+            sensitivity.
+        """
 
         # Get state as array
         state_as_array = _state_to_array(state)
@@ -104,6 +178,30 @@ class CompressibleEOS:
                      viscous_diss: jnp.ndarray,
                      temp_guess: jnp.ndarray,
                      pressure: jnp.float64):
+        """Adjoint gradient of PDF-averaged density and internal energy.
+
+        Solves two adjoint problems sharing the same operator: one
+        whose right-hand side is the density sensitivity
+        :math:`(p / (R T)^2)\\, \\nabla_{\\phi} (R T)`, and one whose
+        right-hand side carries both the direct sensitivity of the
+        internal energy to ``h`` and the indirect contribution through
+        ``R T``.  The boundary traces of each adjoint state are
+        combined with the source-term sensitivity with respect to
+        pressure (also vmap/jacfwd'd in
+        :class:`FlameletEquations`) and integrated over the
+        mixture-fraction PDF with :func:`trapezoidal_rule` to produce
+        the final ``(p, h)`` gradients of the filtered density and
+        energy.
+
+        Returns
+        -------
+        tuple
+            ``((density_gradient, energy_gradient),
+            (adjoint_state_d, adjoint_state_e))``.  Each gradient is a
+            length-2 array ``(d/dp, d/dh_boundary)`` (with the latter
+            applied symmetrically to both boundary enthalpies in the
+            outer iteration).
+        """
 
         # Get state as array
         state_as_array = _state_to_array(state)
@@ -217,6 +315,30 @@ class CompressibleEOS:
                           viscous_diss: jnp.ndarray,
                           temp_guess: jnp.ndarray,
                           state_guess: FlameletState):
+        """Forward-solve the flamelet and compute PDF-averaged ``(rho, e)`` and their gradients.
+
+        Used as the inner kernel of the Gauss--Newton update: it
+        produces the simulated density and energy along with their
+        adjoint-based gradients with respect to ``(p, h)``.
+
+        Parameters
+        ----------
+        params : jnp.ndarray
+            Length-3 array ``(pressure, h_ox, h_fu)``.
+        mixture_fraction_pdf : jnp.ndarray
+            Presumed mixture-fraction PDF (or PDF * dZ) used as the
+            integration weight.
+        diss_rate, viscous_diss, temp_guess
+            See :meth:`FlameletEquations.rhs`.
+        state_guess : FlameletState
+            Initial guess for the inner flamelet solve.
+
+        Returns
+        -------
+        tuple
+            ``(state, temperature, density, energy, density_gradient,
+            energy_gradient)``.
+        """
 
         pressure, h_ox, h_fu = params
         t_solve = time.time()
@@ -282,6 +404,22 @@ class CompressibleEOS:
                              viscous_diss: jnp.ndarray,
                              temp_guess: jnp.ndarray,
                              state_guess: FlameletState):
+        """Single Gauss--Newton update for ``(pressure, h_boundary)``.
+
+        Uses :meth:`evaluate_flamelet` to gather the
+        density/energy residuals and their 2x2 Jacobian, then solves
+        the normal equations.  The single boundary-enthalpy update
+        is mirrored to both ``h_ox`` and ``h_fu`` to preserve a fixed
+        ``h_ox - h_fu``.
+
+        Returns
+        -------
+        tuple
+            ``(state, temperature, update, residual)`` where
+            ``update`` is the length-3 search direction to be applied
+            to ``params`` and ``residual`` is the length-2 mismatch
+            vector.
+        """
 
         state, temp, density, energy, d_grad, e_grad = self.evaluate_flamelet(
             params,
@@ -316,6 +454,20 @@ class CompressibleEOS:
                        viscous_diss: jnp.ndarray,
                        temp_guess: jnp.ndarray,
                        state_guess: FlameletState):
+        """Single Picard-style update for ``(pressure, h_boundary)``.
+
+        Decouples the two updates: ``pressure`` is updated by the
+        ideal-gas relation ``rho * <R T> = p`` evaluated under the
+        PDF, and the boundary enthalpy is updated using only the
+        cheaper enthalpy-only adjoint gradient from
+        :meth:`enthalpy_gradient`.  Cheaper than
+        :meth:`_gauss_newton_update` but converges more slowly.
+
+        Returns
+        -------
+        tuple
+            ``(state, temperature, update, residual)``.
+        """
 
         pressure, h_ox, h_fu = params
         t_solve = time.time()
@@ -376,6 +528,13 @@ class CompressibleEOS:
                viscous_diss: jnp.ndarray,
                temp_wmp: jnp.ndarray,
                state_wmp: FlameletState):
+        """Trigger JIT compilation of the forward and adjoint solves.
+
+        Runs one full :meth:`FlameletSolver.solve` followed by one
+        :meth:`enthalpy_gradient` and one :meth:`eos_gradient` so that
+        the JIT cost is paid up front rather than during the first
+        consistency iteration.
+        """
 
         pressure, h_ox, h_fu = params
 
@@ -437,6 +596,43 @@ class CompressibleEOS:
                            viscous_diss: jnp.ndarray,
                            temp_guess: jnp.ndarray,
                            state_guess: FlameletState):
+        """Iterate ``(p, h_ox, h_fu)`` until the filtered EOS matches the target.
+
+        Repeatedly calls :meth:`_gauss_newton_update` or
+        :meth:`_picard_update` (selected by
+        ``config["eos"]["update_method"]``), applying a damped update
+        ``params + a * v`` with ``a = config["eos"]["update_size"]``.
+        Stops when ``|v|`` falls below ``config["eos"]["tol"]`` or
+        when ``config["eos"]["maxiter"]`` iterations have been
+        performed.
+
+        Parameters
+        ----------
+        density_sim, energy_sim : float
+            Target filtered density and internal energy provided by
+            the host compressible solver.
+        params : jnp.ndarray
+            Initial ``(pressure, h_ox, h_fu)``.
+        mixture_fraction_pdf, diss_rate, viscous_diss, temp_guess,
+        state_guess
+            See :meth:`evaluate_flamelet`.
+
+        Returns
+        -------
+        tuple
+            ``(state, temperature, params, it, delta, residual,
+            history, success)``.  ``residual`` is the per-iteration
+            squared residual history, ``history`` is the per-iteration
+            ``(<h>, <T>)`` history under the PDF, and ``success`` is
+            always ``False`` (the trailing flag is reserved for
+            future use).
+
+        Raises
+        ------
+        ValueError
+            If ``config["eos"]["update_method"]`` is not one of
+            ``"gauss_newton"`` or ``"picard"``.
+        """
 
         state = state_guess
         temp = temp_guess

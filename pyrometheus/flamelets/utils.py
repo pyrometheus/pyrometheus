@@ -1,3 +1,5 @@
+"""Miscellaneous helpers used to set up a flamelet problem."""
+
 import numpy as np
 import jax.numpy as jnp
 from itertools import product
@@ -5,10 +7,51 @@ from scipy.special import erfcinv
 
 
 def bell_profile(z):
+    """Smoluchowski-style bell profile for the scalar dissipation rate.
+
+    Returns the analytic profile
+
+    .. math::
+
+        \\chi(Z) \\propto \\exp\\!\\big(-2\\, \\mathrm{erfcinv}(2 Z)^2\\big),
+
+    commonly used as the mixture-fraction-dependent shape of
+    :math:`\\chi(Z)` for a counterflow flamelet.
+
+    Parameters
+    ----------
+    z : array_like
+        Mixture-fraction values in ``(0, 1)``.
+    """
     return jnp.exp(-2 * erfcinv(2 * z) ** 2)
 
 
 def stoichiometric_mixture_fraction(sol, y_ox, y_fu):
+    """Bilger stoichiometric mixture fraction for a fuel/oxidizer pair.
+
+    Computes the conventional Bilger coupling function from the
+    oxidizer- and fuel-stream mass fractions ``y_ox`` and ``y_fu`` and
+    extracts the value at stoichiometry.  Element weights
+    :math:`2/W_C`, :math:`1/(2 W_H)` and :math:`-1/W_O` are used for
+    carbon, hydrogen and oxygen, respectively; all other elements
+    receive a zero weight.
+
+    Parameters
+    ----------
+    sol : Cantera-like Solution
+        Object that exposes ``element_names``, ``molecular_weights``,
+        ``n_species``, ``n_elements`` and ``n_atoms(species,
+        element)``.
+    y_ox, y_fu : ndarray
+        Oxidizer- and fuel-side mass-fraction vectors.
+
+    Returns
+    -------
+    float
+        Stoichiometric mixture fraction
+        :math:`Z_{\\mathrm{st}} = -\\beta_{\\mathrm{ox}} /
+        (\\beta_{\\mathrm{fu}} - \\beta_{\\mathrm{ox}})`.
+    """
 
     _bilger_dict = {
         "C": 2,

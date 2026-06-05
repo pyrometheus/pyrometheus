@@ -4,6 +4,46 @@ import jax.numpy as jnp
 
 
 def block_thomas(lower, central, upper, rhs):
+    """Solve a block-tridiagonal linear system with the Thomas algorithm.
+
+    Given block arrays describing a block-tridiagonal matrix
+
+    .. math::
+
+        \\begin{pmatrix}
+        C_0 & U_0 & & & \\\\
+        L_0 & C_1 & U_1 & & \\\\
+            & L_1 & C_2 & \\ddots & \\\\
+            &     & \\ddots & \\ddots & U_{N-2} \\\\
+            &     & & L_{N-2} & C_{N-1}
+        \\end{pmatrix}
+        \\,
+        \\begin{pmatrix} x_0 \\\\ x_1 \\\\ \\vdots \\\\ x_{N-1} \\end{pmatrix}
+        =
+        \\begin{pmatrix} b_0 \\\\ b_1 \\\\ \\vdots \\\\ b_{N-1} \\end{pmatrix},
+
+    this routine performs the standard forward elimination /
+    back-substitution sweep and returns the block vector ``x``.  Both
+    sweeps are implemented with :func:`jax.lax.scan` so the routine
+    composes with :func:`jax.jit`, :func:`jax.vmap` and reverse-mode
+    autodiff.
+
+    Parameters
+    ----------
+    lower : jnp.ndarray
+        Sub-diagonal blocks of shape ``(N - 1, nv, nv)``.
+    central : jnp.ndarray
+        Diagonal blocks of shape ``(N, nv, nv)``.
+    upper : jnp.ndarray
+        Super-diagonal blocks of shape ``(N - 1, nv, nv)``.
+    rhs : jnp.ndarray
+        Right-hand side blocks of shape ``(N, nv)``.
+
+    Returns
+    -------
+    jnp.ndarray
+        Solution blocks of shape ``(N, nv)``.
+    """
 
     # num_blocks = central.shape[0]
 

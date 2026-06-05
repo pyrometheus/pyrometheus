@@ -1,3 +1,19 @@
+"""Factories for array-library-specific pyrometheus subclasses.
+
+This module wraps a pyrometheus-generated thermochemistry class with the
+helpers expected by the flamelet solver, choosing the right
+implementation depending on whether the host code wants to run with
+``numpy`` (eager, host-side) or ``jax.numpy`` (traceable, GPU/TPU
+friendly) arrays.  In particular it provides:
+
+- a ``_pyro_make_array`` implementation tailored to each backend;
+- a Newton-iteration-based ``get_temperature`` that solves the implicit
+  temperature equation from a mixture energy or enthalpy;
+- a JAX-only ``get_temperature_from_enthalpy`` written with
+  ``jax.lax.while_loop`` so that it remains differentiable and JIT
+  compilable.
+"""
+
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -27,6 +43,11 @@ def detect_array_library(array):
 
 
 def all_numbers(res_list, pyro_np):
+    """Return ``True`` iff every element of ``res_list`` is a scalar.
+
+    Both Python numbers and zero-dimensional arrays of the array
+    library ``pyro_np`` are accepted as scalars.
+    """
     from numbers import Number
     return all(
         isinstance(e, Number)
@@ -36,10 +57,17 @@ def all_numbers(res_list, pyro_np):
 
 
 def _np_stack(res_list,):
+    """Stack a list of NumPy arrays along a new leading axis."""
     return np.stack(res_list)
 
 
 def _jax_stack(res_list, pyro_np):
+    """Stack a list of arrays along a new leading axis using ``pyro_np``.
+
+    Implemented with functional ``.at[i].set(...)`` updates so that
+    the result is a JAX array suitable for tracing under
+    :func:`jax.jit`.
+    """
     array = pyro_np.empty_like(
         pyro_np.array(res_list),
     )
@@ -53,18 +81,89 @@ def make_pyro_object(pyro_cls,
                      pyro_np,
                      device=None,
                      dtype=jnp.float64):
+    """Instantiate ``pyro_cls`` with backend-specific helpers attached.
+
+    A pyrometheus-generated thermochemistry class only knows about
+    the basic ``self._pyro_make_array`` and ``get_temperature`` hooks.
+    For use inside the flamelet solver we additionally need:
+
+    - a ``_pyro_make_array`` that respects the chosen array library,
+    - a temperature solver that is either a plain Python Newton loop
+      (NumPy backend) or a ``jax.lax.while_loop``-based loop suitable
+      for ``jit`` and ``jacfwd`` (JAX backend),
+    - on the JAX backend, an enthalpy-based
+      ``get_temperature_from_enthalpy`` used to recover ``T`` from
+      the flamelet state ``(h, Y)``.
+
+    Parameters
+    ----------
+    pyro_cls : type
+        Pyrometheus-generated class to subclass.
+    pyro_np : module
+        Array library to specialise for; must be ``numpy`` or
+        ``jax.numpy``.
+    device : optional
+        Currently unused; reserved for explicit JAX device placement.
+    dtype : dtype, optional
+        Default floating-point dtype for the wrapped object.
+
+    Returns
+    -------
+    object
+        An instance of an anonymous subclass of ``pyro_cls`` carrying
+        the backend-specific helpers described above.
+
+    Raises
+    ------
+    ValueError
+        If ``pyro_np`` is neither ``numpy`` nor ``jax.numpy``.
+    """
     if pyro_np == np:
 
         class PyroNumPy(pyro_cls):
+            """NumPy-backed pyrometheus wrapper.
+
+            Adds a host-side Newton iteration to recover temperature
+            from internal energy and mass fractions, and replaces the
+            generic array constructor with a NumPy ``stack``.
+            """
+
             def __init__(self, pyro_np):
                 super().__init__(pyro_np)
                 self.pv_fun = self.get_mixture_specific_heat_cv_mass
                 self.he_fun = self.get_mixture_internal_energy_mass
 
             def _pyro_make_array(self, res_list):
+                """Stack a list of NumPy arrays along a new leading axis."""
                 return _np_stack(res_list)
 
             def get_temperature(self, energy, t_guess, y, tol=1e-6):
+                """Newton-solve ``e(T, Y) = energy`` for temperature.
+
+                Parameters
+                ----------
+                energy : ndarray
+                    Target mixture internal energy per unit mass.
+                t_guess : ndarray or float
+                    Initial temperature guess (broadcastable to
+                    ``energy``).
+                y : ndarray
+                    Mass-fraction array consistent with ``energy``.
+                tol : float, optional
+                    Convergence tolerance on the infinity norm of the
+                    Newton update.
+
+                Returns
+                -------
+                ndarray
+                    Converged temperature field.
+
+                Raises
+                ------
+                RuntimeError
+                    If 500 Newton iterations are exhausted without
+                    reaching ``tol``.
+                """
                 num_iter = 500
                 ones = self._pyro_zeros_like(energy) + 1.0
                 iter_temp = t_guess * ones
@@ -82,11 +181,23 @@ def make_pyro_object(pyro_cls,
     elif pyro_np == jax.numpy:
 
         class PyroJAX(pyro_cls):
+            """JAX-backed pyrometheus wrapper.
+
+            All loops are written with ``jax.lax.while_loop`` so the
+            resulting methods are differentiable and JIT-compilable.
+            """
 
             def _pyro_make_array(self, res_list):
+                """Stack a list of JAX arrays along a new leading axis."""
                 return _jax_stack(res_list, self.pyro_np)
 
             def _pyro_norm(self, argument, normord):
+                """Norm helper that also handles scalar arguments.
+
+                Plain Python numbers and zero-dimensional JAX arrays
+                are short-circuited to ``abs(argument)``; everything
+                else is dispatched to ``jnp.linalg.norm``.
+                """
                 # Wrap norm for scalars
                 from numbers import Number
 
@@ -100,6 +211,26 @@ def make_pyro_object(pyro_cls,
             def get_temperature(
                 self, energy, temp_init, mass_fractions, do_energy=True
             ):
+                """Newton-solve ``e(T, Y) = energy`` using ``jax.lax.while_loop``.
+
+                Parameters
+                ----------
+                energy : ndarray
+                    Target mixture internal energy per unit mass.
+                temp_init : ndarray
+                    Initial temperature guess.
+                mass_fractions : ndarray
+                    Species mass fractions consistent with ``energy``.
+                do_energy : bool, optional
+                    Retained for API compatibility; the solve is
+                    always performed against the internal-energy
+                    equation.
+
+                Returns
+                -------
+                ndarray
+                    Converged temperature field.
+                """
 
                 def cond_fun(temperature):
                     f = energy - self.get_mixture_internal_energy_mass(
@@ -124,6 +255,28 @@ def make_pyro_object(pyro_cls,
             def get_temperature_from_enthalpy(
                     self, enthalpy, mass_fractions, temp_init,
             ):
+                """Newton-solve ``h(T, Y) = enthalpy`` for temperature.
+
+                The companion to :meth:`get_temperature` for the
+                enthalpy-formulated flamelet equations.  Uses a
+                ``jax.lax.while_loop`` and the analytical mixture
+                ``cp`` to drive the Newton iteration.
+
+                Parameters
+                ----------
+                enthalpy : ndarray
+                    Target mixture enthalpy per unit mass.
+                mass_fractions : ndarray
+                    Species mass fractions consistent with
+                    ``enthalpy``.
+                temp_init : ndarray
+                    Initial temperature guess.
+
+                Returns
+                -------
+                ndarray
+                    Converged temperature field.
+                """
 
                 def cond_fun(temperature):
                     f = enthalpy - self.get_mixture_enthalpy_mass(
