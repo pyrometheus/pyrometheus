@@ -116,7 +116,7 @@ def reaction_progress_rate_expr(
         r_rev = mass_action_rxn_progress_rate_expr(
             rxn_index, indices[1], stoich_coeff[1]
         )
-        return k_fwd[rxn_index] * r_fwd - exp(log_k_eq[rxn_index]) * r_rev
+        return k_fwd[rxn_index] * (r_fwd - exp(log_k_eq[rxn_index]) * r_rev)
     else:
         return k_fwd[rxn_index] * r_fwd
 

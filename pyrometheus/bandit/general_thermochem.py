@@ -4,7 +4,8 @@ import pymbolic.primitives as p
 from dataclasses import field
 from typing import List, Union, Tuple, ForwardRef
 from pyrometheus.bandit.chem_expr.kinetics import RateCoefficient
-from pyrometheus.bandit.chem_expr.thermo import SpeciesThermo
+from pyrometheus.bandit.chem_expr.thermo import (SpeciesNASAThermo,
+                                                 SpeciesVibrationalThermo)
 
 
 class BaseNamespace:
@@ -24,18 +25,25 @@ class BaseMechanism:
     .. automethod:: make_rates
     """
 
+    nonequil_thermo: bool = False
     pyro_generated: bool = False
     pyro_compiled: bool = False
     pyro_code: str = None
     pyro_engine: ForwardRef('Thermochemistry') = None  # noqa: F821
     rate_coeffs: np.ndarray = np.empty(shape=(0,), dtype=RateCoefficient)
     equil_constants: np.ndarray = np.empty(shape=(0,), dtype=p.ExpressionNode)
-    mass_action_rates: np.ndarray = np.empty(shape=(0,),
-                                             dtype=p.ExpressionNode)
-    species_prod_rates: np.ndarray = np.empty(shape=(0,),
-                                              dtype=p.ExpressionNode)
-    species_thermo_polynomials: np.ndarray = np.empty(shape=(0,),
-                                                      dtype=SpeciesThermo)
+    mass_action_rates: np.ndarray = np.empty(
+        shape=(0,), dtype=p.ExpressionNode
+    )
+    species_prod_rates: np.ndarray = np.empty(
+        shape=(0,), type=p.ExpressionNode
+    )
+    species_nasa_thermo_polynomials: np.ndarray = np.empty(
+        shape=(0,), dtype=SpeciesNASAThermo
+    )
+    species_vib_thermo_expressions: np.ndarray = np.empty(
+        shape=(0,), dtype=SpeciesVibrationalThermo
+    )
     param_vals: np.ndarray = np.empty(shape=(0,), dtype=np.float64)
 
     def __init__(self):
@@ -61,6 +69,9 @@ class BaseMechanism:
         :returns: The molecular weights for the species in the mechanism.
         """
         raise NotImplementedError
+
+    def has_nonequilibrium_energy_modes(self):
+        return self.nonequil_thermo
 
     def reactant_indices(self, reaction_index: int):
         """:returns: The indices for reactants in reaction with index
@@ -97,12 +108,18 @@ class BaseMechanism:
         """
         raise NotImplementedError
 
-    def make_species_thermo(self, species_index) -> SpeciesThermo:
-        """:return: A NASA polynomial expression as a
-        "class:`chem_expr.thermo.SpeciesThermo`
+    def make_species_nasa_thermo(self, species_index) -> SpeciesNASAThermo:
+        """:return: NASA polynomial expressions as a
+        "class:`chem_expr.thermo.SpeciesNASAThermo`
         """
         raise NotImplementedError
 
+    def make_species_vibrational_thermo(self, species_index) -> SpeciesVibrationalThermo:
+        """:return: Harmonic-oscillator expressions as a
+        "class:`chem_expr.thermo.SpeciesVibrationalThermo`
+        """
+        raise NotImplementedError
+    
     def make_mass_action_rate(self, reaction_index, hardcode_params=True):
         """
         :returns: mass action rate for *reaction_index* as a
@@ -155,19 +172,29 @@ class BaseMechanism:
             )
 
     def make_thermo(self,):
+        # Make NASA thermo first
         assert not self.species_thermo_polynomials.size
         for isp in range(self.num_species):
             self.species_thermo_polynomials = np.append(
                 self.species_thermo_polynomials,
-                self.make_species_thermo(isp)
+                self.make_species_nasa_thermo(isp)
             )
 
+        # Make equilibrium constnats
         assert not self.equil_constants.size
         for irxn in range(self.num_reactions):
             self.equil_constants = np.append(
                 self.equil_constants,
                 self.make_equilibrium_constant(irxn)
             )
+
+        # Now check for vibrational nonequlibrium
+        if self.has_nonequilibrium_energy_modes:
+            for isp in range(self.num_species):
+                self.species_vib_thermo_expressions = np.append(
+                    self.species_vib_thermo_expressions,
+                    self.make_species_vibrational_thermo(isp)
+                )
 
     def make_pyro(self, pyro_np=np):
         """

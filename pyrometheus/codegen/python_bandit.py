@@ -74,7 +74,7 @@ import numpy as np
 
 
 class Thermochemistry:
-    
+
     def __init__(self, pyro_np):
         self.pyro_np = pyro_np
         self.num_temperatures = ${bandit_mech.num_temp}
@@ -94,12 +94,51 @@ class Thermochemistry:
     def _pyro_make_array(self, res_list):
         raise NotImplementedError
 
-    def get_concentrations(self, density, mass_fractions):
+    def get_mixture_molecular_weight(self, mass_fractions):
+        return 1 / (
+            %for i in range(mech.num_species):
+            + self.inv_molecular_weights[${i}] * mass_fractions[${i}]
+            %endfor
+        )
+
+    def get_density(self, pressure, temperature, mass_fractions):
+        w_mix = self.get_mixture_molecular_weight(mass_fractions)
+        rt = self.gas_constant * temperature / w_mix
+        return pressure * w_mix / rt
+
+    def get_pressure_ideal_law(self, density, temperature, mass_fractions):
+        w_mix = self.get_mixture_molecular_weight(mass_fractions)
+        rt = self.gas_constant * temperature / w_mix
+        return density * rt
+
+    def get_concentrations_ideal_law(self, density, mass_fractions):
         return self._pyro_make_array([
             %for i in range(bandit_mech.num_species):
             density * mass_fractions[${i}] / self.molecular_weights[${i}],
             %endfor
         ])
+
+    def get_species_specific_heats_cp_r(self, temperature):
+        return self._pyro_make_array([
+            %for sp_thermo in bandit_mech.species_thermo_polynomials:
+            ${cgm(sp_thermo.cp_poly.expr)}
+            %endfor
+        ])
+
+    def get_species_enthalpies_rt(self, temperature):
+        return self._pyro_make_array([
+            %for sp_thermo in bandit_mech.species_thermo_polynomials:
+            ${cgm(sp_thermo.enthalpy_poly.expr)}
+            %endfor
+        ])
+
+    def get_species_specific_heats_cv_r(self, temperature):
+        cp_r = self.get_species_specific_heats_cp_r(temperature)
+        return cp_r - _pyro_ones_like(cp_r)
+
+    def get_species_internal_energies_rt(self, temperature):
+        h_rt = self.get_species_enthalpies_rt(temperature)
+        return h_rt - _pyro_ones_like(h_rt)
 
     def get_species_gibbs_rt(self, temperature):
         return self._pyro_make_array([
@@ -139,13 +178,21 @@ class Thermochemistry:
 
     def get_net_production_rates(self, density, temperature, mass_fractions):
         concentrations = self.get_concentrations(density, mass_fractions)
-        r_net = self.get_net_rates_of_progress(temperature, concentrations)        
+        r_net = self.get_net_rates_of_progress(temperature, concentrations)
         ones = self._pyro_ones_like(r_net[0])
         return self._pyro_make_array([
             %for expr in bandit_mech.species_prod_rates:
             ${cgm(expr)} * ones,
             %endfor
         ])
+
+    %if bandit_mech.has_nonequilibrium_energy_modes:
+    def get_species_vibrational_energies(self, temperature):
+        pass
+
+    def get_relaxation_time(self, temperature):
+        pass
+    %endif
 """, strict_undefined=True)
 
 # }}}

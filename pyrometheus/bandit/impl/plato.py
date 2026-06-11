@@ -11,8 +11,10 @@ from pyrometheus.bandit.chem_expr.kinetics import (
 )
 from pyrometheus.bandit.chem_expr.thermo import (
     PolynomialParameters,
-    SpeciesThermo,
-    make_species_thermo,
+    SpeciesNASAThermo,
+    SpeciesVibrationalThermo,
+    make_species_nasa_thermo,
+    make_species_vibrational_thermo,
     equilibrium_constant_expr
 )
 
@@ -54,8 +56,10 @@ _rxn_type_temp = {
 
 class Plato(BaseNamespace):
 
-    gas_constant = 8314
+    gas_constant = 8314.462
     one_atm = 101325.0
+    ref_pressure = 1.0e5
+    avogadro = 6.02214076e23
 
     def __init__(self, mixture, reaction_set, transfer, plato_db_path):
         from plato import Thermochemistry
@@ -92,6 +96,7 @@ class PlatoMechanism(BaseMechanism):
         self._build_reaction_list()
         self.make_rates(hardcode_params)
         self.make_thermo()
+        self.make_energy_transfer()
 
     def finalize(self):
         self.namespace.finalize()
@@ -251,41 +256,66 @@ class PlatoMechanism(BaseMechanism):
 
     @property
     def num_temp(self):
+        """Return number of temperatures."""
         return self.namespace.n_temp
 
     @property
     def num_species(self):
+        """Return number of species."""
         return self.namespace.n_species
 
     @property
     def num_reactions(self):
+        """Return number of reactions."""
         return len(self._reactions)
 
     @property
     def molecular_weights(self):
-        return np.array([1/m for m in self.namespace.molar_masses])
+        """Return species molecular weights in kg/kmol."""
+        return np.array([1e3 * m for m in self.namespace.molar_masses])
 
     @property
     def species_names(self):
+        """Return species names."""
         return self.namespace.species_names
 
     @property
     def reactions(self):
+        """Return all reactions in the mechanism as a `typing:List`."""
         return self._reactions
 
+    def _nasa_polynomial_interval_bounds(self, species_index):
+        """Return NASA poly interval temperature bounds."""
+        return self.namespace.__getattr__("nasa_temp_bounds", species_index)
+
+    def _nasa_polynomial_coefficients(self, species_index):
+        """Return NASA poly coefficients."""
+        return self.namespace.__getattr__("nasa_cp_coeffs", species_index)
+
+    def _nasa_polynomial_offsets(self, species_index, interval_index):
+        """Return NASA poly offsets for enthalpy and entropy."""
+        return self.namespace.__getattr__(
+            "nasa_b_consts", species_index, interval_index
+        )
+
+    def nasa_polynomial_parameterization(self, species_index):
+        t_bounds = self._nasa_polynomial_interval_bounds(species_index)
+        cp_coeffs = self._nasa_polynomial_coefficients(species_index)
+        num_intervals = len(cp_coeffs)
+        _coeffs_list = []
+        for interval in range(num_intervals):
+            b1, b2 = self._nasa_polynomial_offsets(species_index, interval + 1)
+            _coeffs_list.append(
+                np.append(cp_coeffs[interval], [b1, b2])
+            )
+        coeffs = np.column_stack(_coeffs_list)
+        num_coeff, num_intervals = coeffs.shape
+        return t_bounds, coeffs
+
     def species_thermo_params(self, species_index) -> PolynomialParameters:
-        sp = species_index + 1  # PLATO is 1-based
-        t_bounds = self.namespace.nasa_temp_bounds(sp)
-        cp_coeffs = self.namespace.nasa_cp_coeffs(sp)
-        n_intervals = len(cp_coeffs)
-        # PLATO returns 7 Cp coefficients in NASA9 format (c[0]/T^2 + c[1]/T + ...).
-        # Append integration constants b1 (enthalpy) and b2 (entropy) to form the
-        # full 9-coefficient NASA9 array so Pyrometheus uses the correct formulas.
-        coeffs_list = []
-        for interval in range(1, n_intervals + 1):
-            b1, b2 = self.namespace.nasa_b_consts(sp, interval)
-            coeffs_list.append(np.append(cp_coeffs[interval - 1], [b1, b2]))
-        coeffs = np.column_stack(coeffs_list)  # shape (9, n_intervals)
+        t_bounds, coeffs = self.nasa_polynomial_parameterization(
+            species_index + 1
+        )
         num_coeff, num_intervals = coeffs.shape
         return PolynomialParameters(
             num_intervals=num_intervals,
@@ -337,8 +367,12 @@ class PlatoMechanism(BaseMechanism):
             self, species_index: int
     ) -> Tuple[Tuple[List[int], List[int]], Tuple[List[int], List[int]]]:
         fwd_set, rev_set = self.participation_set(species_index)
-        # All PLATO stoich coefficients are 1
-        return (fwd_set, rev_set), ([1] * len(fwd_set), [1] * len(rev_set))
+        # Count actual occurrences: homoatomic dissociation (e.g. N2->N+N) gives stoich 2
+        stoich_fwd = [self._reactions[r]["reactant_species"].count(species_index)
+                      for r in fwd_set]
+        stoich_rev = [self._reactions[r]["product_species"].count(species_index)
+                      for r in rev_set]
+        return (fwd_set, rev_set), (stoich_fwd, stoich_rev)
 
     # }}}
 
@@ -355,9 +389,10 @@ class PlatoMechanism(BaseMechanism):
         else:
             temp_var = _temp_map[temp_type]
 
+        _mol_to_kmol = 1e3
         if hardcode_params:
             params = {
-                "a": np.log(a),
+                "a": np.log(a * self.namespace.avogadro * _mol_to_kmol),
                 "b": b,
                 "t_a": c
             }
@@ -388,8 +423,10 @@ class PlatoMechanism(BaseMechanism):
             # Third-body: sum over collision-partner concentrations
             m_sum = sum(conc[m] for m in rxn["partners"])
             r_fwd = k_fwd[reaction_index] * conc[reac[0]]
-            r_rev = exp(log_k_eq[reaction_index]) * (
-                conc[prod[0]] * conc[prod[1]]
+            r_rev = (
+                exp(log_k_eq[reaction_index])
+                * k_fwd[reaction_index]
+                * conc[prod[0]] * conc[prod[1]]
             )
             return m_sum * (r_fwd - r_rev)
         else:
@@ -410,7 +447,7 @@ class PlatoMechanism(BaseMechanism):
             stoich_coeffs[1],
         )
 
-    def make_species_thermo(self, species_index) -> SpeciesThermo:
+    def make_species_nasa_thermo(self, species_index) -> SpeciesNASAThermo:
         sp_name = self.species_names[species_index]
         poly_params = self.species_thermo_params(species_index)
         t_var = (
@@ -420,10 +457,16 @@ class PlatoMechanism(BaseMechanism):
                 Variable("temperature")[0]
             )
         )
-        return make_species_thermo(
+        return make_species_nasa_thermo(
             poly_params,
             t_var
         )
+
+    def make_species_vibrational_thermo(
+            self, species_index
+    ) -> SpeciesVibrationalThermo:
+        params = np.empty(2)
+        return make_species_vibrational_thermo(params)
 
     def make_equilibrium_constant(self, reaction_index):
         rxn = self.reaction(reaction_index)
@@ -436,7 +479,7 @@ class PlatoMechanism(BaseMechanism):
             reaction_index,
             (reac, prod),
             (stoich_reac, stoich_prod),
-            self.namespace.one_atm,
+            self.namespace.ref_pressure,
             self.namespace.gas_constant
         )
         if self.num_temp > 1:

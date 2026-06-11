@@ -10,6 +10,7 @@ from pymbolic import substitute
 
 t = p.Variable("temperature")
 log = p.Variable("log")
+exp = p.Variable("exp")
 
 
 @dataclass
@@ -31,7 +32,7 @@ class NasaPoly:
 
 
 @dataclass
-class SpeciesThermo:
+class SpeciesNASAThermo:
     poly_params: InitVar[PolynomialParameters]
     cp_poly: NasaPoly = field(init=False)
     enthalpy_poly: NasaPoly = field(init=False)
@@ -55,6 +56,17 @@ class SpeciesThermo:
             poly_params=poly_params,
             variable="gibbs"
         )
+
+
+@dataclass
+class SpeciesVibrationalThermo:
+    params: InitVar[np.ndarray]
+    specific_heat_expr: p.ExpressionNode = field(init=False)
+    energy_expr: p.ExpressionNode = field(init=False)
+
+    def __post_init__(self, params):
+        self.specific_heat_expr = vibrational_specific_heat_expr(params)
+        self.energy_expr = vibrational_energy_expr(params)
 
 # }}}
 
@@ -266,14 +278,16 @@ _nasa_poly_expr = {
 }
 
 
-def make_species_thermo(poly_params: PolynomialParameters,
-                        temperature: p.Variable) -> SpeciesThermo:
+def make_species_nasa_thermo(poly_params: PolynomialParameters,
+                             temperature: p.Variable,
+                             nonequil_thermo: bool) -> SpeciesNASAThermo:
 
-    poly_container = SpeciesThermo(poly_params)
-    for f in fields(poly_container):
-        poly = getattr(poly_container, f.name)
+    thermo_container = SpeciesNASAThermo(poly_params)
+    for f in fields(thermo_container):
+        poly = getattr(thermo_container, f.name)
         poly.expr = substitute(poly.expr, {t: temperature})
-    return poly_container
+
+    return thermo_container
 
 # }}}
 
@@ -298,5 +312,34 @@ def equilibrium_constant_expr(reaction_index: int,
         return sum_prod - sum_reac - sum_nu_net * c
     else:
         return sum_prod - sum_reac
+
+# }}}
+
+
+# {{{ Vibrational nonequlibrium
+
+def make_species_vibrational_thermo(params: np.ndarray) -> SpeciesVibrationalThermo:
+    return SpeciesVibrationalThermo(params)
+
+
+def vibrational_specific_heat_expr(params: np.ndarray) -> p.ExpressionNode:
+    vib_temp = params[0]
+    gas_constant = params[1]
+    return (
+        gas_constant
+        * exp(vib_temp / t[1])
+        * (vib_temp / t[1])**2
+        / (exp(vib_temp / t[1]) - 1)**2
+    )
+
+
+def vibrational_energy_expr(params: np.ndarray) -> p.ExpressionNode:
+    vib_temp = params[0]
+    gas_constant = params[1]
+    return (
+        gas_constant
+        * vib_temp
+        / (exp(vib_temp / t[1]) - 1)
+    )
 
 # }}}
