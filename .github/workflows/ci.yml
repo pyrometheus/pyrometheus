@@ -1,126 +1,76 @@
 name: CI
 on:
     push:
-        branches:
-        - main
     pull_request:
     schedule:
-        - cron:  '17 3 * * 0'
+        - cron: '17 3 * * 0'
 
 jobs:
     flake8:
         name: Flake8
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v3
-        -
-            uses: actions/setup-python@v4
-            with:
-                python-version: '3.x'
-        -   name: "Main Script"
-            run: |
-                curl -L -O https://gitlab.tiker.net/inducer/ci-support/raw/main/prepare-and-run-flake8.sh
-                . ./prepare-and-run-flake8.sh "$(basename $GITHUB_REPOSITORY)" test
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.14'
+        - name: Flake8
+          run:  python3 -m pip install .[dev] && flake8 --exclude examples
 
     flake8_gen:
         name: Flake8 on Generated Code
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v3
-        -   name: "Main Script"
-            run: |
-                curl -L -O https://tiker.net/ci-support-v0
-                . ./ci-support-v0
-                build_py_project_in_conda_env
-                python -m pip install flake8 pep8-naming flake8-quotes flake8-bugbear
-                python .ci/generate-test-mech.py
-                flake8 --extend-ignore E501,Q000 test/mechs
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.14'
+        - name: Flake8
+          run: |
+            python3 -m pip install .[dev]
+            for mech in test/mechs/*.yaml; do
+              python3 -m pyrometheus                            \
+                  --language python      --mechanism "$mech"    \
+                  --name     pyrometheus --output    "$mech.py" \
+                  --phase    gas
+            done
+            python3 -m flake8 --extend-ignore E501,Q000 test/mechs
 
     pytest:
-        name: Pytest Conda Py${{ matrix.python_version }}
+        name: Pytest Conda Py${{ matrix.python-version }}
         strategy:
             matrix:
-                # "3" is intentional: It's suppposed to be conda's default
-                # Python version number, which seems to have moved past
-                # 3.9 as of 2022-02-20.
-                python_version: ["3.9", "3"]
+                python-version: ["3.9", "3.11", "3.12", "3.13", "3.14"]
         runs-on: ubuntu-latest
         env:
-            PYTHON_VERSION: ${{ matrix.python_version }}
+            PYTHON_VERSION: ${{ matrix.python-version }}
         steps:
-        -   uses: actions/checkout@v3
-        -   name: "Main Script"
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: ${{ matrix.python-version }}
+        -   name: "PyTest"
             run: |
-                CONDA_ENVIRONMENT=.test-conda-env-py3.yml
-                sed -i "s/python=3/python=${PYTHON_VERSION}/" "$CONDA_ENVIRONMENT"
-
-                curl -L -O https://tiker.net/ci-support-v0
-                . ./ci-support-v0
-                build_py_project_in_conda_env
-                test_py_project
-
-    # examples3:
-    #     name: Examples Conda Py
-    #     runs-on: ubuntu-latest
-    #     steps:
-    #     -   uses: actions/checkout@v3
-    #     -   name: "Main Script"
-    #         run: |
-    #            curl -L -O https://tiker.net/ci-support-v0
-    #            . ./ci-support-v0
-    #            build_py_project_in_conda_env
-    #            run_examples
+                python3 -m pip install --upgrade pip
+                python3 -m pip install "setuptools>=70" ".[dev]"
+                python3 -m pip install .[test]
+                cmake -S test -B build -Dpybind11_DIR=`python3 -m pybind11 --cmakedir`
+                cmake --build build --parallel $(nproc)
+                ctest --test-dir build --output-on-failure -j $(nproc)
 
     docs:
         name: Documentation
         runs-on: ubuntu-latest
         steps:
-        -   uses: actions/checkout@v3
-        -
-            uses: actions/setup-python@v4
-            with:
-                python-version: '3.x'
-        -   name: "Main Script"
-            run: |
-                curl -L -O https://tiker.net/ci-support-v0
-                . ci-support-v0
-                build_py_project_in_conda_env
-                python .ci/generate-example-mech.py test/mechs/sandiego.yaml pyrometheus/thermochem_example.py
-                build_docs
-
-    downstream_tests:
-        strategy:
-            matrix:
-                downstream_project: [mirgecom]
-        name: Tests for downstream project ${{ matrix.downstream_project }}
-        runs-on: ubuntu-latest
-        steps:
-        -   uses: actions/checkout@v3
-        -   name: "Main Script"
-            env:
-                DOWNSTREAM_PROJECT: ${{ matrix.downstream_project }}
-            run: |
-                curl -L -O https://tiker.net/ci-support-v0
-                . ./ci-support-v0
-
-                git clone "https://github.com/illinois-ceesd/$DOWNSTREAM_PROJECT.git"
-                cd "$DOWNSTREAM_PROJECT"
-                echo "*** $DOWNSTREAM_PROJECT version: $(git rev-parse --short HEAD)"
-                edit_requirements_txt_for_downstream_in_subdir
-                # Avoid slow or complicated tests in downstream projects
-                export PYTEST_ADDOPTS="-k 'not (slowtest or octave or mpi)'"
-                if test "$DOWNSTREAM_PROJECT" = "mirgecom"; then
-                    # can't turn off MPI in mirgecom
-                    export CONDA_ENVIRONMENT=conda-env.yml
-                    echo "- mpi4py" >> "$CONDA_ENVIRONMENT"
-                else
-                    sed -i "/mpi4py/ d" requirements.txt
-                    export CONDA_ENVIRONMENT=.test-conda-env-py3.yml
-
-                fi
-                build_py_project_in_conda_env
-
-                export CISUPPORT_PARALLEL_PYTEST=no
-                test_py_project
-
-# vim: sw=4
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.14'
+        - name: 'Build Docs'
+          run: |
+            python3 -m pip install -e .[docs]
+            python3 -m pyrometheus                                                   \
+                --language python      --mechanism test/mechs/sandiego.yaml          \
+                --name     pyrometheus --output    pyrometheus/thermochem_example.py \
+                --phase    gas
+            cd doc && make html SPHINXOPTS='-W --keep-going -n'

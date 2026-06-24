@@ -1,13 +1,7 @@
-User-Visible Changes
-====================
+About Pyrometheus
+=================
 
-Version 2020.1
---------------
-
-.. note::
-
-    This version is currently under development. You can get snapshots from
-    mirgecom's `git repository <https://github.com/ecisneros8/pyrometheus>`__.
+Pyrometheus is a code generator for combustion thermochemistry, based on Cantera. 
 
 License
 =======
@@ -17,19 +11,20 @@ License
 Citing Pyrometheus
 ==================
 
-(TBD)
+Cite this GitHub repository. 
 
 Acknowledgment
 ==============
 
 This material is based in part upon work supported by the Department of Energy,
 National Nuclear Security Administration, under Award Number DE-NA0003963.
+Spencer Bryngelson acknowledges support from the US Department of Defense, Office of Naval Research, under award numbers N00014-23-1-2501 and N00014-24-1-2094.
 
 Disclaimer
 ==========
 
 This report was prepared as an account of work sponsored by an agency of the
-United States Government.   Neither  the  United  States  Government  nor  any
+United States Government. Neither  the  United  States  Government  nor  any
 agency  thereof,  nor  any  of  their employees, makes any warranty, express or
 implied, or assumes any legal liability or responsibility for the accuracy,
 completeness,  or usefulness of any information,  apparatus,  product,  or
@@ -47,7 +42,7 @@ Building the Documentation
 You need to install Sphinx (a Python documentation tool) and two third-party
 packages to build the docs::
 
-    pip install furo sphinx sphinx_copybutton
+    pip install .[docs]
 
 Then simply run::
 
@@ -67,3 +62,5 @@ References
 
     .. [Hesthaven_2008] Hesthaven and Warburton (2008), Nodal DG Methods, Springer \
         `DOI: <https://doi.org/10.1007/978-0-387-72067-8>`__
+.. [Kee_2003] Robert J. Kee, Michael E. Coltrin, Peter Glarborg (2003), Chemically Reacting Flow: Theory and Practice \
+    `(DOI) <https://doi.org/10.1002/0471461296>`__

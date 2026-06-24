@@ -14,25 +14,20 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+from importlib.metadata import version as _get_version
+
 
 # -- Project information -----------------------------------------------------
 
 project = "pyrometheus"
 copyright = "2020, University of Illinois Board of Trustees"
 author = (
-    "Esteban Cisneros, Andreas Kloeckner, "
+    "Esteban Cisneros, Andreas Kloeckner, Henry Le Berre, "
     "Center for Exascale-Enabled Scramjet Design"
 )
-_ver_file = "../pyrometheus/version.py"
-with open(_ver_file) as ver_file:
-    ver_src = ver_file.read()
-
-ver_dic = {}
-exec(compile(ver_src, _ver_file, "exec"), ver_dic)
-version = ".".join(str(x) for x in ver_dic["VERSION"])
-
+version = _get_version("pyrometheus")
 # The full version, including alpha/beta/rc tags.
-release = ver_dic["VERSION_TEXT"]
+release = version
 
 
 # -- General configuration ---------------------------------------------------
@@ -73,7 +68,7 @@ intersphinx_mapping = {
         "numpy": ("https://numpy.org/doc/stable/", None),
         "mirgecom": ("https://mirgecom.readthedocs.io/en/latest/", None),
         "pymbolic": ("https://documen.tician.de/pymbolic", None),
-        "cantera": ("https://cantera.org/documentation/dev/sphinx/html", None),
+        "cantera": ("https://cantera.org/3.1/", None),
         }
 
 autoclass_content = "class"

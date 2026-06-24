@@ -1,0 +1,61 @@
+name: Spack
+on:
+    push:
+    pull_request:
+    schedule:
+        - cron: '17 3 * * 0'
+
+jobs:
+    spack-released:
+        name: Spack install released
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+
+          - name: Set up Spack with buildcache
+            uses: spack/setup-spack@v3
+            with:
+                buildcache: true
+
+          - name: Install py-pyrometheus
+            run: spack install --reuse py-pyrometheus
+
+          - name: Smoke test
+            run: |
+                source spack/share/spack/setup-env.sh
+                spack load py-pyrometheus
+                python3 -c "import pyrometheus; print('imported OK')"
+                python3 -m pyrometheus --version
+                python3 -m pyrometheus -l fortran -m test/mechs/sandiego.yaml \
+                                       -o spack_test_thermo.f90 -n thermo -p gas
+                test -s spack_test_thermo.f90
+
+    spack-head:
+        name: Spack install HEAD
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+
+          - name: Set up Spack with buildcache
+            uses: spack/setup-spack@v3
+            with:
+                buildcache: true
+
+          - name: Install pyrometheus HEAD against spack deps
+            run: |
+                source spack/share/spack/setup-env.sh
+                spack env create dev
+                spack env activate dev
+                spack add py-pyrometheus@main
+                spack develop --path "$GITHUB_WORKSPACE" py-pyrometheus@main
+                spack install --reuse
+
+          - name: Smoke test
+            run: |
+                source spack/share/spack/setup-env.sh
+                spack env activate dev
+                python3 -c "import pyrometheus; print('imported OK')"
+                python3 -m pyrometheus --version
+                python3 -m pyrometheus -l fortran -m test/mechs/sandiego.yaml \
+                                       -o spack_test_thermo.f90 -n thermo -p gas
+                test -s spack_test_thermo.f90

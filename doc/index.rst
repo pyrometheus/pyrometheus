@@ -3,10 +3,9 @@ Welcome to pyrometheus's documentation!
 
 .. When you update this description, consider also updating the one in the README.
 
-Pyrometheus is a code generator for chemical mechanisms, based on
-:ref:`cantera <cantera:sec-cython-documentation>`.
+Pyrometheus is a code generator for chemical mechanisms, based on `cantera <https://cantera.org/3.1/index.html>`_.
 
-Here’s an example, to give you an impression:
+Here’s an example to give you an impression:
 
 .. code-block:: python
 
@@ -22,10 +21,11 @@ Table of Contents
 .. toctree::
     :maxdepth: 2
 
+    start
     model
     codegen
     misc
-    🚀 Github <https://github.com/ecisneros8/pyrometheus>
+    🚀 Github <https://github.com/pyrometheus/pyrometheus>
     💾 Download Releases <https://pypi.org/project/pyrometheus>
 
 Indices and tables

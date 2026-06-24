@@ -1,0 +1,13 @@
+mech: sandiego
+fuel: H2
+equiv_ratio: 1.2
+num_x: 2048
+x_max: 8.0e-2
+initial_time: 0
+final_time: 1.0e-2
+step_size: 1.0e-8
+num_snapshots: 100001
+write_freq: 100
+transport_model: mixavg
+output_dir: hydrogen_er_1d2
+filter: True

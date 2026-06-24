@@ -1,6 +1,5 @@
 __copyright__ = """
-Copyright (C) 2020 Esteban Cisneros
-Copyright (C) 2020 Andreas Kloeckner
+Copyright (C) 2020 University of Illinois Board of Trustees
 """
 
 __license__ = """
@@ -26,17 +25,22 @@ THE SOFTWARE.
 """
 Internal Functionality
 ^^^^^^^^^^^^^^^^^^^^^^
+.. autofunction:: viscosity_polynomial_expr
+.. autofunction:: conductivity_polynomial_expr
+.. autofunction:: diffusivity_polynomial_expr
+.. autofunction:: viscosity_mixture_rule_wilke_expr
+.. autofunction:: diffusivity_mixture_rule_denom_expr
 .. autofunction:: equilibrium_constants_expr
 .. autofunction:: rate_coefficient_expr
 .. autofunction:: third_body_efficiencies_expr
-.. autofunction:: troe_falloff_expr
+.. autofunction:: troe_falloff_center_expr
+.. autofunction:: troe_falloff_factor_expr
 .. autofunction:: falloff_function_expr
 .. autofunction:: rate_of_progress_expr
 .. autofunction:: production_rate_expr
 """
 
 import pymbolic.primitives as p
-from pymbolic import mapper
 from functools import singledispatch
 import cantera as ct
 import numpy as np
@@ -44,12 +48,12 @@ import numpy as np
 
 # {{{ polynomial processing
 
-def nasa7_conditional(variables, poly, part_gen):
+def nasa7_conditional(t, poly, part_gen):
     # FIXME: Should check minTemp, maxTemp
     return p.If(
-        p.Comparison(variables[0], ">", poly.coeffs[0]),
-        part_gen(poly.coeffs[1:8], *variables),
-        part_gen(poly.coeffs[8:15], *variables),
+        p.Comparison(t, ">", poly.coeffs[0]),
+        part_gen(poly.coeffs[1:8], t),
+        part_gen(poly.coeffs[8:15], t),
     )
 
 
@@ -59,111 +63,115 @@ def poly_to_expr(poly):
 
 
 @poly_to_expr.register
-def _(poly: ct.NasaPoly2, arg_names):
-    variables = [p.Variable(arg) for arg in arg_names]
-    def gen(c, t, ov_t, t2, t3, t4, log_t):
+def _(poly: ct.NasaPoly2, arg_name):
+    def gen(c, t):
         assert len(c) == 7
-        return (
-            c[0]
-            + c[1] * t
-            + c[2] * t2
-            + c[3] * t3
-            + c[4] * t4
-        )
+        return c[0] + c[1] * t + c[2] * t ** 2 + c[3] * t ** 3 + c[4] * t ** 4
 
-    return nasa7_conditional(variables, poly, gen)
+    return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 
 @singledispatch
-def poly_to_enthalpy_expr(poly, arg_names):
+def poly_to_enthalpy_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_to_enthalpy_expr: "
-            f"{type(poly)}")
+                    f"{type(poly)}")
 
 
 @poly_to_enthalpy_expr.register
-def _(poly: ct.NasaPoly2, arg_names):
-    variables = [p.Variable(arg) for arg in arg_names]
-    def gen(c, t, ov_t, t2, t3, t4, log_t):
+def _(poly: ct.NasaPoly2, arg_name):
+    def gen(c, t):
         assert len(c) == 7
         return (
             c[0]
             + c[1] / 2 * t
-            + c[2] / 3 * t2
-            + c[3] / 4 * t3
-            + c[4] / 5 * t4
-            + c[5] * ov_t
+            + c[2] / 3 * t ** 2
+            + c[3] / 4 * t ** 3
+            + c[4] / 5 * t ** 4
+            + c[5] / t
         )
 
-    return nasa7_conditional(variables, poly, gen)
+    return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 
 @singledispatch
 def poly_to_entropy_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_to_entropy_expr: "
-            f"{type(poly)}")
+                    f"{type(poly)}")
 
 
 @poly_to_entropy_expr.register
-def _(poly: ct.NasaPoly2, arg_names):
-    #log = p.Variable("log")
-    variables = [p.Variable(arg) for arg in arg_names]
+def _(poly: ct.NasaPoly2, arg_name):
+    log = p.Variable("log")
 
-    def gen(c, t, ov_t, t2, t3, t4, log_t):
+    def gen(c, t):
         assert len(c) == 7
         return (
-            c[0] * log_t
+            c[0] * log(t)
             + c[1] * t
-            + c[2] / 2 * t2
-            + c[3] / 3 * t3
-            + c[4] / 4 * t4
+            + c[2] / 2 * t ** 2
+            + c[3] / 3 * t ** 3
+            + c[4] / 4 * t ** 4
             + c[6]
         )
 
-    return nasa7_conditional(variables, poly, gen)
+    return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 
 @singledispatch
-def poly_to_enthalpy_deriv_expr(poly, arg_name):
-    raise TypeError("unexpected argument type in poly_to_enthalpy_deriv_expr: "
-            f"{type(poly)}")
+def poly_deriv_to_expr(poly, arg_name):
+    raise TypeError("unexpected argument type in poly_deriv_to_expr: "
+                    f"{type(poly)}")
 
 
-@poly_to_enthalpy_deriv_expr.register
-def _(poly: ct.NasaPoly2, arg_names):
-    variables = [p.Variable(arg) for arg in arg_names]
-    def gen(c, t, ov_t, t2, t3, t4, log_t):
+@poly_deriv_to_expr.register
+def _(poly: ct.NasaPoly2, arg_name):
+    def gen(c, t):
+        assert len(c) == 7
+        return c[1] + 2 * c[2] * t + 3 * c[3] * t ** 2 + 4 * c[4] * t ** 3
+
+    return nasa7_conditional(p.Variable(arg_name), poly, gen)
+
+
+@singledispatch
+def poly_deriv_to_enthalpy_expr(poly, arg_name):
+    raise TypeError("unexpected argument type in poly_deriv_to_enthalpy_expr: "
+                    f"{type(poly)}")
+
+
+@poly_deriv_to_enthalpy_expr.register
+def _(poly: ct.NasaPoly2, arg_name):
+    def gen(c, t):
         assert len(c) == 7
         return (
             c[1] / 2
             + 2 * c[2] / 3 * t
-            + 3 * c[3] / 4 * t2
-            + 4 * c[4] / 5 * t3
-            - c[5] / (t2)
+            + 3 * c[3] / 4 * t ** 2
+            + 4 * c[4] / 5 * t ** 3
+            - c[5] / (t ** 2)
         )
 
-    return nasa7_conditional(variables, poly, gen)
+    return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 
 @singledispatch
-def poly_to_entropy_deriv_expr(poly, arg_name):
-    raise TypeError("unexpected argument type in poly_to_entropy_deriv_expr: "
-            f"{type(poly)}")
+def poly_deriv_to_entropy_expr(poly, arg_name):
+    raise TypeError("unexpected argument type in poly_deriv_to_entropy_expr: "
+                    f"{type(poly)}")
 
 
-@poly_to_entropy_deriv_expr.register
-def _(poly: ct.NasaPoly2, arg_names):
-    variables = [p.Variable(arg) for arg in arg_names]
-    def gen(c, t, ov_t, t2, t3, t4, log_t):
+@poly_deriv_to_entropy_expr.register
+def _(poly: ct.NasaPoly2, arg_name):
+    def gen(c, t):
         assert len(c) == 7
         return (
-            c[0] * ov_t
+            c[0] / t
             + c[1]
             + c[2] * t
-            + c[3] * t2
-            + c[4] * t3
+            + c[3] * t ** 2
+            + c[4] * t ** 3
         )
 
-    return nasa7_conditional(variables, poly, gen)
+    return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 # }}}
 
@@ -176,8 +184,92 @@ def _zeros_like(argument):
 
 # }}}
 
-# {{{ Equilibrium constants
 
+# {{{ Transport polynomials & mixture rules
+
+def viscosity_polynomial_expr(c, t):
+    """Generate code for viscosity polynomials
+
+    :returns: Viscosity polynomial expression with coefficients c in terms of
+    the temperature t as a :class:`pymbolic.primitives.Expression`.
+    """
+    assert len(c) == 5
+    return (
+        p.Variable("sqrt")(t) * (
+            c[0]
+            + c[1] * p.Variable("log")(t)
+            + c[2] * p.Variable("log")(t) ** 2
+            + c[3] * p.Variable("log")(t) ** 3
+            + c[4] * p.Variable("log")(t) ** 4
+        )**2
+    )
+
+
+def conductivity_polynomial_expr(c, t):
+    """Generate code for conductivity polynomials
+
+    :returns: Conductivity polynomial expression with coefficients c in terms
+    of the temperature t as a :class:`pymbolic.primitives.Expression`.
+    """
+    assert len(c) == 5
+    return (
+        p.Variable("sqrt")(t) * (
+            c[0]
+            + c[1] * p.Variable("log")(t)
+            + c[2] * p.Variable("log")(t) ** 2
+            + c[3] * p.Variable("log")(t) ** 3
+            + c[4] * p.Variable("log")(t) ** 4
+        )
+    )
+
+
+def diffusivity_polynomial_expr(c, t):
+    """Generate code for diffusivity polynomials
+
+    :returns: Diffusivity polynomial expression with coefficients c in terms
+    of the temperature t as a :class:`pymbolic.primitives.Expression`.
+    """
+    assert len(c) == 5
+    return (
+        p.Variable("sqrt")(t) * t * (
+            c[0]
+            + c[1] * p.Variable("log")(t)
+            + c[2] * p.Variable("log")(t) ** 2
+            + c[3] * p.Variable("log")(t) ** 3
+            + c[4] * p.Variable("log")(t) ** 4
+        )
+    )
+
+
+def viscosity_mixture_rule_wilke_expr(sol: ct.Solution, sp, x, mu):
+    """Generate code for species mixture rule. See [Kee_2003]_, chapter 12.
+
+    :returns: Expression for the Wilke viscosity mixture rule
+        for species *sp* in terms of species mole fractions *w*
+        and viscosities *mu* as a :class:`pymbolic.primitives.Expression`
+    """
+    w = sol.molecular_weights
+    sqrt = p.Variable("sqrt")
+    return sum([x[j]*(
+        1 + sqrt((mu[sp]/mu[j])*np.sqrt(w[j]/w[sp]))
+    )**2 / np.sqrt(
+        8*(1 + (w[sp]/w[j]))
+    ) for j in range(sol.n_species)])
+
+
+def diffusivity_mixture_rule_denom_expr(sol: ct.Solution, j_sp, x, bdiff):
+    """ See [Kee_2003]_, chapter 12 for details.
+    :returns: The denominator expression to the mixture rule
+    for mixture-averaged species diffusivities in terms
+    of the species mole fractions *x* and binary diffusivities *bdiff* as a
+    :class:`pymbolic.primitives.Expression`
+    """
+    return sum(x[i_sp] / bdiff[i_sp][j_sp] for i_sp in range(sol.n_species))
+
+# }}}
+
+
+# {{{ Equilibrium constants
 
 def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
     """Generate code for equilibrium constants.
@@ -186,24 +278,21 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
         index *reaction_index* in terms of the species Gibbs
         functions *gibbs_rt* as a :class:`pymbolic.primitives.Expression`
     """
-
     indices_reac = [sol.species_index(sp)
                     for sp in sol.reaction(reaction_index).reactants]
     indices_prod = [sol.species_index(sp)
                     for sp in sol.reaction(reaction_index).products]
 
     # Stoichiometric coefficients
-    #nu_reac = [react.reactants[sp] for sp in react.reactants]
-    #nu_prod = [react.products[sp] for sp in react.products]
     nu_reac = [sol.reactant_stoich_coeff(sol.species_index(sp), reaction_index)
                for sp in sol.reaction(reaction_index).reactants]
     nu_prod = [sol.product_stoich_coeff(sol.species_index(sp), reaction_index)
                for sp in sol.reaction(reaction_index).products]
 
     sum_r = sum(nu_reac_i * gibbs_rt[indices_reac_i]
-            for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
+                for indices_reac_i, nu_reac_i in zip(indices_reac, nu_reac))
     sum_p = sum(nu_prod_i * gibbs_rt[indices_prod_i]
-            for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod))
+                for indices_prod_i, nu_prod_i in zip(indices_prod, nu_prod))
 
     # Check if reaction is termolecular
     sum_nu_net = sum(nu_prod) - sum(nu_reac)
@@ -218,142 +307,58 @@ def equilibrium_constants_expr(sol: ct.Solution, reaction_index, gibbs_rt):
 
 # {{{ Rate coefficients
 
-class ArrheniusExpression(p.Expression):
-
-    def __init__(self, a: p.Variable, b: p.Variable, t_act: p.Variable,
-                 t: p.Variable, log_t: p.Variable):
-        j = p.Variable("j")
-        self.children = (p.subscript(a, j),
-                         p.subscript(b, j),
-                         p.Subscript(t_act, j), t, log_t)
-
-    def __getinitargs__(self):
-        return self.children
-
-    mapper_method = "map_arrhenius"
-
-
-class ArrheniusMapper(mapper.IdentityMapper):
-
-    def _pre_exponential(self, expr):
-        return expr.children[0]
-
-    def _temp_exponent(self, expr):
-        return expr.children[1]
-
-    def _activation_temp(self, expr):
-        return expr.children[2]
-
-    def _temperature(self, expr):
-        return expr.children[3]
-
-    def _log_temperature(self, expr):
-        return expr.children[4]
-
-    def _map_arrhenius(self, expr):
-        log = p.Variable("log")
-        exp = p.Variable("exp")
-        t = self._temperature(expr)
-        log_t = self._log_temperature(expr)
-        return exp(log(self._pre_exponential(expr))
-                   + self._temp_exponent(expr) * log_t
-                   - self._activation_temp(expr) / t)
-
-    def map_arrhenius(self, expr, rxn_index):
-        from pymbolic import substitute
-        return substitute(
-            self._map_arrhenius(expr), {p.Variable("j"): rxn_index}
-        )
-
-    def fixed_coeffs(self, expr, params: ct.Arrhenius):
-        from pymbolic import substitute
-        a = self._pre_exponential(expr)
-        b = self._temp_exponent(expr)
-        t_act = self._activation_temp(expr)
-        return substitute(self._map_arrhenius(expr), {
-            a: params.pre_exponential_factor,
-            b: params.temperature_exponent,
-            t_act: params.activation_energy/ct.gas_constant
-        })
-
-
-def rate_coefficient_expr(reaction_index, rate_coeff: ct.Arrhenius, a, t):
+def rate_coefficient_expr(rate_coeff: ct.Arrhenius, t):
     """
     :returns: The rate coefficient expression for *rate_coeff* in terms
         of the temperature *t* as a :class:`pymbolic.primitives.Expression`
     """
     # Rate parameters
-    # a = rate_coeff.pre_exponential_factor
+    a = rate_coeff.pre_exponential_factor
     b = rate_coeff.temperature_exponent
     t_a = rate_coeff.activation_energy/ct.gas_constant
     if t_a == 0:
         # Weakly temperature-dependent rate
-        return a[reaction_index] * t**b
+        return a * t**b
     else:
         # Modified Arrhenius
-        return p.Variable("exp")(p.Variable("log")(a[reaction_index])
-                                 + b*p.Variable("log")(t)-t_a/t)
+        return p.Variable("exp")(np.log(a)+b*p.Variable("log")(t)-t_a/t)
 
 
 def third_body_efficiencies_expr(sol: ct.Solution, react: ct.Reaction, c):
     """
-    :returns: The third-body concentration expression for reaction *react* in terms
-        of the species concentrations *c* as a
+    :returns: The third-body concentration expression for reaction *react* in
+    terms of the species concentrations *c* as a
         :class:`pymbolic.primitives.Expression`
     """
-    if isinstance(react, ct.ThreeBodyReaction):
-        from warnings import warn
-        warn("The 'Reaction.efficiencies' interface is deprecated and "
-             "will be removed after Cantera 3. Access efficiencies via "
-             "'react.third_body.efficiencies' instead")
-        efficiencies = [react.efficiencies[sp] for sp in react.efficiencies]
-        indices_nondef = [sol.species_index(sp) for sp in react.efficiencies]
-        indices_default = [i for i in range(sol.n_species)
-                           if i not in indices_nondef]
-    else:
-        efficiencies = [react.third_body.efficiencies[sp]
-                        for sp in react.third_body.efficiencies]
-        indices_nondef = [sol.species_index(sp) for sp
-                          in react.third_body.efficiencies]
-        indices_default = [i for i in range(sol.n_species)
-                           if i not in indices_nondef]
 
+    efficiencies = [react.third_body.efficiencies[sp]
+                    for sp in react.third_body.efficiencies]
+    indices_nondef = [sol.species_index(sp) for sp
+                      in react.third_body.efficiencies]
+    indices_default = [i for i in range(sol.n_species)
+                       if i not in indices_nondef]
     sum_nondef = sum(eff_i * c[index_i] for eff_i, index_i
                      in zip(np.array(efficiencies), indices_nondef))
-    sum_default = react.default_efficiency * sum(c[i] for i in indices_default)
+    sum_default = react.third_body.default_efficiency * sum(
+        c[i] for i in indices_default
+    )
     return sum_nondef + sum_default
 
 
-def troe_falloff_expr(react: ct.Reaction, t):
+def troe_falloff_center_expr(react: ct.Reaction, t):
     """
-    :returns: The Troe falloff center expression for reaction *react* in terms of the
-        temperature *t* as a :class:`pymbolic.primitives.Expression`
+    :returns: The Troe falloff center expression for reaction *react* in
+    terms of the temperature *t* as a
+    :class:`pymbolic.primitives.Expression`
     """
-    if "uses_legacy" not in dir(react) or not react.uses_legacy:
-        if isinstance(react.rate, ct.TroeRate):
-            troe_params = react.rate.falloff_coeffs
-        elif isinstance(react.rate, ct.LindemannRate):
-            return 1
-        else:
-            raise ValueError("Unexpected value of 'rate.type': "
-                             f" '{react.rate.type}'")
-    else:
-        from warnings import warn
-        warn("Legacy 'ct.Reaction.falloff' interface is deprecated "
-             "in Cantera 2.6 and will be removed in Cantera 3. "
-             "Access 'FalloffRate' objects using "
-             " ct.Reaction.rate' instead", DeprecationWarning, stacklevel=2)
-        if react.falloff.falloff_type == "Troe":
-            if react.falloff.parameters[3]:
-                troe_params = react.falloff.parameters
-            else:
-                troe_params = react.falloff.parameters[:-1]
 
-        elif react.falloff.falloff_type == "Lindemann":
-            return 1
-        else:
-            raise ValueError("Unexpected value of 'falloff_type': "
-                             f" '{react.falloff.falloff_type}'")
+    if isinstance(react.rate, ct.TroeRate):
+        troe_params = react.rate.falloff_coeffs
+    elif isinstance(react.rate, ct.LindemannRate):
+        return 1
+    else:
+        raise ValueError("Unexpected value of 'rate.type': "
+                         f" '{react.rate.type}'")
 
     troe_1 = (1.0-troe_params[0])*p.Variable("exp")(-t/troe_params[1])
     troe_2 = troe_params[0]*p.Variable("exp")(-t/troe_params[2])
@@ -363,33 +368,52 @@ def troe_falloff_expr(react: ct.Reaction, t):
         troe_3 = p.Variable("exp")(-troe_params[3]/t)
         return p.Variable("log10")(troe_1 + troe_2 + troe_3)
     else:
-        raise ValueError("Unexpected length of 'tro_params': "
+        raise ValueError("Unexpected length of 'troe_params': "
                          f" '{len(troe_params)}'")
     return
 
 
-def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center):
+def troe_falloff_factor_expr(react: ct.Reaction, i,
+                             red_pressure, falloff_center):
     """
-    :returns: Falloff function expression for reaction *react* in terms
-        of the temperature *t*, reduced pressure *red_pressure*, and falloff center
-        *falloff_center* as a :class:`pymbolic.primitives.Expression`
+    :returns: The Troe falloff factor expression for reaction
+    *react* in terms of reduced pressure *red_pressure* and the
+    falloff center *falloff_center* as a
+    :class:`pymbolic.primitives.Expression`
+
     """
-    if "uses_legacy" not in dir(react) or not react.uses_legacy:
-        falloff_type = react.reaction_type.split("-")[1]
+    if isinstance(react.rate, ct.TroeRate):
+        log_rp = p.Variable("log10")(red_pressure[i])
+        c = -0.4 - 0.67 * falloff_center[i]
+        n = 0.75 - 1.27 * falloff_center[i]
+        return p.If(
+            p.Comparison(red_pressure[i], ">", 0),
+            (log_rp + c) / (n - 0.14 * (log_rp + c)),
+            -1/0.14
+        )
+    elif isinstance(react.rate, ct.LindemannRate):
+        return 0
     else:
-        from warnings import warn
-        warn("Legacy 'ct.Reaction.falloff' interface is deprecated "
-             "in Cantera 2.6 and will be removed in Cantera 3. "
-             "Access 'FalloffRate' objects using "
-             " ct.Reaction.rate' instead", DeprecationWarning, stacklevel=2)
-        falloff_type = react.falloff.falloff_type
+        raise ValueError("Unexpected value of 'rate.type': "
+                         f" '{react.rate.type}'")
+
+
+def falloff_function_expr(react: ct.Reaction, i,
+                          falloff_factor, falloff_center):
+    """
+    :returns: Falloff function expression for reaction *react* in
+    terms of the temperature *t*, falloff width factor
+    *falloff_factor*, and falloff center *falloff_center* as a
+    :class:`pymbolic.primitives.Expression`
+
+    """
+
+    falloff_type = react.reaction_type.split("-")[1]
 
     if falloff_type == "Troe":
-        log_rp = p.Variable("log10")(red_pressure[i])
-        c = -0.4-0.67*falloff_center[i]
-        n = 0.75-1.27*falloff_center[i]
-        f = (log_rp+c)/(n-0.14*(log_rp+c))
-        return 10**((falloff_center[i])/(1+f**2))
+        return 10**(
+            falloff_center[i] / (1+falloff_factor[i]**2)
+        )
     elif falloff_type == "Lindemann":
         return 1
     else:
@@ -402,11 +426,12 @@ def falloff_function_expr(react: ct.Reaction, i, t, red_pressure, falloff_center
 # {{{ Rates of progress
 
 def rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
-                          k_fwd, exp_log_k_eq):
+                          k_fwd, log_k_eq):
     """
-    :returns: Rate of progress expression for reaction with index *reaction_index*
-        in terms of species concentrations *c* with rate coefficients *k_fwd*
-        and equilbrium constants *k_eq* as a :class:`pymbolic.primitives.Expression`
+    :returns: Rate of progress expression for reaction with
+    index *reaction_index* in terms of species concentrations *c*
+    with rate coefficients *k_fwd* and equilbrium constants *k_eq*
+    as a :class:`pymbolic.primitives.Expression`
     """
     indices_reac = [sol.species_index(sp)
                     for sp in sol.reaction(reaction_index).reactants]
@@ -425,12 +450,14 @@ def rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
     if sol.reaction(reaction_index).reversible:
         nu_prod = [sol.reaction(reaction_index).products[sp]
                    for sp in sol.reaction(reaction_index).products]
-        r_rev = np.prod([c[index]**nu for index, nu in zip(indices_prod, nu_prod)])
-        return (
+        r_rev = np.prod([
+            c[index]**nu for index, nu in zip(indices_prod, nu_prod)
+        ])
+        return k_fwd[reaction_index] * (
                 r_fwd
-                + (exp_log_k_eq[reaction_index]) * r_rev)
+                - p.Variable("exp")(log_k_eq[reaction_index]) * r_rev)
     else:
-        return r_fwd
+        return k_fwd[reaction_index] * r_fwd
 
 # }}}
 
@@ -448,8 +475,11 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
                    if species in react.reactants]
     indices_rev = [i for i, react in enumerate(sol.reactions())
                    if species in react.products]
-    nu_fwd = [sol.reactant_stoich_coeff(sol.species_index(species), react_index)
-              for react_index in indices_fwd]
+    nu_fwd = [
+        sol.reactant_stoich_coeff(
+            sol.species_index(species), react_index
+        ) for react_index in indices_fwd
+    ]
     nu_rev = [sol.product_stoich_coeff(sol.species_index(species), prod_index)
               for prod_index in indices_rev]
     sum_fwd = sum(nu*r_net[index] for nu, index in zip(nu_fwd, indices_fwd))

@@ -1,23 +1,73 @@
 Pyrometheus: Code Generation for Combustion Mechanisms
 ======================================================
 
-.. image:: https://github.com/ecisneros8/pyrometheus/workflows/CI/badge.svg?branch=main&event=push
+.. image:: doc/pyro.png
+	   :width: 640
+.. image:: https://github.com/pyrometheus/pyrometheus/actions/workflows/ci.yml/badge.svg
     :alt: Github Build Status
-    :target: https://github.com/ecisneros8/pyrometheus/actions?query=branch%main+workflow%3ACI+event%3Apush
+    :target: https://github.com/pyrometheus/pyrometheus/actions
+.. image:: https://github.com/pyrometheus/pyrometheus/actions/workflows/mfc.yml/badge.svg
+    :alt: Github Build Status
+    :target: https://github.com/pyrometheus/pyrometheus/actions
 .. image:: https://readthedocs.org/projects/pyrometheus/badge/?version=latest
     :alt: Documentation Status
     :target: https://pyrometheus.readthedocs.io/en/latest/?badge=latest
-.. image:: https://badge.fury.io/py/pyrometheus.png
+.. image:: https://img.shields.io/pypi/v/pyrometheus
     :alt: Python Package Index Release Page
     :target: https://pypi.org/project/pyrometheus/
+.. image:: https://img.shields.io/badge/License-MIT-red.svg
+    :alt: MIT License
+    :target: https://opensource.org/license/mit
+.. image:: https://img.shields.io/badge/arXiv-2503.24286-b31b1b.svg
+   :target: https://arxiv.org/abs/2503.24286
+   :alt: arXiv:2503.24286
+.. image:: https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2025.109987-blue.svg
+   :target: https://doi.org/10.1016/j.cpc.2025.109987
+   :alt: DOI:10.1016/j.cpc.2025.109987
 
 .. When you update this description, consider also updating the one in doc/index.rst.
 
-Pyrometheus is a code generator for chemical mechanisms, based on `Cantera
-<https://cantera.org>`__.
+Pyrometheus is a code generator for chemical mechanisms based on `Cantera
+<https://cantera.org>`__. Install it from PyPI (``pip install pyrometheus``)
+or via `Spack <https://spack.io>`__ (``spack install py-pyrometheus``)::
+
+    $ python3 -m pip install pyrometheus
+    $ python3 -m pyrometheus --help
+    usage: pyrometheus [-h] [--version] -l {python,cpp,fortran} -m MECH -o OUTPUT -n NAME [-p PHASE]
+    
+    Code generation for combustion thermochemistrybased on Cantera.
+    
+    options:
+      -h, --help            show this help message and exit
+      --version             show program's version number and exit
+      -l {python,cpp,fortran}, --lang {python,cpp,fortran}, --language {python,cpp,fortran}
+                            Language to generate code for.
+      -m MECH, --mech MECH, --mechanism MECH
+                            Path to the mechanism file.
+      -o OUTPUT, --output OUTPUT
+                            Path to the output file.
+      -n NAME, --name NAME, --namespace NAME
+                            Namespace to use for the generated code.
+      -p PHASE, --phase PHASE
+                            Phase name to use for the generated code.
+
+Cite me:
+
+.. code-block:: bibtex
+
+    @article{Cisneros25,
+      author = {Cisneros-Garibay, Esteban and {Le Berre}, H. and Adam, D. and Bryngelson, Spencer H. and Freund, Jonathan B.},
+      title = {{Pyrometheus: S}ymbolic abstractions for {XPU} and automatically differentiated computation of combustion kinetics and thermodynamics},
+      year = {2026},
+      volume = {320},
+      pages = {109987},
+      doi = {10.1016/j.cpc.2025.109987},
+      journal = {Computer Physics Communications}
+    }
+
 
 Links:
 
 * `Documentation <https://pyrometheus.readthedocs.io/en/latest/>`__
 
-* `Github <https://github.com/ecisneros/pyrometheus>`__
+* `GitHub <https://github.com/pyrometheus/pyrometheus>`__

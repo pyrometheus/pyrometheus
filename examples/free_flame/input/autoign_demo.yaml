@@ -1,0 +1,11 @@
+initial_time: 0.
+final_time: 1.0e-4
+step_size: 1.0e-8
+num_snapshots: 1000
+output_file_name: output/autoignition.h5
+mixture:
+  equiv_ratio: 1.0
+  temperature: 1200.0
+crank_nicolson:
+  newton_it: 10
+  newton_tol: 1.0e-6

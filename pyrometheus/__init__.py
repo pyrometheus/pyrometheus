@@ -1,11 +1,12 @@
 """
 .. automodule:: pyrometheus.chem_expr
 .. automodule:: pyrometheus.codegen.python
+.. automodule:: pyrometheus.codegen.cpp
+.. automodule:: pyrometheus.codegen.fortran
 """
 
 __copyright__ = """
-Copyright (C) 2020 Esteban Cisneros
-Copyright (C) 2020 Andreas Kloeckner
+Copyright (C) 2020 University of Illinois Board of Trustees
 """
 
 __license__ = """
@@ -28,39 +29,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+import typing
 
-import pyrometheus.codegen.python  # noqa: F401
-import pyrometheus.codegen.python as _py
-
-
-# {{{ handle deprecations
-
-def gen_thermochem_code(*args, **kwargs):
-    from warnings import warn
-    warn("get_thermochem_code should be imported from pyrometheus.codegen.python "
-            "now. This alias in the root will go away in 2022.",
-            DeprecationWarning, stacklevel=2)
-
-    return _py.gen_thermochem_code(*args, **kwargs)
+from .codegen import CodeGenerator, CodeGenerationOptions  # noqa: F401
+from .codegen.python import PythonCodeGenerator
+from .codegen.cpp import CppCodeGenerator
+from .codegen.fortran import FortranCodeGenerator
 
 
-def get_thermochem_class(*args, **kwargs):
-    from warnings import warn
-    warn("get_thermochem_class should be imported from pyrometheus.codegen.python "
-            "now. This alias in the root will go away in 2022.",
-            DeprecationWarning, stacklevel=2)
+def get_code_generators() -> typing.Dict[str, CodeGenerator]:
+    return {
+        PythonCodeGenerator.get_name(): PythonCodeGenerator,
+        CppCodeGenerator.get_name(): CppCodeGenerator,
+        FortranCodeGenerator.get_name(): FortranCodeGenerator,
+    }
 
-    return _py.get_thermochem_class(*args, **kwargs)
 
-
-def cti_to_mech_file(*args, **kwargs):
-    from warnings import warn
-    warn("cti_to_mech_file should be imported from pyrometheus.codegen.python "
-            "now. This alias in the root will go away in 2022.",
-            DeprecationWarning, stacklevel=2)
-
-    return _py.cti_to_mech_file(*args, **kwargs)
-
-# }}}
-
-# vim: foldmethod=marker
+# Python is the default code generator, expose its CodeGenerator's static methods
+# globally in this module.
+for name, method in PythonCodeGenerator.__dict__.items():
+    if isinstance(method, staticmethod):
+        globals()[name] = method
