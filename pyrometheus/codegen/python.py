@@ -276,7 +276,7 @@ class Thermochemistry:
             self.inv_molecular_weights[${i}] * rho * mass_fractions[${i}],
             %endfor
         ])
-    
+
     def get_mole_fractions(self, mix_mol_weight, mass_fractions):
         return self._pyro_make_array([
             %for i in range(sol.n_species):
