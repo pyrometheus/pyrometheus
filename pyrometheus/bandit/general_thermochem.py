@@ -36,7 +36,7 @@ class BaseMechanism:
         shape=(0,), dtype=p.ExpressionNode
     )
     species_prod_rates: np.ndarray = np.empty(
-        shape=(0,), type=p.ExpressionNode
+        shape=(0,), dtype=p.ExpressionNode
     )
     species_nasa_thermo_polynomials: np.ndarray = np.empty(
         shape=(0,), dtype=SpeciesNASAThermo
@@ -70,7 +70,7 @@ class BaseMechanism:
         """
         raise NotImplementedError
 
-    def has_nonequilibrium_energy_modes(self):
+    def has_nonequilibrium_energy_modes(self) -> bool:
         return self.nonequil_thermo
 
     def reactant_indices(self, reaction_index: int):
@@ -173,10 +173,10 @@ class BaseMechanism:
 
     def make_thermo(self,):
         # Make NASA thermo first
-        assert not self.species_thermo_polynomials.size
+        assert not self.species_nasa_thermo_polynomials.size
         for isp in range(self.num_species):
-            self.species_thermo_polynomials = np.append(
-                self.species_thermo_polynomials,
+            self.species_nasa_thermo_polynomials = np.append(
+                self.species_nasa_thermo_polynomials,
                 self.make_species_nasa_thermo(isp)
             )
 

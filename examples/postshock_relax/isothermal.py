@@ -143,6 +143,11 @@ if __name__ == "__main__":
 
     lib_name = 'plato'
     mech = make_mechanism(lib_name, np, hardcode_params=True)
+    # for i, sp_thermo in enumerate(mech.species_vib_thermo_expressions):
+    #     print(f'expr {i} ', sp_thermo.energy_expr)
+
+    # print(mech.namespace.thermochem.vt_mw_a())
+    # exit()
 
     pyro_cls = pyro.get_thermochem_class(mech)
     pyro_gas = make_pyro_object(pyro_cls, jnp)

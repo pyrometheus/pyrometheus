@@ -81,6 +81,10 @@ class Plato(BaseNamespace):
     def finalize(self):
         self.thermochem.finalize()
 
+    @property
+    def nonequil_thermo(self):
+        return self.thermochem.vt_active
+
 
 class PlatoMechanism(BaseMechanism):
 
@@ -93,10 +97,10 @@ class PlatoMechanism(BaseMechanism):
                  hardcode_params=True):
         self.hardcode_params = hardcode_params
         self.namespace = Plato(mixture, reaction_set, transfer, plato_db_path)
+        self.nonequil_thermo = self.namespace.nonequil_thermo
         self._build_reaction_list()
         self.make_rates(hardcode_params)
         self.make_thermo()
-        self.make_energy_transfer()
 
     def finalize(self):
         self.namespace.finalize()
@@ -284,6 +288,9 @@ class PlatoMechanism(BaseMechanism):
         """Return all reactions in the mechanism as a `typing:List`."""
         return self._reactions
 
+    def species_vibrational_temperature(self, species_index) -> np.ndarray:
+        return self.namespace.__getattr__("theta_vib", species_index)
+    
     def _nasa_polynomial_interval_bounds(self, species_index):
         """Return NASA poly interval temperature bounds."""
         return self.namespace.__getattr__("nasa_temp_bounds", species_index)
@@ -464,9 +471,12 @@ class PlatoMechanism(BaseMechanism):
 
     def make_species_vibrational_thermo(
             self, species_index
-    ) -> SpeciesVibrationalThermo:
-        params = np.empty(2)
-        return make_species_vibrational_thermo(params)
+    ) -> SpeciesVibrationalThermo:        
+        vib_temp = self.species_vibrational_temperature(species_index)
+        return make_species_vibrational_thermo(
+            self.namespace.gas_constant / self.molecular_weights[species_index],
+            vib_temp
+        )
 
     def make_equilibrium_constant(self, reaction_index):
         rxn = self.reaction(reaction_index)

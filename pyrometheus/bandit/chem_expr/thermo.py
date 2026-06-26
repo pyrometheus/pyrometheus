@@ -60,13 +60,18 @@ class SpeciesNASAThermo:
 
 @dataclass
 class SpeciesVibrationalThermo:
-    params: InitVar[np.ndarray]
+    specific_gas_constant: InitVar[np.float64]
+    vibrational_temperatures: InitVar[np.ndarray]
     specific_heat_expr: p.ExpressionNode = field(init=False)
     energy_expr: p.ExpressionNode = field(init=False)
 
-    def __post_init__(self, params):
-        self.specific_heat_expr = vibrational_specific_heat_expr(params)
-        self.energy_expr = vibrational_energy_expr(params)
+    def __post_init__(self, specific_gas_constant, vibrational_temperatures):
+        self.specific_heat_expr = vibrational_specific_heat_expr(
+            specific_gas_constant, vibrational_temperatures
+        )
+        self.energy_expr = vibrational_energy_expr(
+            specific_gas_constant, vibrational_temperatures
+        )
 
 # }}}
 
@@ -279,8 +284,7 @@ _nasa_poly_expr = {
 
 
 def make_species_nasa_thermo(poly_params: PolynomialParameters,
-                             temperature: p.Variable,
-                             nonequil_thermo: bool) -> SpeciesNASAThermo:
+                             temperature: p.Variable) -> SpeciesNASAThermo:
 
     thermo_container = SpeciesNASAThermo(poly_params)
     for f in fields(thermo_container):
@@ -318,28 +322,38 @@ def equilibrium_constant_expr(reaction_index: int,
 
 # {{{ Vibrational nonequlibrium
 
-def make_species_vibrational_thermo(params: np.ndarray) -> SpeciesVibrationalThermo:
-    return SpeciesVibrationalThermo(params)
+def make_species_vibrational_thermo(
+        specific_gas_constant: np.float64,
+        vibrational_temperatures: np.ndarray
+) -> SpeciesVibrationalThermo:
+    return SpeciesVibrationalThermo(specific_gas_constant,
+                                    vibrational_temperatures)
 
 
-def vibrational_specific_heat_expr(params: np.ndarray) -> p.ExpressionNode:
-    vib_temp = params[0]
-    gas_constant = params[1]
-    return (
-        gas_constant
-        * exp(vib_temp / t[1])
-        * (vib_temp / t[1])**2
-        / (exp(vib_temp / t[1]) - 1)**2
-    )
+def vibrational_specific_heat_expr(
+        specific_gas_constant: np.float64,
+
+        vibrational_temperatures: np.ndarray
+) -> p.ExpressionNode:
+    return np.sum([
+        specific_gas_constant
+        * exp(t_vib / t[1])
+        * (t_vib / t[1])**2
+        / (exp(t_vib / t[1]) - 1)**2
+        for t_vib in vibrational_temperatures
+    ])
 
 
-def vibrational_energy_expr(params: np.ndarray) -> p.ExpressionNode:
-    vib_temp = params[0]
-    gas_constant = params[1]
-    return (
-        gas_constant
-        * vib_temp
-        / (exp(vib_temp / t[1]) - 1)
-    )
+def vibrational_energy_expr(specific_gas_constant: np.float64,
+                            vibrational_temperatures: np.ndarray) -> p.ExpressionNode:
+    return np.sum([
+        specific_gas_constant
+        * t_vib
+        / (exp(t_vib / t[1]) - 1)
+        for t_vib in vibrational_temperatures
+    ])
+
+def relaxation_rate_expr() -> p.ExpressionNode:
+    pass
 
 # }}}

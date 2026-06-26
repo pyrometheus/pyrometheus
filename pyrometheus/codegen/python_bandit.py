@@ -96,7 +96,7 @@ class Thermochemistry:
 
     def get_mixture_molecular_weight(self, mass_fractions):
         return 1 / (
-            %for i in range(mech.num_species):
+            %for i in range(bandit_mech.num_species):
             + self.inv_molecular_weights[${i}] * mass_fractions[${i}]
             %endfor
         )
@@ -106,12 +106,12 @@ class Thermochemistry:
         rt = self.gas_constant * temperature / w_mix
         return pressure * w_mix / rt
 
-    def get_pressure_ideal_law(self, density, temperature, mass_fractions):
+    def get_pressure(self, density, temperature, mass_fractions):
         w_mix = self.get_mixture_molecular_weight(mass_fractions)
         rt = self.gas_constant * temperature / w_mix
         return density * rt
 
-    def get_concentrations_ideal_law(self, density, mass_fractions):
+    def get_concentrations(self, density, mass_fractions):
         return self._pyro_make_array([
             %for i in range(bandit_mech.num_species):
             density * mass_fractions[${i}] / self.molecular_weights[${i}],
@@ -120,15 +120,15 @@ class Thermochemistry:
 
     def get_species_specific_heats_cp_r(self, temperature):
         return self._pyro_make_array([
-            %for sp_thermo in bandit_mech.species_thermo_polynomials:
-            ${cgm(sp_thermo.cp_poly.expr)}
+            %for sp_thermo in bandit_mech.species_nasa_thermo_polynomials:
+            ${cgm(sp_thermo.cp_poly.expr)},
             %endfor
         ])
 
     def get_species_enthalpies_rt(self, temperature):
         return self._pyro_make_array([
-            %for sp_thermo in bandit_mech.species_thermo_polynomials:
-            ${cgm(sp_thermo.enthalpy_poly.expr)}
+            %for sp_thermo in bandit_mech.species_nasa_thermo_polynomials:
+            ${cgm(sp_thermo.enthalpy_poly.expr)},
             %endfor
         ])
 
@@ -142,7 +142,7 @@ class Thermochemistry:
 
     def get_species_gibbs_rt(self, temperature):
         return self._pyro_make_array([
-            %for sp_thermo in bandit_mech.species_thermo_polynomials:
+            %for sp_thermo in bandit_mech.species_nasa_thermo_polynomials:
             ${cgm(sp_thermo.gibbs_poly.expr)},
             %endfor
         ])
@@ -188,7 +188,12 @@ class Thermochemistry:
 
     %if bandit_mech.has_nonequilibrium_energy_modes:
     def get_species_vibrational_energies(self, temperature):
-        pass
+        ones = self._pyro_ones_like(temperature[1])
+        return self._pyro_make_array([
+            %for sp_thermo in bandit_mech.species_vib_thermo_expressions:
+            ${cgm(sp_thermo.energy_expr)} * ones,
+            %endfor
+        ])
 
     def get_relaxation_time(self, temperature):
         pass
