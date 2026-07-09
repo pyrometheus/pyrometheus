@@ -10,7 +10,7 @@ jobs:
         name: Spack install released
         runs-on: ubuntu-latest
         steps:
-          - uses: actions/checkout@v4
+          - uses: actions/checkout@v5
 
           - name: Set up Spack with buildcache
             uses: spack/setup-spack@v3
@@ -36,7 +36,7 @@ jobs:
         name: Spack install HEAD
         runs-on: ubuntu-latest
         steps:
-          - uses: actions/checkout@v4
+          - uses: actions/checkout@v5
 
           - name: Set up Spack with buildcache
             uses: spack/setup-spack@v3
