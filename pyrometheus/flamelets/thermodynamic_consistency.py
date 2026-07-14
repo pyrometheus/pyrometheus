@@ -202,7 +202,6 @@ class CompressibleEOS:
             applied symmetrically to both boundary enthalpies in the
             outer iteration).
         """
-
         # Get state as array
         state_as_array = _state_to_array(state)
         # Set up the problem
@@ -339,7 +338,6 @@ class CompressibleEOS:
             ``(state, temperature, density, energy, density_gradient,
             energy_gradient)``.
         """
-
         pressure, h_ox, h_fu = params
         t_solve = time.time()
         state, temp = self.fwd_solver.solve(
@@ -360,7 +358,8 @@ class CompressibleEOS:
             state_guess
         )
         state.enthalpy.block_until_ready()
-        print(f"solve time: {(time.time() - t_solve):.4e} s")
+        if self.config['verbosity']:
+            print(f"solve time: {(time.time() - t_solve):.4e} s")
 
         t_adj = time.time()
         (density_gradient, energy_gradient), (adj_d, adj_e) = (
@@ -374,7 +373,9 @@ class CompressibleEOS:
             )
         )
         adj_d.enthalpy.block_until_ready()
-        print(f"adjoint time: {(time.time() - t_adj):.4e} s")
+        if self.config['verbosity']:
+            print(f"adjoint time: {(time.time() - t_adj):.4e} s")
+
         rt = self.fwd_solver.gov_eqns.compressible_eos_rt(
             _state_to_array(state),
             temp,
@@ -489,7 +490,8 @@ class CompressibleEOS:
             state_guess
         )
         state.enthalpy.block_until_ready()
-        print(f"solve time: {(time.time() - t_solve):.4e} s")
+        if self.config['verbosity']:
+            print(f"solve time: {(time.time() - t_solve):.4e} s")
 
         rt, _, dh_ox = self.enthalpy_gradient(
             state,
@@ -535,10 +537,11 @@ class CompressibleEOS:
         the JIT cost is paid up front rather than during the first
         consistency iteration.
         """
-
         pressure, h_ox, h_fu = params
 
-        print("Compressible EOS: warming up forward solver")
+        if self.config['verbosity']:
+            print("Compressible EOS: warming up forward solver")
+
         t_wmp = time.time()
         s_wmp, _ = self.fwd_solver.solve(
             self.config["newton"]["maxiter"],
@@ -558,9 +561,12 @@ class CompressibleEOS:
             state_wmp
         )
         s_wmp.enthalpy.block_until_ready()
-        print(f"Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s")
+        if self.config['verbosity']:
+            print(f"EOS: warmup time: {(time.time() - t_wmp):.4e} s")
 
-        print("Compressible EOS: warming up h-only adjoint solver")
+        if self.config['verbosity']:
+            print("Compressible EOS: warming up h-only adjoint solver")
+
         t_wmp = time.time()
         _, adj_wmp, _ = self.enthalpy_gradient(
             state_wmp,
@@ -571,9 +577,10 @@ class CompressibleEOS:
             pressure,
         )
         adj_wmp.enthalpy.block_until_ready()
-        print(f"Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s")
+        if self.config['verbosity']:
+            print(f"EOS: warmup time: {(time.time()-t_wmp):.4e} s")
+            print("EOS: warming up full adjoint solver")
 
-        print("Compressible EOS: warming up full adjoint solver")
         t_wmp = time.time()
         _, (adj_wmp, _) = self.eos_gradient(
             state_wmp,
@@ -584,7 +591,9 @@ class CompressibleEOS:
             pressure,
         )
         adj_wmp.enthalpy.block_until_ready()
-        print(f"Compressible EOS: warmup time: {(time.time() - t_wmp):.4e} s")
+        if self.config['verbosity']:
+            print(f"EOS: warmup time: {(time.time()-t_wmp):.4e} s")
+
         return
 
     def ensure_consistency(self,
@@ -596,7 +605,7 @@ class CompressibleEOS:
                            viscous_diss: jnp.ndarray,
                            temp_guess: jnp.ndarray,
                            state_guess: FlameletState):
-        """Iterate ``(p, h_ox, h_fu)`` until the filtered EOS matches the target.
+        """Iterate ``(p, h_ox, h_fu)`` until filtered EOS matches target.
 
         Repeatedly calls :meth:`_gauss_newton_update` or
         :meth:`_picard_update` (selected by
@@ -633,7 +642,6 @@ class CompressibleEOS:
             If ``config["eos"]["update_method"]`` is not one of
             ``"gauss_newton"`` or ``"picard"``.
         """
-
         state = state_guess
         temp = temp_guess
 
@@ -642,10 +650,12 @@ class CompressibleEOS:
         update_method = self.config["eos"]["update_method"]
         if update_method == "gauss_newton":
             update_fn = self._gauss_newton_update
-            print("Compressible EOS: using Gauss-Newton update")
+            if self.config['verbosity']:
+                print("EOS: using Gauss-Newton update")
         elif update_method == "picard":
             update_fn = self._picard_update
-            print("Compressible EOS: using Picard update")
+            if self.config['verbosity']:
+                print("EOS: using Picard update")
         else:
             raise ValueError(f"Available {update_method} not implemented")
 
@@ -668,15 +678,16 @@ class CompressibleEOS:
             v.block_until_ready()
             cost_val = jnp.linalg.norm(res)**2
             delta = jnp.linalg.norm(v)
-            print(f"Compressible EOS iteration {it}: "
-                  f"time: {(time.time()-t_iter):.4e} s"
-                  f", residual = {cost_val:.4e}"
-                  f", |v| = {delta:.4e}"
-                  ", new params = [{:s}]".format(
-                      ", ".join([
-                          f"{a:.4e}" for a in params + a * v
-                      ])
-                  ))
+            if self.config['verbosity']:
+                print(f"EOS iteration {it}: "
+                      f"time: {(time.time()-t_iter):.4e} s"
+                      f", residual = {cost_val:.4e}"
+                      f", |v| = {delta:.4e}"
+                      ", new params = [{:s}]".format(
+                          ", ".join([
+                              f"{a:.4e}" for a in params + a * v
+                          ])
+                      ))
             params = params + a * v
             residual[it] = cost_val
             history[it] = np.array([
@@ -684,7 +695,9 @@ class CompressibleEOS:
                 jnp.sum(temp * mixture_fraction_pdf)
             ])
             if delta < self.config["eos"]["tol"]:
-                print(f"Compressible EOS converged at iteration {it}")
+                if self.config['verbosity']:
+                    print(f"EOS converged at iteration {it}")
+
                 break
 
         return state, temp, params, it, delta, residual, history, False
