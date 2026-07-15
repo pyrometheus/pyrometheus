@@ -341,6 +341,7 @@ class CompressibleEOS:
         pressure, h_ox, h_fu = params
         t_solve = time.time()
         state, temp = self.fwd_solver.solve(
+            self.config["verbosity"],
             self.config["newton"]["maxiter"],
             self.config["newton"]["tol"],
             self.config["bdf"]["newton"]["maxiter"],
@@ -358,7 +359,7 @@ class CompressibleEOS:
             state_guess
         )
         state.enthalpy.block_until_ready()
-        if self.config['verbosity']:
+        if self.config["verbosity"]:
             print(f"solve time: {(time.time() - t_solve):.4e} s")
 
         t_adj = time.time()
@@ -373,7 +374,7 @@ class CompressibleEOS:
             )
         )
         adj_d.enthalpy.block_until_ready()
-        if self.config['verbosity']:
+        if self.config["verbosity"]:
             print(f"adjoint time: {(time.time() - t_adj):.4e} s")
 
         rt = self.fwd_solver.gov_eqns.compressible_eos_rt(
@@ -473,6 +474,7 @@ class CompressibleEOS:
         pressure, h_ox, h_fu = params
         t_solve = time.time()
         state, temp = self.fwd_solver.solve(
+            self.config["verbosity"],
             self.config["newton"]["maxiter"],
             self.config["newton"]["tol"],
             self.config["bdf"]["newton"]["maxiter"],
@@ -490,7 +492,7 @@ class CompressibleEOS:
             state_guess
         )
         state.enthalpy.block_until_ready()
-        if self.config['verbosity']:
+        if self.config["verbosity"]:
             print(f"solve time: {(time.time() - t_solve):.4e} s")
 
         rt, _, dh_ox = self.enthalpy_gradient(
@@ -539,11 +541,12 @@ class CompressibleEOS:
         """
         pressure, h_ox, h_fu = params
 
-        if self.config['verbosity']:
+        if self.config["verbosity"]:
             print("Compressible EOS: warming up forward solver")
 
         t_wmp = time.time()
         s_wmp, _ = self.fwd_solver.solve(
+            self.config["verbosity"],
             self.config["newton"]["maxiter"],
             self.config["newton"]["tol"],
             self.config["bdf"]["newton"]["maxiter"],
@@ -561,10 +564,10 @@ class CompressibleEOS:
             state_wmp
         )
         s_wmp.enthalpy.block_until_ready()
-        if self.config['verbosity']:
+        if self.config["verbosity"]:
             print(f"EOS: warmup time: {(time.time() - t_wmp):.4e} s")
 
-        if self.config['verbosity']:
+        if self.config["verbosity"]:
             print("Compressible EOS: warming up h-only adjoint solver")
 
         t_wmp = time.time()
@@ -577,7 +580,7 @@ class CompressibleEOS:
             pressure,
         )
         adj_wmp.enthalpy.block_until_ready()
-        if self.config['verbosity']:
+        if self.config["verbosity"]:
             print(f"EOS: warmup time: {(time.time()-t_wmp):.4e} s")
             print("EOS: warming up full adjoint solver")
 
@@ -591,7 +594,7 @@ class CompressibleEOS:
             pressure,
         )
         adj_wmp.enthalpy.block_until_ready()
-        if self.config['verbosity']:
+        if self.config["verbosity"]:
             print(f"EOS: warmup time: {(time.time()-t_wmp):.4e} s")
 
         return
@@ -650,11 +653,11 @@ class CompressibleEOS:
         update_method = self.config["eos"]["update_method"]
         if update_method == "gauss_newton":
             update_fn = self._gauss_newton_update
-            if self.config['verbosity']:
+            if self.config["verbosity"]:
                 print("EOS: using Gauss-Newton update")
         elif update_method == "picard":
             update_fn = self._picard_update
-            if self.config['verbosity']:
+            if self.config["verbosity"]:
                 print("EOS: using Picard update")
         else:
             raise ValueError(f"Available {update_method} not implemented")
@@ -678,7 +681,7 @@ class CompressibleEOS:
             v.block_until_ready()
             cost_val = jnp.linalg.norm(res)**2
             delta = jnp.linalg.norm(v)
-            if self.config['verbosity']:
+            if self.config["verbosity"]:
                 print(f"EOS iteration {it}: "
                       f"time: {(time.time()-t_iter):.4e} s"
                       f", residual = {cost_val:.4e}"
@@ -695,7 +698,7 @@ class CompressibleEOS:
                 jnp.sum(temp * mixture_fraction_pdf)
             ])
             if delta < self.config["eos"]["tol"]:
-                if self.config['verbosity']:
+                if self.config["verbosity"]:
                     print(f"EOS converged at iteration {it}")
 
                 break
