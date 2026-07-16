@@ -256,6 +256,27 @@ def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         omega_pm = pyro_gas.get_net_production_rates(rho, temp, y)
         err_r = np.linalg.norm(r_ct-r_pm, np.inf)
         err_omega = np.linalg.norm(omega_ct - omega_pm, np.inf)
+        # Forward/reverse rates of progress and creation/destruction rates
+        rf_pm = np.asarray(pyro_gas.get_fwd_rates_of_progress(temp, c))
+        rr_pm = np.asarray(pyro_gas.get_rev_rates_of_progress(temp, c))
+        cdot_pm = np.asarray(pyro_gas.get_creation_rates(rho, temp, y))
+        ddot_pm = np.asarray(pyro_gas.get_destruction_rates(rho, temp, y))
+        cddot_pm = pyro_gas.get_creation_destruction_rates(rho, temp, y)
+        cdot2_pm = np.asarray(cddot_pm[0])
+        ddot2_pm = np.asarray(cddot_pm[1])
+        err_rf = np.linalg.norm(
+            reactor.kinetics.forward_rates_of_progress - rf_pm, np.inf)
+        err_rr = np.linalg.norm(
+            reactor.kinetics.reverse_rates_of_progress - rr_pm, np.inf)
+        err_cdot = np.linalg.norm(
+            reactor.kinetics.creation_rates - cdot_pm, np.inf)
+        err_ddot = np.linalg.norm(
+            reactor.kinetics.destruction_rates - ddot_pm, np.inf)
+        # Internal consistency: net == creation - destruction
+        err_split = np.linalg.norm(omega_pm - (cdot_pm - ddot_pm), np.inf)
+        # The combined single-pass routine matches the separate ones
+        err_combined = max(np.linalg.norm(cdot2_pm - cdot_pm, np.inf),
+                           np.linalg.norm(ddot2_pm - ddot_pm, np.inf))
         # Print
         print("T = ", reactor.T)
         print("y_ct", reactor.Y)
@@ -268,6 +289,12 @@ def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         # Compare
         assert err_r < 1.0e-10
         assert err_omega < 1.0e-10
+        assert err_rf < 1.0e-10
+        assert err_rr < 1.0e-10
+        assert err_cdot < 1.0e-10
+        assert err_ddot < 1.0e-10
+        assert err_split < 1.0e-10
+        assert err_combined < 1.0e-10
 
 
 @pytest.mark.skipif(jnp is None, reason="JAX not installed")
