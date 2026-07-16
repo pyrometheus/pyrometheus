@@ -257,10 +257,10 @@ def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         err_r = np.linalg.norm(r_ct-r_pm, np.inf)
         err_omega = np.linalg.norm(omega_ct - omega_pm, np.inf)
         # Forward/reverse rates of progress and creation/destruction rates
-        rf_pm = pyro_gas.get_fwd_rates_of_progress(temp, c)
-        rr_pm = pyro_gas.get_rev_rates_of_progress(temp, c)
-        cdot_pm = pyro_gas.get_creation_rates(rho, temp, y)
-        ddot_pm = pyro_gas.get_destruction_rates(rho, temp, y)
+        rf_pm = np.asarray(pyro_gas.get_fwd_rates_of_progress(temp, c))
+        rr_pm = np.asarray(pyro_gas.get_rev_rates_of_progress(temp, c))
+        cdot_pm = np.asarray(pyro_gas.get_creation_rates(rho, temp, y))
+        ddot_pm = np.asarray(pyro_gas.get_destruction_rates(rho, temp, y))
         err_rf = np.linalg.norm(
             reactor.kinetics.forward_rates_of_progress - rf_pm, np.inf)
         err_rr = np.linalg.norm(
