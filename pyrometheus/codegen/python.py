@@ -540,6 +540,27 @@ class Thermochemistry:
             %endfor
             ])
 
+    def get_creation_destruction_rates(self, rho, temperature, mass_fractions):
+        c = self.get_concentrations(rho, mass_fractions)
+        r_fwd = self.get_fwd_rates_of_progress(temperature, c)
+        r_rev = self.get_rev_rates_of_progress(temperature, c)
+        ones = self._pyro_zeros_like(r_fwd[0]) + 1.0
+        cdot = self._pyro_make_array([
+            %for sp in sol.species():
+            ${cgm(ce.creation_rate_expr(sol, sp.name,
+                Variable("r_fwd"), Variable("r_rev")))} <%
+            %>* ones,
+            %endfor
+            ])
+        ddot = self._pyro_make_array([
+            %for sp in sol.species():
+            ${cgm(ce.destruction_rate_expr(sol, sp.name,
+                Variable("r_fwd"), Variable("r_rev")))} <%
+            %>* ones,
+            %endfor
+            ])
+        return cdot, ddot
+
     def get_species_viscosities(self, temperature):
         return self._pyro_make_array([
             % for sp in range(sol.n_species):

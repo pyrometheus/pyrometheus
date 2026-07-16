@@ -88,6 +88,7 @@ header_tpl = Template("""
 #include <array>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <concepts>
 
 namespace pyro {
@@ -522,6 +523,27 @@ struct ${name}
         %endfor
         };
         return ddot;
+    }
+
+    static std::pair<SpeciesT, SpeciesT> get_creation_destruction_rates(
+        ContainerT rho, ContainerT temperature, SpeciesT const &mass_fractions)
+    {
+        SpeciesT concentrations = get_concentrations(rho, mass_fractions);
+        ReactionsT r_fwd = get_fwd_rates_of_progress(temperature, concentrations);
+        ReactionsT r_rev = get_rev_rates_of_progress(temperature, concentrations);
+        SpeciesT cdot = {
+        %for sp in sol.species():
+        ${cgm(ce.creation_rate_expr(sol, sp.name,
+            Variable("r_fwd"), Variable("r_rev")))},
+        %endfor
+        };
+        SpeciesT ddot = {
+        %for sp in sol.species():
+        ${cgm(ce.destruction_rate_expr(sol, sp.name,
+            Variable("r_fwd"), Variable("r_rev")))},
+        %endfor
+        };
+        return std::make_pair(cdot, ddot);
     }
 
     static SpeciesT get_species_viscosities(ContainerT temperature)

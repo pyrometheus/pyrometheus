@@ -40,6 +40,7 @@ PYBIND11_MODULE(libpyro_cpp_${mechanism}, m)
   DEF_STATIC_METHOD(get_rev_rates_of_progress);
   DEF_STATIC_METHOD(get_creation_rates);
   DEF_STATIC_METHOD(get_destruction_rates);
+  DEF_STATIC_METHOD(get_creation_destruction_rates);
   DEF_STATIC_METHOD(get_species_viscosities);
   DEF_STATIC_METHOD(get_species_thermal_conductivities);
   DEF_STATIC_METHOD(get_species_binary_mass_diffusivities);

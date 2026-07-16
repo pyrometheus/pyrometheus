@@ -845,6 +845,32 @@ contains
 
     end subroutine get_destruction_rates
 
+    subroutine get_creation_destruction_rates(density, temperature, &
+        mass_fractions, cdot, ddot)
+
+        GPU_ROUTINE(get_creation_destruction_rates)
+
+        ${real_type}, intent(in) :: density
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: cdot, ddot
+
+        ${real_type}, dimension(${sol.n_species})   :: concentrations
+        ${real_type}, dimension(${sol.n_reactions}) :: r_fwd, r_rev
+
+        call get_concentrations(density, mass_fractions, concentrations)
+        call get_fwd_rates_of_progress(temperature, concentrations, r_fwd)
+        call get_rev_rates_of_progress(temperature, concentrations, r_rev)
+
+        %for i, sp in enumerate(sol.species()):
+        cdot(${i+1}) = ${cgm(ce.creation_rate_expr(sol, sp.name,
+            Variable("r_fwd"), Variable("r_rev")))}
+        ddot(${i+1}) = ${cgm(ce.destruction_rate_expr(sol, sp.name,
+            Variable("r_fwd"), Variable("r_rev")))}
+        %endfor
+
+    end subroutine get_creation_destruction_rates
+
     subroutine get_species_viscosities(temperature, viscosities)
 
         GPU_ROUTINE(get_species_viscosities)

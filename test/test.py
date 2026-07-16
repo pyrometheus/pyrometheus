@@ -261,6 +261,9 @@ def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         rr_pm = np.asarray(pyro_gas.get_rev_rates_of_progress(temp, c))
         cdot_pm = np.asarray(pyro_gas.get_creation_rates(rho, temp, y))
         ddot_pm = np.asarray(pyro_gas.get_destruction_rates(rho, temp, y))
+        cddot_pm = pyro_gas.get_creation_destruction_rates(rho, temp, y)
+        cdot2_pm = np.asarray(cddot_pm[0])
+        ddot2_pm = np.asarray(cddot_pm[1])
         err_rf = np.linalg.norm(
             reactor.kinetics.forward_rates_of_progress - rf_pm, np.inf)
         err_rr = np.linalg.norm(
@@ -271,6 +274,9 @@ def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
             reactor.kinetics.destruction_rates - ddot_pm, np.inf)
         # Internal consistency: net == creation - destruction
         err_split = np.linalg.norm(omega_pm - (cdot_pm - ddot_pm), np.inf)
+        # The combined single-pass routine matches the separate ones
+        err_combined = max(np.linalg.norm(cdot2_pm - cdot_pm, np.inf),
+                           np.linalg.norm(ddot2_pm - ddot_pm, np.inf))
         # Print
         print("T = ", reactor.T)
         print("y_ct", reactor.Y)
@@ -288,6 +294,7 @@ def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         assert err_cdot < 1.0e-10
         assert err_ddot < 1.0e-10
         assert err_split < 1.0e-10
+        assert err_combined < 1.0e-10
 
 
 @pytest.mark.skipif(jnp is None, reason="JAX not installed")
