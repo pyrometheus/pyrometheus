@@ -760,6 +760,91 @@ contains
 
     end subroutine get_net_production_rates
 
+    subroutine get_fwd_rates_of_progress(temperature, concentrations, r_fwd)
+
+        GPU_ROUTINE(get_fwd_rates_of_progress)
+
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: concentrations
+        ${real_type}, intent(out), dimension(${sol.n_reactions}) :: r_fwd
+
+        ${real_type}, dimension(${sol.n_reactions}) :: k_fwd
+
+        call get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
+        %for i in range(sol.n_reactions):
+        r_fwd(${i+1}) = ${cgm(ce.fwd_rate_of_progress_expr(sol, i,
+                        Variable("concentrations"), Variable("k_fwd")))}
+        %endfor
+
+    end subroutine get_fwd_rates_of_progress
+
+    subroutine get_rev_rates_of_progress(temperature, concentrations, r_rev)
+
+        GPU_ROUTINE(get_rev_rates_of_progress)
+
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(in), dimension(${sol.n_species}) :: concentrations
+        ${real_type}, intent(out), dimension(${sol.n_reactions}) :: r_rev
+
+        ${real_type}, dimension(${sol.n_reactions}) :: k_fwd
+        ${real_type}, dimension(${sol.n_reactions}) :: log_k_eq
+
+        call get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
+        call get_equilibrium_constants(temperature, log_k_eq)
+        %for i in range(sol.n_reactions):
+        r_rev(${i+1}) = ${cgm(ce.rev_rate_of_progress_expr(sol, i,
+                        Variable("concentrations"),
+                        Variable("k_fwd"), Variable("log_k_eq")))}
+        %endfor
+
+    end subroutine get_rev_rates_of_progress
+
+    subroutine get_creation_rates(density, temperature, mass_fractions, cdot)
+
+        GPU_ROUTINE(get_creation_rates)
+
+        ${real_type}, intent(in) :: density
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: cdot
+
+        ${real_type}, dimension(${sol.n_species})   :: concentrations
+        ${real_type}, dimension(${sol.n_reactions}) :: r_fwd, r_rev
+
+        call get_concentrations(density, mass_fractions, concentrations)
+        call get_fwd_rates_of_progress(temperature, concentrations, r_fwd)
+        call get_rev_rates_of_progress(temperature, concentrations, r_rev)
+
+        %for i, sp in enumerate(sol.species()):
+        cdot(${i+1}) = ${cgm(ce.creation_rate_expr(sol, sp.name,
+            Variable("r_fwd"), Variable("r_rev")))}
+        %endfor
+
+    end subroutine get_creation_rates
+
+    subroutine get_destruction_rates(density, temperature, mass_fractions, ddot)
+
+        GPU_ROUTINE(get_destruction_rates)
+
+        ${real_type}, intent(in) :: density
+        ${real_type}, intent(in) :: temperature
+        ${real_type}, intent(in),  dimension(${sol.n_species}) :: mass_fractions
+        ${real_type}, intent(out), dimension(${sol.n_species}) :: ddot
+
+        ${real_type}, dimension(${sol.n_species})   :: concentrations
+        ${real_type}, dimension(${sol.n_reactions}) :: r_fwd, r_rev
+
+        call get_concentrations(density, mass_fractions, concentrations)
+        call get_fwd_rates_of_progress(temperature, concentrations, r_fwd)
+        call get_rev_rates_of_progress(temperature, concentrations, r_rev)
+
+        %for i, sp in enumerate(sol.species()):
+        ddot(${i+1}) = ${cgm(ce.destruction_rate_expr(sol, sp.name,
+            Variable("r_fwd"), Variable("r_rev")))}
+        %endfor
+
+    end subroutine get_destruction_rates
+
     subroutine get_species_viscosities(temperature, viscosities)
 
         GPU_ROUTINE(get_species_viscosities)

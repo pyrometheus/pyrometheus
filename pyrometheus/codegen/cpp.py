@@ -467,6 +467,63 @@ struct ${name}
         return omega;
     }
 
+    static ReactionsT get_fwd_rates_of_progress(
+        ContainerT temperature, SpeciesT const &concentrations)
+    {
+        ReactionsT k_fwd = get_fwd_rate_coefficients(temperature, concentrations);
+        ReactionsT r_fwd = {
+        %for i in range(sol.n_reactions):
+        ${cgm(ce.fwd_rate_of_progress_expr(sol, i, Variable("concentrations"),
+            Variable("k_fwd")))},
+        %endfor
+        };
+        return r_fwd;
+    }
+
+    static ReactionsT get_rev_rates_of_progress(
+        ContainerT temperature, SpeciesT const &concentrations)
+    {
+        ReactionsT k_fwd = get_fwd_rate_coefficients(temperature, concentrations);
+        ReactionsT log_k_eq = get_equilibrium_constants(temperature);
+        ReactionsT r_rev = {
+        %for i in range(sol.n_reactions):
+        ${cgm(ce.rev_rate_of_progress_expr(sol, i, Variable("concentrations"),
+            Variable("k_fwd"), Variable("log_k_eq")))},
+        %endfor
+        };
+        return r_rev;
+    }
+
+    static SpeciesT get_creation_rates(
+        ContainerT rho, ContainerT temperature, SpeciesT const &mass_fractions)
+    {
+        SpeciesT concentrations = get_concentrations(rho, mass_fractions);
+        ReactionsT r_fwd = get_fwd_rates_of_progress(temperature, concentrations);
+        ReactionsT r_rev = get_rev_rates_of_progress(temperature, concentrations);
+        SpeciesT cdot = {
+        %for sp in sol.species():
+        ${cgm(ce.creation_rate_expr(sol, sp.name,
+            Variable("r_fwd"), Variable("r_rev")))},
+        %endfor
+        };
+        return cdot;
+    }
+
+    static SpeciesT get_destruction_rates(
+        ContainerT rho, ContainerT temperature, SpeciesT const &mass_fractions)
+    {
+        SpeciesT concentrations = get_concentrations(rho, mass_fractions);
+        ReactionsT r_fwd = get_fwd_rates_of_progress(temperature, concentrations);
+        ReactionsT r_rev = get_rev_rates_of_progress(temperature, concentrations);
+        SpeciesT ddot = {
+        %for sp in sol.species():
+        ${cgm(ce.destruction_rate_expr(sol, sp.name,
+            Variable("r_fwd"), Variable("r_rev")))},
+        %endfor
+        };
+        return ddot;
+    }
+
     static SpeciesT get_species_viscosities(ContainerT temperature)
     {
         return SpeciesT{

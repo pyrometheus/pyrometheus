@@ -494,6 +494,52 @@ class Thermochemistry:
             %endfor
             ])
 
+    def get_fwd_rates_of_progress(self, temperature, concentrations):
+        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
+        return self._pyro_make_array([
+            %for i in range(sol.n_reactions):
+            ${cgm(ce.fwd_rate_of_progress_expr(sol, i,
+                Variable("concentrations"), Variable("k_fwd")))},
+            %endfor
+            ])
+
+    def get_rev_rates_of_progress(self, temperature, concentrations):
+        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
+        log_k_eq = self.get_equilibrium_constants(temperature)
+        return self._pyro_make_array([
+            %for i in range(sol.n_reactions):
+            ${cgm(ce.rev_rate_of_progress_expr(sol, i,
+                Variable("concentrations"),
+                Variable("k_fwd"), Variable("log_k_eq")))},
+            %endfor
+            ])
+
+    def get_creation_rates(self, rho, temperature, mass_fractions):
+        c = self.get_concentrations(rho, mass_fractions)
+        r_fwd = self.get_fwd_rates_of_progress(temperature, c)
+        r_rev = self.get_rev_rates_of_progress(temperature, c)
+        ones = self._pyro_zeros_like(r_fwd[0]) + 1.0
+        return self._pyro_make_array([
+            %for sp in sol.species():
+            ${cgm(ce.creation_rate_expr(sol, sp.name,
+                Variable("r_fwd"), Variable("r_rev")))} <%
+            %>* ones,
+            %endfor
+            ])
+
+    def get_destruction_rates(self, rho, temperature, mass_fractions):
+        c = self.get_concentrations(rho, mass_fractions)
+        r_fwd = self.get_fwd_rates_of_progress(temperature, c)
+        r_rev = self.get_rev_rates_of_progress(temperature, c)
+        ones = self._pyro_zeros_like(r_fwd[0]) + 1.0
+        return self._pyro_make_array([
+            %for sp in sol.species():
+            ${cgm(ce.destruction_rate_expr(sol, sp.name,
+                Variable("r_fwd"), Variable("r_rev")))} <%
+            %>* ones,
+            %endfor
+            ])
+
     def get_species_viscosities(self, temperature):
         return self._pyro_make_array([
             % for sp in range(sol.n_species):
