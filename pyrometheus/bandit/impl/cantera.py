@@ -11,6 +11,7 @@ from pyrometheus.bandit.chem_expr.kinetics import (
 from pyrometheus.bandit.chem_expr.thermo import (
     PolynomialParameters,
     SpeciesNASAThermo,
+    equilibrium_constant_expr,
     make_species_nasa_thermo,
 )
 
@@ -47,7 +48,7 @@ class CanteraMechanism(BaseMechanism):
         self.hardcode_params = hardcode_params
         self.namespace = Cantera(file_name)
         self.make_rates(hardcode_params)
-        # self.make_pyro(pyro_np)
+        self.make_thermo()
 
     @property
     def num_species(self):
@@ -247,4 +248,11 @@ class CanteraMechanism(BaseMechanism):
         )
 
     def make_equilibrium_constant(self, reaction_index):
-        raise NotImplementedError
+        return equilibrium_constant_expr(
+            reaction_index,
+            tuple((self.reactants(reaction_index),
+                   self.products(reaction_index))),
+            self.stoichiometric_coefficients(reaction_index),
+            self.namespace.one_atm,
+            self.namespace.gas_constant
+        )

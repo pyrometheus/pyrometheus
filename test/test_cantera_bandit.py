@@ -126,6 +126,37 @@ def test_unsupported_thermo_model_raises():
         mech.make_species_nasa_thermo(0)
 
 
+@pytest.mark.parametrize("mechname", all_mechanisms)
+def test_thermo_is_built_on_construction(mechname):
+    _, mech = make_mechanism(mechname)
+    assert len(mech.species_nasa_thermo_polynomials) == mech.num_species
+    assert len(mech.equil_constants) == mech.num_reactions
+
+
+@pytest.mark.parametrize("mechname", all_mechanisms)
+@pytest.mark.parametrize("temperature", [800.0, 1500.0, 2500.0])
+def test_equilibrium_constants_match_cantera(mechname, temperature):
+    sol, mech = make_mechanism(mechname)
+    sol.TP = temperature, ct.one_atm
+    context = {
+        "temperature": temperature,
+        "gibbs_rt": sol.standard_gibbs_RT,
+        "log": np.log,
+        "exp": np.exp,
+    }
+    reversible = [
+        reaction_index for reaction_index in range(mech.num_reactions)
+        if mech.is_reversible(reaction_index)
+    ]
+    actual = np.array([
+        evaluate(mech.equil_constants[reaction_index], context)
+        for reaction_index in reversible
+    ])
+    np.testing.assert_allclose(
+        actual, -np.log(sol.equilibrium_constants[reversible]), rtol=1e-11
+    )
+
+
 @pytest.mark.parametrize("mechname", elementary_mechanisms)
 def test_net_rates_of_progress_match_cantera(mechname):
     sol, mech = make_mechanism(mechname)
