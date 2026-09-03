@@ -18,14 +18,13 @@ dependencies (``pip install meson ninja``). Skipped automatically when
 any of these is unavailable.
 """
 
-import importlib
 import os
 import shutil
-import subprocess
-import sys
 
 import numpy as np
 import pytest
+
+from fortran_build import compile_fortran_module
 
 plato_available = (
     os.environ.get("PLATO_DB") is not None
@@ -41,10 +40,9 @@ try:
 except ImportError:
     plato_available = False
 
-fortran_toolchain_available = (
-    shutil.which("gfortran") is not None
-    and shutil.which("meson") is not None
-    and shutil.which("ninja") is not None
+fortran_toolchain_available = all(
+    shutil.which(tool) is not None
+    for tool in ("gfortran", "meson", "ninja")
 )
 
 requires_fortran_toolchain = pytest.mark.skipif(
@@ -91,38 +89,6 @@ def _stub_out_broken_vt_subroutine(source, num_species, num_temp):
     return "".join(lines[:start] + stub + lines[end + 1:])
 
 
-def _compile_fortran_module(tmp_path, source):
-    source_path = tmp_path / f"{MODULE_NAME}.f90"
-    f2cmap_path = tmp_path / ".f2py_f2cmap"
-    source_path.write_text(source)
-    f2cmap_path.write_text("dict(real=dict(sp='float', dp='double'))\n")
-
-    env = dict(os.environ)
-    env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env.get("PATH", "")
-
-    subprocess.run(
-        [
-            sys.executable, "-m", "numpy.f2py", "-c",
-            f"{MODULE_NAME}.f90", "-m", MODULE_NAME,
-            "--f2cmap", ".f2py_f2cmap",
-            "--f90flags=-cpp -DPYROMETHEUS_CALLER_INDEXING=1",
-        ],
-        cwd=tmp_path, env=env, check=True,
-        capture_output=True, text=True,
-    )
-
-    sys.path.insert(0, str(tmp_path))
-    try:
-        module = importlib.import_module(MODULE_NAME)
-    finally:
-        sys.path.remove(str(tmp_path))
-    # f2py nests everything under a submodule sharing the Fortran source's
-    # "module <name>" declaration -- see FortranBanditCodeGenerator.generate,
-    # which renders `module ${module_name}` using the *mechanism's* module
-    # name argument, not MODULE_NAME (the .f90 file's own name).
-    return module
-
-
 @pytest.fixture(scope="module")
 def jac_fort(tmp_path_factory):
     if not (plato_available and fortran_toolchain_available):
@@ -138,7 +104,7 @@ def jac_fort(tmp_path_factory):
             source, mech.num_species, mech.num_temp
         )
         tmp_path = tmp_path_factory.mktemp("fortran_jacobian")
-        module = _compile_fortran_module(tmp_path, source)
+        module = compile_fortran_module(tmp_path, source, MODULE_NAME)
     finally:
         mech.finalize()
 
