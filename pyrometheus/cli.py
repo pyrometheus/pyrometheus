@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-import pkg_resources
+from importlib.metadata import version as distribution_version
 
 import cantera as ct
 
@@ -16,7 +16,7 @@ def main():
         description="Code generation for combustion thermochemistry"
         "based on Cantera.",
     )
-    version = pkg_resources.get_distribution("pyrometheus").version
+    version = distribution_version("pyrometheus")
     parser.add_argument("--version",
                         action="version", version=f"%(prog)s {version}")
     parser.add_argument("-l", "--lang", "--language",
