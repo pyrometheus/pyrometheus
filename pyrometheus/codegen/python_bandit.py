@@ -280,7 +280,6 @@ class Thermochemistry:
 
     %endif
     def get_fwd_rate_coefficients(self, temperature, concentrations):
-        ones = self._pyro_ones_like(temperature)
         %if bandit_mech.has_falloff_reactions():
         falloff_rate_coefficients = self.get_falloff_rates(
             temperature, concentrations)
@@ -403,7 +402,7 @@ class PythonBanditCodeGenerator(CodeGenerator):
             temperature_leading_term=temperature_leading_term,
             cgm=CodeGenerationMapper(),
             Variable=p.Variable,
-        )
+        ).strip() + "\n"
 
     @staticmethod
     def compile_class(name: str, source: str):
