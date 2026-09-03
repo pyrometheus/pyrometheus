@@ -6,6 +6,8 @@ from pymbolic.primitives import Variable
 from pyrometheus.bandit.chem_expr.kinetics import (
     make_arrhenius,
     reaction_progress_rate_expr,
+    make_falloff_rate_coefficient,
+    make_falloff_reaction,
     species_production_rate_expr,
     third_body_concentration_expr
 )
@@ -187,37 +189,77 @@ class CanteraMechanism(BaseMechanism):
             float(third_body.default_efficiency)
         )
 
+    def _arrhenius_params(self, rate) -> Dict[str, float]:
+        return {
+            "a": np.log(rate.pre_exponential_factor),
+            "b": rate.temperature_exponent,
+            "t_a": rate.activation_energy / self.namespace.gas_constant
+        }
+
+    def falloff_reaction_indices(self) -> List[int]:
+        return [
+            reaction_index for reaction_index in range(self.num_reactions)
+            if self.reaction(reaction_index).reaction_type.startswith(
+                "falloff"
+            )
+        ]
+
     def make_rate_coefficient(self, reaction_index, hardcode_params):
         reaction = self.reaction(reaction_index)
-        rate = reaction.rate
-        if isinstance(rate, ct.reaction.ArrheniusRate):
-            if hardcode_params:
-                params = {
-                    "a": np.log(rate.pre_exponential_factor),
-                    "b": rate.temperature_exponent,
-                    "t_a": rate.activation_energy / self.namespace.gas_constant
-                }
-                rate_coeff = make_arrhenius(
-                    reaction_index=reaction_index, params=params
-                )
-            else:
-                params = np.array([
-                    np.log(rate.pre_exponential_factor),
-                    rate.temperature_exponent,
-                    rate.activation_energy / self.namespace.gas_constant
-                ])
-                rate_coeff = make_arrhenius(reaction_index=reaction_index)
-            # Cantera 3 keeps the third-body factor out of the rate
-            # constant; folding it in here lets the generated code treat
-            # every reaction's coefficient uniformly.
-            if reaction.third_body is not None:
-                rate_coeff.expr = (
-                    rate_coeff.expr
-                    * self._third_body_concentration(reaction)
-                )
-            return rate_coeff, params
+        reaction_type = reaction.reaction_type
+        if reaction_type.startswith("falloff"):
+            return make_falloff_rate_coefficient(
+                reaction_index, self.falloff_index(reaction_index)
+            ), None
+        if reaction_type not in ("Arrhenius", "three-body-Arrhenius"):
+            raise NotImplementedError(
+                f"unsupported reaction type '{reaction_type}' in reaction "
+                f"{reaction_index}"
+            )
+
+        params = self._arrhenius_params(reaction.rate)
+        if hardcode_params:
+            rate_coeff = make_arrhenius(
+                reaction_index=reaction_index, params=params
+            )
         else:
-            return 0, 0
+            params = np.array([params["a"], params["b"], params["t_a"]])
+            rate_coeff = make_arrhenius(reaction_index=reaction_index)
+        # Cantera 3 keeps the third-body factor out of the rate
+        # constant; folding it in here lets the generated code treat
+        # every reaction's coefficient uniformly.
+        if reaction.third_body is not None:
+            rate_coeff.expr = (
+                rate_coeff.expr
+                * self._third_body_concentration(reaction)
+            )
+        return rate_coeff, params
+
+    def make_falloff_reaction(self, reaction_index, falloff_index,
+                              hardcode_params):
+        if not hardcode_params:
+            raise NotImplementedError(
+                "pressure-dependent reactions support only hardcoded "
+                "rate parameters"
+            )
+        reaction = self.reaction(reaction_index)
+        third_body = reaction.third_body
+        # Cantera reports no Troe coefficients for Lindemann reactions.
+        troe_parameters = list(reaction.rate.falloff_coeffs) or None
+        return make_falloff_reaction(
+            reaction_index=reaction_index,
+            falloff_index=falloff_index,
+            num_species=self.num_species,
+            high_rate_params=self._arrhenius_params(reaction.rate.high_rate),
+            low_rate_params=self._arrhenius_params(reaction.rate.low_rate),
+            third_body_efficiencies={
+                self.species_index(species_name): float(efficiency)
+                for species_name, efficiency
+                in third_body.efficiencies.items()
+            },
+            default_efficiency=float(third_body.default_efficiency),
+            troe_parameters=troe_parameters
+        )
 
     def make_mass_action_rate(self, reaction_index):
         reac_indices = self.reactants(reaction_index)

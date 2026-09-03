@@ -3,7 +3,8 @@ import numpy as np
 import pymbolic.primitives as p
 from dataclasses import field
 from typing import List, Union, Tuple, ForwardRef
-from pyrometheus.bandit.chem_expr.kinetics import RateCoefficient
+from pyrometheus.bandit.chem_expr.kinetics import (FalloffReaction,
+                                                   RateCoefficient)
 from pyrometheus.bandit.chem_expr.thermo import (SpeciesNASAThermo,
                                                  SpeciesVibrationalThermo)
 
@@ -31,6 +32,9 @@ class BaseMechanism:
     pyro_code: str = None
     pyro_engine: ForwardRef('Thermochemistry') = None  # noqa: F821
     rate_coeffs: np.ndarray = np.empty(shape=(0,), dtype=RateCoefficient)
+    falloff_reactions: np.ndarray = np.empty(
+        shape=(0,), dtype=FalloffReaction
+    )
     equil_constants: np.ndarray = np.empty(shape=(0,), dtype=p.ExpressionNode)
     mass_action_rates: np.ndarray = np.empty(
         shape=(0,), dtype=p.ExpressionNode
@@ -149,6 +153,31 @@ class BaseMechanism:
         """
         raise NotImplementedError
 
+    def falloff_reaction_indices(self):
+        """:returns: The indices of the reactions whose rate
+        coefficients are pressure-dependent, in ascending order.
+        Mechanisms without falloff inherit the empty default.
+        """
+        return []
+
+    def has_falloff_reactions(self) -> bool:
+        return bool(self.falloff_reactions.size)
+
+    def falloff_index(self, reaction_index: int) -> int:
+        """:returns: The slot the reaction with index *reaction_index*
+        occupies in the staged falloff arrays.
+        """
+        return self.falloff_reaction_indices().index(reaction_index)
+
+    def make_falloff_reaction(self,
+                              reaction_index,
+                              falloff_index,
+                              hardcode_params) -> FalloffReaction:
+        """:return: The staged pieces of a pressure-dependent rate
+        coefficient as a :class:`chem_expr.kinetics.FalloffReaction`.
+        """
+        raise NotImplementedError
+
     def make_rate_coefficient(self,
                               reaction_index,
                               hardcode_params) -> RateCoefficient:
@@ -264,11 +293,29 @@ class BaseMechanism:
         else:
             return 0
 
+    def make_falloff_rates(self, hardcode_params=True):
+        """Loop over pressure-dependent reactions to stage their
+        limiting rate coefficients and blending functions by invoking
+        :class:`BaseMechanism.make_falloff_reaction`.
+        """
+        assert not self.falloff_reactions.size
+        for falloff_index, reaction_index in enumerate(
+                self.falloff_reaction_indices()):
+            self.falloff_reactions = np.append(
+                self.falloff_reactions,
+                self.make_falloff_reaction(
+                    reaction_index, falloff_index, hardcode_params
+                )
+            )
+
     def make_rates(self, hardcode_params=True):
         """Loop over reactions to create their corresponding mass
         action rate expression by invoking
         :class:`BaseMechanism.make_mass_action_rate`.
         """
+        # Staged first: a pressure-dependent reaction's coefficient
+        # refers to its falloff slot, which must already be assigned.
+        self.make_falloff_rates(hardcode_params)
         assert not self.rate_coeffs.size
         assert not self.mass_action_rates.size
         for irxn in range(self.num_reactions):
@@ -394,8 +441,13 @@ class BaseMechanism:
             gibbs_rt[i]: self.species_nasa_thermo_polynomials[i].gibbs_poly.expr
             for i in range(self.num_species)
         }
+        # Pressure-dependent coefficients are themselves staged, so
+        # they must be fully resolved before standing in for k_fwd --
+        # substitute() is a single pass and would otherwise leave the
+        # falloff placeholders dangling in the differentiated graph.
+        falloff_subst = self._falloff_substitution_map()
         rate_subst = {
-            k_fwd[j]: self.rate_coeffs[j].expr
+            k_fwd[j]: substitute(self.rate_coeffs[j].expr, falloff_subst)
             for j in range(self.num_reactions)
         }
         rate_subst.update({
@@ -414,6 +466,42 @@ class BaseMechanism:
             substitute(self.species_prod_rates[i], r_net_subst)
             for i in range(self.num_species)
         ]
+
+    def _falloff_substitution_map(self):
+        """Resolve the staged falloff placeholders into expressions in
+        terms of ``temperature`` and ``concentrations`` alone.
+
+        The levels below are ordered by dependency and resolved
+        bottom-up, each against everything already in the map: pymbolic
+        substitution is a single pass, so a placeholder introduced by a
+        replacement is never itself replaced. Reordering this list
+        silently leaves placeholders behind rather than raising.
+
+        :returns: A substitution map, empty for mechanisms with no
+            pressure-dependent reactions.
+        """
+        from pymbolic import substitute
+        from pyrometheus.bandit.chem_expr.kinetics import (
+            k_high, k_low, reduced_pressure, falloff_center,
+            falloff_factor, falloff_function, falloff_rate_coefficients
+        )
+
+        staged_levels = [
+            (k_high, "high_rate_expr"),
+            (k_low, "low_rate_expr"),
+            (falloff_center, "falloff_center"),
+            (reduced_pressure, "reduced_pressure"),
+            (falloff_factor, "falloff_factor"),
+            (falloff_function, "falloff_function"),
+            (falloff_rate_coefficients, "rate_coefficient"),
+        ]
+        falloff_subst = {}
+        for placeholder, level in staged_levels:
+            for falloff in self.falloff_reactions:
+                falloff_subst[placeholder[falloff.falloff_index]] = substitute(
+                    getattr(falloff, level), falloff_subst
+                )
+        return falloff_subst
 
     def _species_production_rate_jacobian_wrt_vars(self):
         """:returns: The ordered list of state-variable leaves the

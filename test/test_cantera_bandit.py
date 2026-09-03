@@ -8,8 +8,9 @@ import pathlib
 
 import cantera as ct
 import numpy as np
+import pymbolic.primitives as p
 import pytest
-from pymbolic import evaluate
+from pymbolic import evaluate, substitute
 
 from pyrometheus.bandit.chem_expr.kinetics import third_body_concentration_expr
 from pyrometheus.bandit.impl.cantera import CanteraMechanism
@@ -204,6 +205,179 @@ def test_three_body_rate_coefficients_match_cantera(mechname):
         for reaction_index in three_body
     ]
     np.testing.assert_allclose(actual, expected, rtol=1e-12)
+
+
+# Placeholders that stand in for a staged intermediate array. None may
+# survive into the composed graph the Jacobian is differentiated from.
+staged_placeholder_names = {
+    "concentrations", "k_fwd", "log_k_eq", "gibbs_rt", "r_net",
+    "k_high", "k_low", "reduced_pressure", "falloff_center",
+    "falloff_factor", "falloff_function", "falloff_rate_coefficients",
+}
+composed_graph_names = {
+    "density", "temperature", "mass_fractions", "exp", "log", "sqrt",
+}
+
+
+def expression_dependencies(expr):
+    from pymbolic.mapper.dependency import DependencyMapper
+    if not isinstance(expr, p.ExpressionNode):
+        return set()
+    return {
+        variable.name for variable in DependencyMapper(
+            include_subscripts=False, include_calls=False
+        )(expr)
+    }
+
+
+def evaluate_composed(composed, density, temperature, mass_fractions):
+    context = {
+        "density": density,
+        "temperature": temperature,
+        "mass_fractions": mass_fractions,
+        "exp": np.exp,
+        "log": np.log,
+        "sqrt": np.sqrt,
+    }
+    return np.array([
+        0.0 if not isinstance(expr, p.ExpressionNode)
+        else evaluate(expr, context)
+        for expr in composed
+    ])
+
+
+@pytest.mark.parametrize("mechname", ["sandiego", "hong", "uconn32"])
+def test_falloff_rate_coefficients_match_cantera(mechname):
+    sol, mech = make_mechanism(mechname)
+    sol.TPY = 1400.0, 5 * ct.one_atm, np.full(sol.n_species, 1 / sol.n_species)
+    context = {
+        "temperature": sol.T,
+        "concentrations": sol.concentrations,
+        "exp": np.exp,
+        "log": np.log,
+    }
+    falloff_subst = mech._falloff_substitution_map()
+    indices = mech.falloff_reaction_indices()
+    assert indices
+    actual = [
+        evaluate(
+            substitute(mech.rate_coeffs[reaction_index].expr, falloff_subst),
+            context
+        )
+        for reaction_index in indices
+    ]
+    np.testing.assert_allclose(
+        actual, sol.forward_rate_constants[indices], rtol=1e-11
+    )
+
+
+@pytest.mark.parametrize("mechname", all_mechanisms)
+@pytest.mark.parametrize("pressure_atm", [0.1, 1.0, 50.0])
+def test_composed_production_rates_match_cantera(mechname, pressure_atm):
+    sol, mech = make_mechanism(mechname)
+    sol.TPY = (
+        1400.0, pressure_atm * ct.one_atm,
+        np.full(sol.n_species, 1 / sol.n_species)
+    )
+    actual = evaluate_composed(
+        mech._compose_species_production_rate_graph(),
+        sol.density_mass, sol.T, sol.Y
+    )
+    np.testing.assert_allclose(
+        actual, sol.net_production_rates, rtol=1e-9,
+        atol=1e-9 * np.abs(sol.net_production_rates).max()
+    )
+
+
+@pytest.mark.parametrize("mechname", ["sandiego", "uconn32"])
+def test_composed_graph_resolves_every_staged_placeholder(mechname):
+    _, mech = make_mechanism(mechname)
+    assert mech.has_falloff_reactions()
+    for expr in mech._compose_species_production_rate_graph():
+        names = expression_dependencies(expr)
+        assert not names & staged_placeholder_names
+        assert names <= composed_graph_names
+
+
+def test_jacobian_resolves_every_staged_placeholder():
+    _, mech = make_mechanism("sandiego")
+    mech.make_species_production_rate_jacobian()
+    for row in mech.species_production_rate_jacobian_exprs:
+        for entry in row:
+            assert not (
+                expression_dependencies(entry) & staged_placeholder_names
+            )
+
+
+def test_jacobian_matches_finite_difference():
+    sol, mech = make_mechanism("sandiego")
+    sol.TPY = 1400.0, 5 * ct.one_atm, np.full(sol.n_species, 1 / sol.n_species)
+    density, temperature, mass_fractions = sol.density_mass, sol.T, sol.Y
+
+    mech.make_species_production_rate_jacobian()
+    composed = mech._compose_species_production_rate_graph()
+    jacobian = np.array([
+        evaluate_composed(row, density, temperature, mass_fractions)
+        for row in mech.species_production_rate_jacobian_exprs
+    ])
+    assert jacobian.shape == (mech.num_species, 2 + mech.num_species)
+
+    def production_rates(density, temperature, mass_fractions):
+        return evaluate_composed(
+            composed, density, temperature, mass_fractions
+        )
+
+    def central_difference(perturb, step):
+        return (production_rates(*perturb(step))
+                - production_rates(*perturb(-step))) / (2 * step)
+
+    columns = [
+        central_difference(
+            lambda h: (density + h, temperature, mass_fractions),
+            1e-6 * density
+        ),
+        central_difference(
+            lambda h: (density, temperature + h, mass_fractions),
+            1e-4 * temperature
+        ),
+    ]
+    for species_index in range(mech.num_species):
+        def perturb(step, species_index=species_index):
+            perturbed = mass_fractions.copy()
+            perturbed[species_index] += step
+            return density, temperature, perturbed
+        columns.append(central_difference(perturb, 1e-7))
+
+    scale = np.abs(jacobian).max()
+    for column_index, expected in enumerate(columns):
+        np.testing.assert_allclose(
+            jacobian[:, column_index], expected,
+            rtol=2e-3, atol=1e-6 * scale
+        )
+
+
+def render_sources(mechname, mech):
+    from pyrometheus.codegen.fortran_bandit import FortranBanditCodeGenerator
+    from pyrometheus.codegen.python_bandit import PythonBanditCodeGenerator
+    return (
+        PythonBanditCodeGenerator.generate("Thermochemistry", mech),
+        FortranBanditCodeGenerator.generate(mechname, mech),
+    )
+
+
+@pytest.mark.parametrize("mechname", elementary_mechanisms)
+def test_falloff_free_mechanisms_render_no_falloff_block(mechname):
+    _, mech = make_mechanism(mechname)
+    assert not mech.has_falloff_reactions()
+    for source in render_sources(mechname, mech):
+        assert "get_falloff_rates" not in source
+
+
+@pytest.mark.parametrize("mechname", ["sandiego", "uconn32"])
+def test_falloff_mechanisms_render_falloff_block(mechname):
+    _, mech = make_mechanism(mechname)
+    for source in render_sources(mechname, mech):
+        assert "get_falloff_rates" in source
 
 
 @pytest.mark.parametrize("mechname", elementary_mechanisms)

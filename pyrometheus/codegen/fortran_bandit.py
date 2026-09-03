@@ -643,6 +643,49 @@ contains
     end subroutine get_temperature
 
     %endif
+    %if bandit_mech.has_falloff_reactions():
+    subroutine get_falloff_rates(&
+        & temperature, concentrations, falloff_rate_coefficients)
+
+        GPU_ROUTINE(get_falloff_rates)
+
+        ${temperature_decl(real_type, bandit_mech)}
+        ${real_type}, intent(in), dimension(${bandit_mech.num_species}) :: &
+            concentrations
+        ${real_type}, intent(out), &
+            dimension(${len(bandit_mech.falloff_reactions)}) :: &
+            falloff_rate_coefficients
+
+        ${real_type}, dimension(${len(bandit_mech.falloff_reactions)}) :: &
+            k_high, k_low, falloff_center
+        ${real_type}, dimension(${len(bandit_mech.falloff_reactions)}) :: &
+            reduced_pressure, falloff_factor, falloff_function
+
+        %for i, falloff in enumerate(bandit_mech.falloff_reactions):
+        k_high(${i+1}) = ${cgm(falloff.high_rate_expr)}
+        %endfor
+        %for i, falloff in enumerate(bandit_mech.falloff_reactions):
+        k_low(${i+1}) = ${cgm(falloff.low_rate_expr)}
+        %endfor
+        %for i, falloff in enumerate(bandit_mech.falloff_reactions):
+        falloff_center(${i+1}) = ${cgm(falloff.falloff_center)}
+        %endfor
+        %for i, falloff in enumerate(bandit_mech.falloff_reactions):
+        reduced_pressure(${i+1}) = ${cgm(falloff.reduced_pressure)}
+        %endfor
+        %for i, falloff in enumerate(bandit_mech.falloff_reactions):
+        falloff_factor(${i+1}) = ${cgm(falloff.falloff_factor)}
+        %endfor
+        %for i, falloff in enumerate(bandit_mech.falloff_reactions):
+        falloff_function(${i+1}) = ${cgm(falloff.falloff_function)}
+        %endfor
+        %for i, falloff in enumerate(bandit_mech.falloff_reactions):
+        falloff_rate_coefficients(${i+1}) = ${cgm(falloff.rate_coefficient)}
+        %endfor
+
+    end subroutine get_falloff_rates
+
+    %endif
     subroutine get_fwd_rate_coefficients(temperature, concentrations, k_fwd)
 
         GPU_ROUTINE(get_fwd_rate_coefficients)
@@ -651,6 +694,14 @@ contains
         ${real_type}, intent(in), dimension(${bandit_mech.num_species}) :: &
             concentrations
         ${real_type}, intent(out), dimension(${bandit_mech.num_reactions}) :: k_fwd
+        %if bandit_mech.has_falloff_reactions():
+
+        ${real_type}, dimension(${len(bandit_mech.falloff_reactions)}) :: &
+            falloff_rate_coefficients
+
+        call get_falloff_rates(&
+            & temperature, concentrations, falloff_rate_coefficients)
+        %endif
 
         %for i, rate_coeff in enumerate(bandit_mech.rate_coeffs):
         k_fwd(${i+1}) = ${cgm(rate_coeff.expr)}

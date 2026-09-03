@@ -159,8 +159,52 @@ class Thermochemistry:
             %endfor
         ])
 
+    %if bandit_mech.has_falloff_reactions():
+    def get_falloff_rates(self, temperature, concentrations):
+        ones = self._pyro_ones_like(temperature)
+        k_high = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.high_rate_expr)},
+            %endfor
+        ])
+        k_low = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.low_rate_expr)},
+            %endfor
+        ])
+        falloff_center = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.falloff_center)} * ones,
+            %endfor
+        ])
+        reduced_pressure = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.reduced_pressure)},
+            %endfor
+        ])
+        falloff_factor = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.falloff_factor)} * ones,
+            %endfor
+        ])
+        falloff_function = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.falloff_function)} * ones,
+            %endfor
+        ])
+        return self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.rate_coefficient)},
+            %endfor
+        ])
+
+    %endif
     def get_fwd_rate_coefficients(self, temperature, concentrations):
         ones = self._pyro_ones_like(temperature)
+        %if bandit_mech.has_falloff_reactions():
+        falloff_rate_coefficients = self.get_falloff_rates(
+            temperature, concentrations)
+        %endif
         return self._pyro_make_array([
             %for rate_coeff in bandit_mech.rate_coeffs:
             ${cgm(rate_coeff.expr)},

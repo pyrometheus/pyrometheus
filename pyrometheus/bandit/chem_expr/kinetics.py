@@ -31,6 +31,19 @@ r_net = p.Variable("r_net")
 conc = p.Variable("concentrations")
 _temp = p.Variable("temperature")
 
+k_high = p.Variable("k_high")
+k_low = p.Variable("k_low")
+reduced_pressure = p.Variable("reduced_pressure")
+falloff_center = p.Variable("falloff_center")
+falloff_factor = p.Variable("falloff_factor")
+falloff_function = p.Variable("falloff_function")
+falloff_rate_coefficients = p.Variable("falloff_rate_coefficients")
+
+# Falloff blending is conventionally written in base-ten logarithms, but
+# only exp/log/sqrt are differentiable by chem_expr.jacobian, so the
+# conversion factor is carried explicitly instead.
+_log_of_ten = float(np.log(10))
+
 # }}}
 
 
@@ -121,6 +134,173 @@ def third_body_concentration_expr(
             else default_efficiency * default_sum
         )
     return np.sum(weighted_terms)
+
+# }}}
+
+
+# {{{ Pressure-dependent (falloff) rate coefficients
+
+@dataclass
+class FalloffReaction:
+    """The staged pieces of one pressure-dependent rate coefficient.
+    Each field is an expression written in terms of the staged arrays
+    resolved before it, so that generated code can evaluate them in
+    field order without recomputing shared subexpressions.
+    """
+    reaction_index: int
+    falloff_index: int
+    high_rate_expr: p.ExpressionNode
+    low_rate_expr: p.ExpressionNode
+    falloff_center: p.ExpressionNode
+    reduced_pressure: p.ExpressionNode
+    falloff_factor: p.ExpressionNode
+    falloff_function: p.ExpressionNode
+    rate_coefficient: p.ExpressionNode
+
+
+@dataclass
+class FalloffRateCoefficient(RateCoefficient):
+    """Stands in for a pressure-dependent coefficient in the forward
+    rate array, deferring to the separately staged falloff results.
+    """
+    falloff_index: int = 0
+
+    def __post_init__(self):
+        self.expr = falloff_rate_coefficients[self.falloff_index]
+
+
+def reduced_pressure_expr(
+        falloff_index: int,
+        third_body_concentration: p.ExpressionNode) -> p.ExpressionNode:
+    """Return the reduced pressure, the ratio of the low- to the
+    high-pressure rate scaled by the third-body concentration.
+    """
+    return (
+        third_body_concentration
+        * k_low[falloff_index] / k_high[falloff_index]
+    )
+
+
+def troe_falloff_center_expr(
+        falloff_index: int,
+        troe_parameters: Optional[List[float]],
+        temperature: p.ExpressionNode) -> p.ExpressionNode:
+    """Return the base-ten logarithm of the Troe falloff center, or 0
+    for Lindemann reactions, whose blending function is unity.
+
+    :arg troe_parameters: The Troe coefficients, ordered as Cantera
+        reports them: the weight, then the third, first and (optionally)
+        second characteristic temperatures.
+    """
+    if troe_parameters is None:
+        return 0
+
+    weight = troe_parameters[0]
+    center = (
+        (1 - weight) * exp(-temperature / troe_parameters[1])
+        + weight * exp(-temperature / troe_parameters[2])
+    )
+    if len(troe_parameters) == 4:
+        center = center + exp(-troe_parameters[3] / temperature)
+    return log(center) / _log_of_ten
+
+
+def troe_falloff_factor_expr(
+        falloff_index: int,
+        troe_parameters: Optional[List[float]]) -> p.ExpressionNode:
+    """Return the Troe broadening factor, or 0 for Lindemann reactions.
+    """
+    if troe_parameters is None:
+        return 0
+
+    log_reduced_pressure = (
+        log(reduced_pressure[falloff_index]) / _log_of_ten
+    )
+    shift = -0.4 - 0.67 * falloff_center[falloff_index]
+    slope = 0.75 - 1.27 * falloff_center[falloff_index]
+    return p.If(
+        p.Comparison(reduced_pressure[falloff_index], ">", 0),
+        (log_reduced_pressure + shift)
+        / (slope - 0.14 * (log_reduced_pressure + shift)),
+        -1 / 0.14
+    )
+
+
+def falloff_function_expr(
+        falloff_index: int,
+        troe_parameters: Optional[List[float]]) -> p.ExpressionNode:
+    """Return the falloff blending function, unity for Lindemann.
+    """
+    if troe_parameters is None:
+        return 1
+
+    return exp(
+        _log_of_ten * falloff_center[falloff_index]
+        / (1 + falloff_factor[falloff_index] ** 2)
+    )
+
+
+def falloff_rate_coefficient_expr(falloff_index: int) -> p.ExpressionNode:
+    """Return the pressure-dependent forward rate coefficient, blending
+    the high-pressure limit down by the reduced pressure.
+    """
+    return (
+        k_high[falloff_index] * falloff_function[falloff_index]
+        * reduced_pressure[falloff_index]
+        / (1 + reduced_pressure[falloff_index])
+    )
+
+
+def make_falloff_reaction(
+        reaction_index: int,
+        falloff_index: int,
+        num_species: int,
+        high_rate_params: dict,
+        low_rate_params: dict,
+        third_body_efficiencies: Dict[int, float],
+        default_efficiency: float = 1.0,
+        troe_parameters: Optional[List[float]] = None,
+        temperature: Optional[p.Variable] = None) -> FalloffReaction:
+    """Assemble the staged pieces of one pressure-dependent reaction.
+    Lindemann reactions are those with no *troe_parameters*.
+    """
+    temperature_var = temperature if temperature else _temp
+    third_body_concentration = third_body_concentration_expr(
+        num_species, third_body_efficiencies, default_efficiency
+    )
+    return FalloffReaction(
+        reaction_index=reaction_index,
+        falloff_index=falloff_index,
+        high_rate_expr=make_arrhenius(
+            reaction_index=falloff_index, params=high_rate_params,
+            temperature=temperature
+        ).expr,
+        low_rate_expr=make_arrhenius(
+            reaction_index=falloff_index, params=low_rate_params,
+            temperature=temperature
+        ).expr,
+        falloff_center=troe_falloff_center_expr(
+            falloff_index, troe_parameters, temperature_var
+        ),
+        reduced_pressure=reduced_pressure_expr(
+            falloff_index, third_body_concentration
+        ),
+        falloff_factor=troe_falloff_factor_expr(
+            falloff_index, troe_parameters
+        ),
+        falloff_function=falloff_function_expr(
+            falloff_index, troe_parameters
+        ),
+        rate_coefficient=falloff_rate_coefficient_expr(falloff_index),
+    )
+
+
+def make_falloff_rate_coefficient(
+        reaction_index: int,
+        falloff_index: int) -> FalloffRateCoefficient:
+    return FalloffRateCoefficient(
+        reaction_index=reaction_index, falloff_index=falloff_index
+    )
 
 # }}}
 
