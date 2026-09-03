@@ -2,7 +2,7 @@ import numpy as np
 import pymbolic.primitives as p
 from pymbolic import substitute
 from dataclasses import dataclass, field
-from typing import Union, Optional, List, Tuple
+from typing import Dict, Union, Optional, List, Tuple
 
 
 # {{{
@@ -90,6 +90,37 @@ def make_arrhenius(reaction_index: int,
         pass
 
     return coeff
+
+# }}}
+
+
+# {{{ Third bodies
+
+def third_body_concentration_expr(
+        num_species: int,
+        efficiencies: Dict[int, float],
+        default_efficiency: float = 1.0) -> p.ExpressionNode:
+    """Return the efficiency-weighted sum of species concentrations that
+    a third body contributes to a rate coefficient.
+
+    :arg efficiencies: Collision efficiencies keyed by species index.
+        Every species absent from it takes *default_efficiency*.
+    """
+    weighted_terms = [
+        efficiency * conc[species_index]
+        for species_index, efficiency in efficiencies.items()
+    ]
+    default_terms = [
+        conc[species_index] for species_index in range(num_species)
+        if species_index not in efficiencies
+    ]
+    if default_terms:
+        default_sum = np.sum(default_terms)
+        weighted_terms.append(
+            default_sum if default_efficiency == 1
+            else default_efficiency * default_sum
+        )
+    return np.sum(weighted_terms)
 
 # }}}
 

@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from pymbolic import evaluate
 
+from pyrometheus.bandit.chem_expr.kinetics import third_body_concentration_expr
 from pyrometheus.bandit.impl.cantera import CanteraMechanism
 
 
@@ -155,6 +156,54 @@ def test_equilibrium_constants_match_cantera(mechname, temperature):
     np.testing.assert_allclose(
         actual, -np.log(sol.equilibrium_constants[reversible]), rtol=1e-11
     )
+
+
+def test_third_body_concentration_applies_default_efficiency():
+    expr = third_body_concentration_expr(3, {1: 2.5}, 0.5)
+    value = evaluate(expr, {"concentrations": np.array([2.0, 4.0, 8.0])})
+    assert value == pytest.approx(0.5 * 2.0 + 2.5 * 4.0 + 0.5 * 8.0)
+
+
+def test_third_body_concentration_omits_unit_default_efficiency():
+    expr = third_body_concentration_expr(3, {1: 2.5})
+    assert "1.0*" not in str(expr)
+    value = evaluate(expr, {"concentrations": np.array([2.0, 4.0, 8.0])})
+    assert value == pytest.approx(2.0 + 2.5 * 4.0 + 8.0)
+
+
+@pytest.mark.parametrize("mechname", ["sandiego", "hong", "uconn32"])
+def test_three_body_rate_coefficients_match_cantera(mechname):
+    sol, mech = make_mechanism(mechname)
+    sol.TPY = 1400.0, ct.one_atm, np.full(sol.n_species, 1 / sol.n_species)
+    context = {
+        "temperature": sol.T,
+        "concentrations": sol.concentrations,
+        "exp": np.exp,
+        "log": np.log,
+    }
+    three_body = [
+        reaction_index for reaction_index in range(mech.num_reactions)
+        if sol.reaction(reaction_index).reaction_type
+        == "three-body-Arrhenius"
+    ]
+    assert three_body
+    # Cantera 3 carries the third-body factor in the rate of progress
+    # rather than the rate constant; bandit folds it into the constant.
+    expected = []
+    for reaction_index in three_body:
+        third_body = sol.reaction(reaction_index).third_body
+        expected.append(sol.forward_rate_constants[reaction_index] * sum(
+            third_body.efficiencies.get(
+                species_name, third_body.default_efficiency
+            ) * concentration
+            for species_name, concentration
+            in zip(sol.species_names, sol.concentrations)
+        ))
+    actual = [
+        evaluate(mech.rate_coeffs[reaction_index].expr, context)
+        for reaction_index in three_body
+    ]
+    np.testing.assert_allclose(actual, expected, rtol=1e-12)
 
 
 @pytest.mark.parametrize("mechname", elementary_mechanisms)

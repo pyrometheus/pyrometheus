@@ -6,7 +6,8 @@ from pymbolic.primitives import Variable
 from pyrometheus.bandit.chem_expr.kinetics import (
     make_arrhenius,
     reaction_progress_rate_expr,
-    species_production_rate_expr
+    species_production_rate_expr,
+    third_body_concentration_expr
 )
 from pyrometheus.bandit.chem_expr.thermo import (
     PolynomialParameters,
@@ -175,8 +176,20 @@ class CanteraMechanism(BaseMechanism):
             (fwd_coeff, rev_coeff)
         )
 
+    def _third_body_concentration(self, reaction):
+        third_body = reaction.third_body
+        efficiencies = {
+            self.species_index(species_name): float(efficiency)
+            for species_name, efficiency in third_body.efficiencies.items()
+        }
+        return third_body_concentration_expr(
+            self.num_species, efficiencies,
+            float(third_body.default_efficiency)
+        )
+
     def make_rate_coefficient(self, reaction_index, hardcode_params):
-        rate = self.reaction(reaction_index).rate
+        reaction = self.reaction(reaction_index)
+        rate = reaction.rate
         if isinstance(rate, ct.reaction.ArrheniusRate):
             if hardcode_params:
                 params = {
@@ -184,16 +197,25 @@ class CanteraMechanism(BaseMechanism):
                     "b": rate.temperature_exponent,
                     "t_a": rate.activation_energy / self.namespace.gas_constant
                 }
-                return make_arrhenius(
+                rate_coeff = make_arrhenius(
                     reaction_index=reaction_index, params=params
-                ), params
+                )
             else:
                 params = np.array([
                     np.log(rate.pre_exponential_factor),
                     rate.temperature_exponent,
                     rate.activation_energy / self.namespace.gas_constant
                 ])
-                return make_arrhenius(reaction_index=reaction_index), params
+                rate_coeff = make_arrhenius(reaction_index=reaction_index)
+            # Cantera 3 keeps the third-body factor out of the rate
+            # constant; folding it in here lets the generated code treat
+            # every reaction's coefficient uniformly.
+            if reaction.third_body is not None:
+                rate_coeff.expr = (
+                    rate_coeff.expr
+                    * self._third_body_concentration(reaction)
+                )
+            return rate_coeff, params
         else:
             return 0, 0
 
