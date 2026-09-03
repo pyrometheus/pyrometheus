@@ -547,19 +547,6 @@ contains
 
     end subroutine get_species_internal_energies_rt
 
-    subroutine get_species_entropies_r(temperature, s0_r)
-
-        GPU_ROUTINE(get_species_entropies_r)
-
-        ${temperature_decl(real_type, bandit_mech)}
-        ${real_type}, intent(out), dimension(${bandit_mech.num_species}) :: s0_r
-
-        %for i, sp_thermo in enumerate(bandit_mech.species_nasa_thermo_polynomials):
-        s0_r(${i+1}) = ${cgm(sp_thermo.entropy_poly.expr)}
-        %endfor
-
-    end subroutine get_species_entropies_r
-
     subroutine get_species_gibbs_rt(temperature, g0_rt)
 
         GPU_ROUTINE(get_species_gibbs_rt)
