@@ -61,6 +61,14 @@ def str_np(ary):
     return "np.array(%s)" % str_np_inner(ary)
 
 
+def temperature_leading_term(bandit_mech):
+    """Return the temperature that scales mixture-averaged enthalpy and
+    energy: the translational temperature for multi-temperature
+    mechanisms, or the single temperature otherwise.
+    """
+    return "temperature[0]" if bandit_mech.num_temp > 1 else "temperature"
+
+
 # }}}
 
 # {{{ Template
@@ -81,6 +89,9 @@ class Thermochemistry:
         self.gas_constant = ${bandit_mech.namespace.gas_constant}
         self.molecular_weights = ${str_np(bandit_mech.molecular_weights)}
         self.inv_molecular_weights = 1/self.molecular_weights
+        self.species_names = ${bandit_mech.species_names}
+        self.species_indices = ${dict([[bandit_mech.species_name(i), i]
+                                       for i in range(bandit_mech.num_species)])}
 
     def _pyro_zeros_like(self, argument):
         return 0 * argument
@@ -89,7 +100,27 @@ class Thermochemistry:
         return 0 * argument + 1.0
 
     def _pyro_make_array(self, res_list):
-        raise NotImplementedError
+        # Object arrays would break pyro_np.exp, so stay with a float
+        # array whenever every entry is a scalar. Assigning the list
+        # wholesale trips https://github.com/numpy/numpy/issues/16564
+        from numbers import Number
+        all_numbers = all(isinstance(entry, Number) for entry in res_list)
+        result = np.empty(
+            (len(res_list),), dtype=np.float64 if all_numbers else object
+        )
+        for index in range(len(res_list)):
+            result[index] = res_list[index]
+
+        return result
+
+    def _pyro_norm(self, argument, normord):
+        from numbers import Number
+        if isinstance(argument, Number):
+            return np.abs(argument)
+        return self.pyro_np.linalg.norm(argument, normord)
+
+    def get_species_index(self, species_name):
+        return self.species_indices[species_name]
 
     def get_mixture_molecular_weight(self, mass_fractions):
         return 1 / (
@@ -100,8 +131,7 @@ class Thermochemistry:
 
     def get_density(self, pressure, temperature, mass_fractions):
         w_mix = self.get_mixture_molecular_weight(mass_fractions)
-        rt = self.gas_constant * temperature / w_mix
-        return pressure * w_mix / rt
+        return pressure * w_mix / (self.gas_constant * temperature)
 
     def get_pressure(self, density, temperature, mass_fractions):
         w_mix = self.get_mixture_molecular_weight(mass_fractions)
@@ -137,6 +167,59 @@ class Thermochemistry:
         h_rt = self.get_species_enthalpies_rt(temperature)
         return h_rt - self._pyro_ones_like(h_rt)
 
+    def get_mass_average_property(self, mass_fractions, spec_property):
+        return (
+            %for i in range(bandit_mech.num_species):
+            + self.inv_molecular_weights[${i}] * mass_fractions[${i}]
+            * spec_property[${i}]
+            %endfor
+        )
+
+    def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
+        cp_r = self.get_species_specific_heats_cp_r(temperature)
+        return self.gas_constant * self.get_mass_average_property(
+            mass_fractions, cp_r)
+
+    def get_mixture_specific_heat_cv_mass(self, temperature, mass_fractions):
+        cv_r = self.get_species_specific_heats_cv_r(temperature)
+        return self.gas_constant * self.get_mass_average_property(
+            mass_fractions, cv_r)
+
+    def get_mixture_enthalpy_mass(self, temperature, mass_fractions):
+        h_rt = self.get_species_enthalpies_rt(temperature)
+        return self.gas_constant * ${temperature_leading_term(bandit_mech)} <%
+            %>* self.get_mass_average_property(mass_fractions, h_rt)
+
+    def get_mixture_internal_energy_mass(self, temperature, mass_fractions):
+        e_rt = self.get_species_internal_energies_rt(temperature)
+        return self.gas_constant * ${temperature_leading_term(bandit_mech)} <%
+            %>* self.get_mass_average_property(mass_fractions, e_rt)
+
+    %if bandit_mech.num_temp == 1:
+    def get_temperature(self, enthalpy_or_energy, t_guess, mass_fractions,
+                        do_energy=False):
+        if do_energy is False:
+            pv_fun = self.get_mixture_specific_heat_cp_mass
+            he_fun = self.get_mixture_enthalpy_mass
+        else:
+            pv_fun = self.get_mixture_specific_heat_cv_mass
+            he_fun = self.get_mixture_internal_energy_mass
+
+        num_iter = 500
+        tol = 1.0e-6
+        iter_temp = t_guess * self._pyro_ones_like(enthalpy_or_energy)
+
+        for _ in range(num_iter):
+            iter_rhs = enthalpy_or_energy - he_fun(iter_temp, mass_fractions)
+            iter_deriv = -pv_fun(iter_temp, mass_fractions)
+            dt = -iter_rhs / iter_deriv
+            iter_temp = iter_temp + dt
+            if self._pyro_norm(dt, np.inf) < tol:
+                return iter_temp
+
+        raise RuntimeError("Temperature iteration failed to converge")
+
+    %endif
     def get_species_gibbs_rt(self, temperature):
         return self._pyro_make_array([
             %for sp_thermo in bandit_mech.species_nasa_thermo_polynomials:
@@ -317,6 +400,7 @@ class PythonBanditCodeGenerator(CodeGenerator):
         return code_tpl.render(
             bandit_mech=bandit_mech,
             str_np=str_np,
+            temperature_leading_term=temperature_leading_term,
             cgm=CodeGenerationMapper(),
             Variable=p.Variable,
         )

@@ -356,6 +356,80 @@ def test_jacobian_matches_finite_difference():
         )
 
 
+def make_generated_gas(mech):
+    from pyrometheus.codegen.python_bandit import PythonBanditCodeGenerator
+    return PythonBanditCodeGenerator.get_thermochem_class(mech)(np)
+
+
+def equilibrated_state(sol, pressure_atm=5.0):
+    sol.TPY = (
+        1400.0, pressure_atm * ct.one_atm,
+        np.full(sol.n_species, 1 / sol.n_species)
+    )
+    return sol.density_mass, sol.T, sol.Y
+
+
+@pytest.mark.parametrize("mechname", all_mechanisms)
+def test_generated_state_conversions_match_cantera(mechname):
+    sol, mech = make_mechanism(mechname)
+    gas = make_generated_gas(mech)
+    density, temperature, mass_fractions = equilibrated_state(sol)
+    assert gas.get_density(
+        sol.P, temperature, mass_fractions) == pytest.approx(density, rel=1e-12)
+    assert gas.get_pressure(
+        density, temperature, mass_fractions) == pytest.approx(sol.P, rel=1e-12)
+
+
+@pytest.mark.parametrize("mechname", all_mechanisms)
+def test_generated_mixture_properties_match_cantera(mechname):
+    sol, mech = make_mechanism(mechname)
+    gas = make_generated_gas(mech)
+    _, temperature, mass_fractions = equilibrated_state(sol)
+    for method, expected in [
+        (gas.get_mixture_specific_heat_cp_mass, sol.cp_mass),
+        (gas.get_mixture_specific_heat_cv_mass, sol.cv_mass),
+        (gas.get_mixture_enthalpy_mass, sol.enthalpy_mass),
+        (gas.get_mixture_internal_energy_mass, sol.int_energy_mass),
+    ]:
+        assert method(temperature, mass_fractions) == pytest.approx(
+            expected, rel=1e-11
+        )
+
+
+@pytest.mark.parametrize("mechname", all_mechanisms)
+@pytest.mark.parametrize("do_energy", [False, True])
+def test_generated_temperature_inversion(mechname, do_energy):
+    sol, mech = make_mechanism(mechname)
+    gas = make_generated_gas(mech)
+    _, temperature, mass_fractions = equilibrated_state(sol)
+    target = sol.int_energy_mass if do_energy else sol.enthalpy_mass
+    assert gas.get_temperature(
+        target, 1000.0, mass_fractions, do_energy
+    ) == pytest.approx(temperature, rel=1e-8)
+
+
+@pytest.mark.parametrize("mechname", all_mechanisms)
+def test_generated_production_rates_match_cantera(mechname):
+    sol, mech = make_mechanism(mechname)
+    gas = make_generated_gas(mech)
+    density, temperature, mass_fractions = equilibrated_state(sol)
+    actual = gas.get_net_production_rates(
+        density, temperature, mass_fractions
+    )
+    np.testing.assert_allclose(
+        actual, sol.net_production_rates, rtol=1e-9,
+        atol=1e-9 * np.abs(sol.net_production_rates).max()
+    )
+
+
+def test_generated_species_lookup():
+    sol, mech = make_mechanism("sandiego")
+    gas = make_generated_gas(mech)
+    assert gas.species_names == list(sol.species_names)
+    for species_index, species_name in enumerate(sol.species_names):
+        assert gas.get_species_index(species_name) == species_index
+
+
 def render_sources(mechname, mech):
     from pyrometheus.codegen.fortran_bandit import FortranBanditCodeGenerator
     from pyrometheus.codegen.python_bandit import PythonBanditCodeGenerator
