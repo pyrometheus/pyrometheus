@@ -129,6 +129,15 @@ class BaseMechanism:
         """
         raise NotImplementedError
 
+    def reaction_orders(self, reaction_index: int):
+        """:returns: The concentration exponents of the forward rate of
+        the reaction with index *reaction_index*. Defaults to the
+        reactant stoichiometric coefficients; libraries that let a
+        mechanism declare orders independently of stoichiometry
+        override this.
+        """
+        return self.stoichiometric_coefficients(reaction_index)[0]
+
     def participation_set(self,
                           species_id: Union[int, str]) -> Tuple[List[int]]:
         """:return: A tuple of lists of indices for the reactions in

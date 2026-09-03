@@ -9,6 +9,16 @@ from pyrometheus.bandit.chem_expr.kinetics import (
 )
 
 
+def _integral_if_whole(coefficient: float) -> Union[int, float]:
+    """Cantera reports stoichiometric coefficients and reaction orders as
+    floats. Keep the whole-numbered ones as integers so that generated
+    exponents read ``**2`` rather than ``**2.0``.
+    """
+    if float(coefficient).is_integer():
+        return int(coefficient)
+    return float(coefficient)
+
+
 class Cantera(BaseNamespace):
 
     def __init__(self, file_name):
@@ -84,24 +94,39 @@ class CanteraMechanism(BaseMechanism):
     def stoichiometric_coefficient(self,
                                    reaction_index: int,
                                    species_index: int,
-                                   direction: str) -> int:
+                                   direction: str) -> Union[int, float]:
         species_name = self.species_name(species_index)
         reac_dict, prod_dict = self.reaction_stoichiometry(reaction_index)
         if direction == "fwd":
-            return int(reac_dict[species_name])
+            return _integral_if_whole(reac_dict[species_name])
         elif direction == "rev":
-            return int(prod_dict[species_name])
+            return _integral_if_whole(prod_dict[species_name])
         else:
             raise ValueError
 
     def stoichiometric_coefficients(
             self, reaction_index: int
-    ) -> Tuple[List[int], List[int]]:
+    ) -> Tuple[List[Union[int, float]], List[Union[int, float]]]:
         reac_dict, prod_dict = self.reaction_stoichiometry(reaction_index)
         return tuple((
-            list([int(v) for v in reac_dict.values()]),
-            list([int(v) for v in prod_dict.values()])
+            [_integral_if_whole(v) for v in reac_dict.values()],
+            [_integral_if_whole(v) for v in prod_dict.values()]
         ))
+
+    def reaction_orders(
+            self, reaction_index: int
+    ) -> List[Union[int, float]]:
+        """:returns: The concentration exponents of the forward rate,
+        one per reactant, in the order :meth:`reactants` returns them.
+        Cantera lists only the reactants whose order departs from their
+        stoichiometric coefficient, so the rest fall back to it.
+        """
+        reaction = self.reaction(reaction_index)
+        orders = reaction.orders
+        return [
+            _integral_if_whole(orders.get(species_name, coefficient))
+            for species_name, coefficient in reaction.reactants.items()
+        ]
 
     def participation_set(
             self, species_id: Union[int, str]
@@ -168,12 +193,15 @@ class CanteraMechanism(BaseMechanism):
     def make_mass_action_rate(self, reaction_index):
         reac_indices = self.reactants(reaction_index)
         prod_indices = self.products(reaction_index)
-        stoich_coeff = self.stoichiometric_coefficients(reaction_index)
+        # The forward rate follows the declared reaction orders, while
+        # the reverse rate follows product stoichiometry, since the
+        # equilibrium constant it is scaled by is thermodynamic.
+        _, prod_stoich = self.stoichiometric_coefficients(reaction_index)
         return reaction_progress_rate_expr(
             reaction_index,
-            self.reaction(reaction_index).reversible,
+            self.is_reversible(reaction_index),
             tuple((reac_indices, prod_indices)),
-            stoich_coeff
+            tuple((self.reaction_orders(reaction_index), prod_stoich))
         )
 
     def make_species_production_rate(self, species_index):
