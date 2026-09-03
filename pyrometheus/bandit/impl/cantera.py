@@ -2,10 +2,16 @@ import numpy as np
 import cantera as ct
 from typing import List, Union, Tuple, Dict
 from pyrometheus.bandit.general_thermochem import BaseNamespace, BaseMechanism
+from pymbolic.primitives import Variable
 from pyrometheus.bandit.chem_expr.kinetics import (
     make_arrhenius,
     reaction_progress_rate_expr,
     species_production_rate_expr
+)
+from pyrometheus.bandit.chem_expr.thermo import (
+    PolynomialParameters,
+    SpeciesNASAThermo,
+    make_species_nasa_thermo,
 )
 
 
@@ -212,6 +218,32 @@ class CanteraMechanism(BaseMechanism):
             part_sets[1],
             stoich_coeffs[0],
             stoich_coeffs[1]
+        )
+
+    def _nasa_polynomial_parameters(
+            self, species_index: int
+    ) -> PolynomialParameters:
+        thermo = self.species(species_index).thermo
+        if not isinstance(thermo, ct.NasaPoly2):
+            raise NotImplementedError(
+                f"unsupported thermodynamic model "
+                f"'{type(thermo).__name__}' for species "
+                f"'{self.species_name(species_index)}'"
+            )
+        # NasaPoly2 packs the interval bound first, then the high- and
+        # low-temperature coefficient sets, in that order.
+        coeffs = thermo.coeffs
+        return PolynomialParameters(
+            num_intervals=2,
+            num_coeff=7,
+            t_bounds=np.array([thermo.min_temp, coeffs[0], thermo.max_temp]),
+            coeffs=np.column_stack((coeffs[8:15], coeffs[1:8]))
+        )
+
+    def make_species_nasa_thermo(self, species_index) -> SpeciesNASAThermo:
+        return make_species_nasa_thermo(
+            self._nasa_polynomial_parameters(species_index),
+            Variable("temperature")
         )
 
     def make_equilibrium_constant(self, reaction_index):

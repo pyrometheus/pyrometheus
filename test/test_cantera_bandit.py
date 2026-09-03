@@ -87,6 +87,45 @@ def test_integral_coefficients_stay_integers(mechname):
                     assert isinstance(coefficient, int)
 
 
+def evaluate_polynomials(polynomials, temperature):
+    context = {"temperature": temperature, "log": np.log, "exp": np.exp}
+    return np.array([
+        evaluate(polynomial.expr, context) for polynomial in polynomials
+    ])
+
+
+@pytest.mark.parametrize("mechname", all_mechanisms)
+@pytest.mark.parametrize("temperature", [300.0, 800.0, 1200.0, 2500.0])
+def test_species_nasa_thermo_matches_cantera(mechname, temperature):
+    sol, mech = make_mechanism(mechname)
+    sol.TP = temperature, ct.one_atm
+    species_thermo = [
+        mech.make_species_nasa_thermo(species_index)
+        for species_index in range(mech.num_species)
+    ]
+    for polynomials, expected in [
+        ([t.cp_poly for t in species_thermo], sol.standard_cp_R),
+        ([t.enthalpy_poly for t in species_thermo], sol.standard_enthalpies_RT),
+        ([t.entropy_poly for t in species_thermo], sol.standard_entropies_R),
+        ([t.gibbs_poly for t in species_thermo], sol.standard_gibbs_RT),
+    ]:
+        np.testing.assert_allclose(
+            evaluate_polynomials(polynomials, temperature),
+            expected, rtol=1e-12
+        )
+
+
+def test_unsupported_thermo_model_raises():
+    _, mech = make_mechanism("uiuc")
+    species = mech.species(0)
+    species.thermo = ct.ConstantCp(
+        species.thermo.min_temp, species.thermo.max_temp,
+        species.thermo.reference_pressure, [300.0, 0.0, 0.0, 4.0e4]
+    )
+    with pytest.raises(NotImplementedError, match="ConstantCp"):
+        mech.make_species_nasa_thermo(0)
+
+
 @pytest.mark.parametrize("mechname", elementary_mechanisms)
 def test_net_rates_of_progress_match_cantera(mechname):
     sol, mech = make_mechanism(mechname)
