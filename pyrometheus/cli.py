@@ -3,8 +3,6 @@
 import argparse
 from importlib.metadata import version as distribution_version
 
-import cantera as ct
-
 from . import get_code_generators
 
 
@@ -34,8 +32,9 @@ def main():
 
     args = parser.parse_args()
 
-    source = generators[args.lang].generate(
-        args.name, ct.Solution(args.mech, args.phase)
+    generator = generators[args.lang]
+    source = generator.generate(
+        args.name, generator.load_mechanism(args.mech, args.phase)
     )
 
     with open(args.output, "w") as f:

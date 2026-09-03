@@ -1,6 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Optional
+import cantera as ct
 from pyrometheus.bandit.general_thermochem import BaseMechanism
 
 
@@ -21,6 +22,15 @@ class CodeGenerator:
     def get_name() -> str:
         """Returns the name (slug) of the code generator."""
         pass
+
+    @staticmethod
+    def load_mechanism(mech_path: str, phase: Optional[str] = None):
+        """Returns the mechanism object this generator's generate()
+        expects, read from the mechanism file at *mech_path*. Generators
+        built on the Bandit interface override this to return a
+        :class:`BaseMechanism` instead.
+        """
+        return ct.Solution(mech_path, phase)
 
     @staticmethod
     @abstractmethod

@@ -38,6 +38,7 @@ from .codegen.python import PythonCodeGenerator
 from .codegen.python_bandit import PythonBanditCodeGenerator
 from .codegen.cpp import CppCodeGenerator
 from .codegen.fortran import FortranCodeGenerator
+from .codegen.fortran_bandit import FortranBanditCodeGenerator
 
 
 def get_code_generators() -> typing.Dict[str, CodeGenerator]:
@@ -45,6 +46,8 @@ def get_code_generators() -> typing.Dict[str, CodeGenerator]:
         PythonCodeGenerator.get_name(): PythonCodeGenerator,
         CppCodeGenerator.get_name(): CppCodeGenerator,
         FortranCodeGenerator.get_name(): FortranCodeGenerator,
+        PythonBanditCodeGenerator.get_name(): PythonBanditCodeGenerator,
+        FortranBanditCodeGenerator.get_name(): FortranBanditCodeGenerator,
     }
 
 
