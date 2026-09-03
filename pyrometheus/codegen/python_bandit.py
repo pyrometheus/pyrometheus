@@ -2,13 +2,10 @@ from numbers import Number
 
 import pymbolic.primitives as p
 from pymbolic.mapper.stringifier import StringifyMapper, PREC_NONE, PREC_CALL
-import cantera as ct
 import numpy as np  # noqa: F401
 
 from mako.template import Template
 from pyrometheus.bandit.general_thermochem import BaseMechanism
-
-from itertools import product
 
 from . import CodeGenerator, CodeGenerationOptions
 
@@ -291,6 +288,7 @@ class Thermochemistry:
 """, strict_undefined=True)
 
 # }}}
+
 
 # {{{
 
