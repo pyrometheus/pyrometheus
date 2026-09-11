@@ -200,6 +200,92 @@ class FlameletSolver:
             carry_init
         )
 
+    def _newton_loop_lax_steady(self,
+                                fn: Callable,
+                                jac: Callable,
+                                state: FlameletState,
+                                maxiter: int,
+                                tol: jnp.float64,
+                                *args,):
+        """JAX-traced Newton loop for the steady residual, with divergence
+        detection -- the ``lax.while_loop``-compatible twin of
+        :meth:`_newton_loop_py`, needed so an outer batch (``jax.vmap``)
+        can drive many points' steady Newton solves at once.
+
+        Unlike :meth:`_newton_loop_lax` (used only for the per-time-step
+        Crank-Nicolson solve, where time-stepping already globalises any
+        divergence, and which this method deliberately does not modify
+        since :meth:`flamelet_time_step`/:meth:`flamelet_time_march`
+        depend on its existing 3-tuple return), this replicates
+        :meth:`_newton_loop_py`'s explicit stopping conditions -- converge
+        (``|v| < tol``), diverge (``|v|`` larger than the previous
+        iterate), or exhaust ``maxiter`` -- as ``lax.while_loop``
+        termination conditions, so the loop is always bounded and
+        traceable/batchable regardless of which condition fires.
+
+        Returns
+        -------
+        tuple
+            ``(state, it, delta, success)`` -- same shape as
+            :meth:`_newton_loop_py`'s return, so callers can use either
+            interchangeably. ``success`` is ``True`` iff the loop stopped
+            via the convergence condition (matching
+            :meth:`_newton_loop_py`'s semantics exactly: ``False`` for
+            both explicit divergence and ``maxiter`` exhaustion). ``it``
+            matches :meth:`_newton_loop_py`'s convention -- the index of
+            the last executed iteration (``maxiter - 1`` if the loop
+            exhausts without converging or diverging) -- not a raw
+            completed-iteration count.
+        """
+
+        def cond_fn(carry):
+            _, it, _, _, converged, diverged = carry
+            still_running = jnp.logical_not(
+                jnp.logical_or(converged, diverged)
+            )
+            return jnp.logical_and(still_running, it < maxiter)
+
+        def body_fn(carry):
+            state, it, _, err_prev, _, _ = carry
+            v = self._newton_update(
+                fn,
+                jac,
+                state,
+                *args
+            )
+            new_state = state + v
+            new_delta = jnp.linalg.norm(
+                _state_to_array(v)
+            )
+            new_converged = new_delta < tol
+            new_diverged = jnp.logical_and(
+                jnp.logical_not(new_converged),
+                err_prev < new_delta
+            )
+            return (
+                new_state,
+                it + 1,
+                new_delta,
+                new_delta,
+                new_converged,
+                new_diverged,
+            )
+
+        carry_init = (
+            state,
+            jnp.array(0, dtype=jnp.int32),
+            jnp.array(jnp.inf),
+            jnp.array(jnp.inf),
+            jnp.array(False),
+            jnp.array(False),
+        )
+        state, it, delta, _, converged, _ = jax.lax.while_loop(
+            cond_fn,
+            body_fn,
+            carry_init
+        )
+        return state, it - 1, delta, converged
+
     @partial(jax.jit, static_argnums=(0, 2))
     def flamelet_time_step(self,
                            state: FlameletState,
