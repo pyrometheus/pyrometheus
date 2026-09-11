@@ -113,12 +113,6 @@ class Thermochemistry:
 
         return result
 
-    def _pyro_norm(self, argument, normord):
-        from numbers import Number
-        if isinstance(argument, Number):
-            return np.abs(argument)
-        return self.pyro_np.linalg.norm(argument, normord)
-
     def get_species_index(self, species_name):
         return self.species_indices[species_name]
 
@@ -214,7 +208,7 @@ class Thermochemistry:
             iter_deriv = -pv_fun(iter_temp, mass_fractions)
             dt = -iter_rhs / iter_deriv
             iter_temp = iter_temp + dt
-            if self._pyro_norm(dt, np.inf) < tol:
+            if self.pyro_np.all(self.pyro_np.abs(dt) < tol):
                 return iter_temp
 
         raise RuntimeError("Temperature iteration failed to converge")

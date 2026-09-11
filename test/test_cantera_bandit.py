@@ -15,6 +15,14 @@ from pymbolic import evaluate, substitute
 from pyrometheus.bandit.chem_expr.kinetics import third_body_concentration_expr
 from pyrometheus.bandit.impl.cantera import CanteraMechanism
 
+try:
+    import jax
+    import jax.numpy as jnp
+except ImportError:
+    jnp = None
+else:
+    jax.config.update("jax_enable_x64", True)
+
 
 mech_dir = pathlib.Path(__file__).parent / "mechs"
 
@@ -446,6 +454,64 @@ def test_release_generators_still_load_cantera_solutions():
     assert isinstance(
         generator.load_mechanism(str(mech_dir / "uiuc.yaml"), "gas"),
         ct.Solution
+    )
+
+
+def make_jax_gas(mech):
+    from pyrometheus.codegen.python_bandit import PythonBanditCodeGenerator
+
+    class JaxGas(PythonBanditCodeGenerator.get_thermochem_class(mech)):
+        def _pyro_make_array(self, res_list):
+            array = jnp.empty_like(jnp.array(res_list))
+            for index in range(len(res_list)):
+                array = array.at[index].set(res_list[index])
+            return array
+
+    return JaxGas(jnp)
+
+
+@pytest.mark.skipif(jnp is None, reason="jax is not installed")
+@pytest.mark.parametrize("mechname", ["uiuc", "sandiego"])
+def test_generated_production_rates_match_cantera_with_jax(mechname):
+    sol, mech = make_mechanism(mechname)
+    gas = make_jax_gas(mech)
+    density, temperature, mass_fractions = equilibrated_state(sol)
+    actual = gas.get_net_production_rates(
+        density, temperature, jnp.array(mass_fractions)
+    )
+    np.testing.assert_allclose(
+        np.asarray(actual), sol.net_production_rates, rtol=1e-9,
+        atol=1e-9 * np.abs(sol.net_production_rates).max()
+    )
+
+
+@pytest.mark.skipif(jnp is None, reason="jax is not installed")
+@pytest.mark.parametrize("mechname", ["uiuc", "sandiego"])
+@pytest.mark.parametrize("do_energy", [False, True])
+def test_generated_temperature_inversion_with_jax(mechname, do_energy):
+    sol, mech = make_mechanism(mechname)
+    gas = make_jax_gas(mech)
+    _, temperature, mass_fractions = equilibrated_state(sol)
+    target = sol.int_energy_mass if do_energy else sol.enthalpy_mass
+    actual = gas.get_temperature(
+        target, 1000.0, jnp.array(mass_fractions), do_energy
+    )
+    assert float(actual) == pytest.approx(temperature, rel=1e-8)
+
+
+@pytest.mark.skipif(jnp is None, reason="jax is not installed")
+def test_generated_temperature_inversion_over_an_array_of_states():
+    sol, mech = make_mechanism("sandiego")
+    gas = make_jax_gas(mech)
+    _, temperature, mass_fractions = equilibrated_state(sol)
+    # A bulk array of states: the convergence test has to reduce over
+    # every entry, not just decide on a single scalar.
+    states = jnp.repeat(jnp.array(mass_fractions)[:, None], 4, axis=1)
+    actual = gas.get_temperature(
+        sol.enthalpy_mass * jnp.ones(4), 1000.0 * jnp.ones(4), states
+    )
+    np.testing.assert_allclose(
+        np.asarray(actual), np.full(4, temperature), rtol=1e-8
     )
 
 
