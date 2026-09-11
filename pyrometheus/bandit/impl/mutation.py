@@ -3,6 +3,13 @@ import mutationpp as mpp
 from pymbolic.primitives import Variable
 from typing import Dict, List, Tuple, Union
 from pyrometheus.bandit.general_thermochem import BaseNamespace, BaseMechanism
+from pyrometheus.bandit.chem_expr.kinetics import (
+    RateCoefficient,
+    make_arrhenius,
+    reaction_progress_rate_expr,
+    species_production_rate_expr,
+    third_body_concentration_expr,
+)
 
 
 # {{{ Temperature substitutions, keyed by the strings Mutation++ reports
@@ -21,6 +28,8 @@ _temp_map = {
 
 
 # {{{ Unit conversion
+#
+# Mutation++ works in mol; bandit concentrations are kmol/m^3.
 
 _kmol_per_mol = 1e3
 
@@ -55,7 +64,13 @@ class MutationMechanism(BaseMechanism):
                  hardcode_params=True):
         self.hardcode_params = hardcode_params
         self.namespace = Mutationpp(mixture, state_model, thermo_database)
+        if self.namespace.__getattr__("hasElectrons").__call__():
+            raise NotImplementedError(
+                f"mixture '{mixture}' carries electrons, whose separate "
+                f"temperature and third-body exclusion are not supported"
+            )
         self.nonequil_thermo = self.num_temp > 1
+        self.make_rates(hardcode_params)
 
     # {{{ Abstract interface
 
@@ -182,6 +197,72 @@ class MutationMechanism(BaseMechanism):
             for reaction_index in reverse_set
         ]
         return (forward_set, reverse_set), (stoich_forward, stoich_reverse)
+
+    # }}}
+
+    # {{{ Make methods
+
+    def make_rate_coefficient(self,
+                              reaction_index,
+                              hardcode_params) -> RateCoefficient:
+        reaction = self.reaction(reaction_index)
+        rate_law = reaction.rate_law()
+        # Mutation++ reports ln(A) in mol-based SI units; a rate of
+        # order p carries p-1 concentration factors to convert.
+        log_pre_exponential = (
+            rate_law.log_pre_exponential
+            + (reaction.order - 1) * np.log(_kmol_per_mol)
+        )
+        if hardcode_params:
+            params = {
+                "a": log_pre_exponential,
+                "b": rate_law.exponent,
+                "t_a": rate_law.activation_temperature,
+            }
+            rate_coeff = make_arrhenius(
+                reaction_index=reaction_index,
+                params=params,
+                temperature=self.rate_temperature(reaction_index, "fwd"),
+            )
+        else:
+            params = np.array([
+                log_pre_exponential,
+                rate_law.exponent,
+                rate_law.activation_temperature,
+            ])
+            rate_coeff = make_arrhenius(
+                reaction_index=reaction_index,
+                temperature=self.rate_temperature(reaction_index, "fwd"),
+            )
+
+        # Mutation++ keeps the third body out of the rate constant and
+        # applies it to the rate of progress; folding it in here lets
+        # generated code treat every reaction's coefficient uniformly.
+        if self.is_third_body(reaction_index):
+            rate_coeff.expr = (
+                rate_coeff.expr
+                * third_body_concentration_expr(
+                    self.num_species,
+                    self.third_body_efficiencies(reaction_index),
+                )
+            )
+        return rate_coeff, params
+
+    def make_mass_action_rate(self, reaction_index):
+        return reaction_progress_rate_expr(
+            reaction_index,
+            self.is_reversible(reaction_index),
+            (self.reactants(reaction_index), self.products(reaction_index)),
+            self.stoichiometric_coefficients(reaction_index),
+        )
+
+    def make_species_production_rate(self, species_index):
+        part_sets, stoich_coeffs = self.production_balance(species_index)
+        return species_production_rate_expr(
+            species_index,
+            part_sets[0], part_sets[1],
+            stoich_coeffs[0], stoich_coeffs[1],
+        )
 
     # }}}
 

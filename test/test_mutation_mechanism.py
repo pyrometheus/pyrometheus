@@ -203,3 +203,89 @@ def test_nitrogen_atom_is_produced_by_dissociation(mech):
         mech.species_index("N")
     )
     assert 2 in reverse_coeffs
+
+
+# --- Rate coefficients ---
+
+def evaluation_context(mech, temperatures, concentrations):
+    return {
+        "temperature": np.asarray(temperatures),
+        "concentrations": np.asarray(concentrations),
+        "exp": np.exp,
+        "log": np.log,
+        "sqrt": np.sqrt,
+    }
+
+
+def mixture_state(mech, temperatures, densities):
+    """Put Mutation++ at a state and return the matching bandit-side
+    concentrations in kmol/m^3.
+    """
+    mech.namespace.mix.setState(list(densities), list(temperatures), 1)
+    return np.asarray(densities) / mech.molecular_weights
+
+
+def third_body_concentration(mech, reaction_index, concentrations):
+    if not mech.is_third_body(reaction_index):
+        return 1.0
+    efficiencies = mech.third_body_efficiencies(reaction_index)
+    return sum(
+        efficiencies.get(species_index, 1.0) * concentrations[species_index]
+        for species_index in range(mech.num_species)
+    )
+
+
+@pytest.mark.parametrize("temperatures", [
+    [9000.0, 5000.0], [10000.0, 4000.0], [6000.0, 6000.0],
+])
+def test_forward_rate_coefficients_match_mutation(mech, temperatures):
+    from pymbolic import evaluate
+
+    densities = [1e-3, 2e-3, 1.5e-3, 3e-3, 2.5e-3]
+    concentrations = mixture_state(mech, temperatures, densities)
+    context = evaluation_context(mech, temperatures, concentrations)
+
+    # Mutation++ works in mol and leaves the third body out of the rate
+    # constant; bandit works in kmol and folds it in.
+    expected = [
+        mech.namespace.mix.forwardRateCoefficients()[reaction_index]
+        * 1.0e3 ** (mech.reaction(reaction_index).order - 1)
+        * third_body_concentration(mech, reaction_index, concentrations)
+        for reaction_index in range(mech.num_reactions)
+    ]
+    actual = [
+        evaluate(mech.rate_coeffs[reaction_index].expr, context)
+        for reaction_index in range(mech.num_reactions)
+    ]
+    np.testing.assert_allclose(actual, expected, rtol=1e-12)
+
+
+def test_dissociation_rates_depend_on_both_temperatures(mech):
+    # Forward dissociation runs on sqrt(T*Tv): holding T fixed and
+    # changing Tv alone must move the coefficient.
+    from pymbolic import evaluate
+
+    densities = [1e-3] * 5
+    dissociation = mech.rate_coeffs[0].expr
+    exchange = mech.rate_coeffs[3].expr
+    values = [
+        (evaluate(dissociation, evaluation_context(
+            mech, temperatures, mixture_state(mech, temperatures, densities))),
+         evaluate(exchange, evaluation_context(
+             mech, temperatures, mixture_state(mech, temperatures, densities))))
+        for temperatures in ([9000.0, 3000.0], [9000.0, 7000.0])
+    ]
+    assert values[0][0] != values[1][0]
+    # Exchange runs on the heavy temperature alone, so it must not.
+    assert values[0][1] == pytest.approx(values[1][1])
+
+
+def test_rate_coefficients_are_built_for_every_reaction(mech):
+    assert len(mech.rate_coeffs) == mech.num_reactions
+    assert len(mech.mass_action_rates) == mech.num_reactions
+    assert len(mech.species_prod_rates) == mech.num_species
+
+
+def test_ionized_mixtures_are_rejected():
+    with pytest.raises(NotImplementedError, match="electron"):
+        MutationMechanism("air_11", state_model=STATE_MODEL)
