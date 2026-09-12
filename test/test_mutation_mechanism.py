@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 try:
-    import mutationpp  # noqa: F401
+    import mutationpp as mpp
 except ImportError:
     mutation_available = False
 else:
@@ -300,14 +300,28 @@ def test_ionized_mixtures_are_rejected():
 ELECTRONIC_TABLE_TOLERANCE = 5e-3
 
 
-def mode_enthalpies(mech, temperatures, mode):
+@pytest.fixture(scope="module")
+def mode_oracle():
+    """A Mutation++ mixture on the RRHO database, whose enthalpies
+    resolve the vibrational and electronic modes. The NASA databases
+    report both as zero, so they cannot serve as an oracle here, but
+    the RRHO *parameters* the expressions are built from are read
+    straight from species.xml and do not depend on the database.
+    """
+    options = mpp.MixtureOptions(MIXTURE)
+    options.setStateModel(STATE_MODEL)
+    options.setThermodynamicDatabase("RRHO")
+    return mpp.Mixture(options)
+
+
+def mode_enthalpies(mech, mode_oracle, temperatures, mode):
     """Return the per-species enthalpy of one energy mode, in J/kg."""
-    heavy_temperature = temperatures[0]
-    over_rt = mech.namespace.mix.species_enthalpies_over_rt()[mode]
+    mode_oracle.setState([1e-3] * 5, list(temperatures), 1)
+    over_rt = mode_oracle.species_enthalpies_over_rt()[mode]
     return np.array([
         over_rt[species_index]
         * mech.specific_gas_constant(species_index)
-        * heavy_temperature
+        * temperatures[0]
         for species_index in range(mech.num_species)
     ])
 
@@ -315,10 +329,9 @@ def mode_enthalpies(mech, temperatures, mode):
 @pytest.mark.parametrize("temperatures", [
     [9000.0, 3000.0], [9000.0, 6000.0], [12000.0, 9000.0],
 ])
-def test_electronic_energy_matches_mutation(mech, temperatures):
+def test_electronic_energy_matches_mutation(mech, mode_oracle, temperatures):
     from pymbolic import evaluate
 
-    mixture_state(mech, temperatures, [1e-3] * 5)
     context = evaluation_context(mech, temperatures, np.zeros(5))
     actual = [
         evaluate(
@@ -328,16 +341,16 @@ def test_electronic_energy_matches_mutation(mech, temperatures):
         for species_index in range(mech.num_species)
     ]
     np.testing.assert_allclose(
-        actual, mode_enthalpies(mech, temperatures, "electronic"),
+        actual,
+        mode_enthalpies(mech, mode_oracle, temperatures, "electronic"),
         rtol=ELECTRONIC_TABLE_TOLERANCE,
     )
 
 
 @pytest.mark.parametrize("temperatures", [[9000.0, 3000.0], [9000.0, 6000.0]])
-def test_vibrational_energy_matches_mutation(mech, temperatures):
+def test_vibrational_energy_matches_mutation(mech, mode_oracle, temperatures):
     from pymbolic import evaluate
 
-    mixture_state(mech, temperatures, [1e-3] * 5)
     context = evaluation_context(mech, temperatures, np.zeros(5))
     actual = [
         evaluate(
@@ -348,17 +361,29 @@ def test_vibrational_energy_matches_mutation(mech, temperatures):
     ]
     # Vibration is a closed form on both sides, so this one is exact.
     np.testing.assert_allclose(
-        actual, mode_enthalpies(mech, temperatures, "vibrational"),
+        actual,
+        mode_enthalpies(mech, mode_oracle, temperatures, "vibrational"),
         rtol=1e-12, atol=1e-9,
     )
+
+
+def test_rrho_parameters_do_not_depend_on_the_thermo_database(mech):
+    options = mpp.MixtureOptions(MIXTURE)
+    options.setStateModel(STATE_MODEL)
+    options.setThermodynamicDatabase("RRHO")
+    rrho_mixture = mpp.Mixture(options)
+    for species_index in range(mech.num_species):
+        from_nasa = mech.species_rrho(species_index)
+        from_rrho = rrho_mixture.species_rrho(species_index)
+        assert (from_nasa.vibrational_temperatures
+                == from_rrho.vibrational_temperatures)
+        assert from_nasa.electronic_levels == from_rrho.electronic_levels
 
 
 def test_atoms_have_electronic_energy_but_no_vibrational(mech):
     from pymbolic import evaluate
 
-    temperatures = [9000.0, 6000.0]
-    mixture_state(mech, temperatures, [1e-3] * 5)
-    context = evaluation_context(mech, temperatures, np.zeros(5))
+    context = evaluation_context(mech, [9000.0, 6000.0], np.zeros(5))
     for species_name in ["N", "O"]:
         species_index = mech.species_index(species_name)
         assert evaluate(
@@ -398,3 +423,131 @@ def test_electronic_specific_heat_is_the_energy_derivative(
         ),
     )
     assert analytic == pytest.approx(finite_difference, rel=1e-6)
+
+
+# --- NASA thermodynamics and equilibrium constants ---
+
+@pytest.fixture(scope="module")
+def nasa_mech():
+    return MutationMechanism(
+        MIXTURE, state_model=STATE_MODEL, thermo_database="NASA-9"
+    )
+
+
+def thermo_context(temperature):
+    return {
+        "temperature": np.array([temperature, temperature]),
+        "exp": np.exp, "log": np.log, "sqrt": np.sqrt,
+    }
+
+
+@pytest.mark.parametrize("temperature", [800.0, 4000.0, 12000.0])
+def test_nasa_thermo_matches_mutation(nasa_mech, temperature):
+    from pymbolic import evaluate
+
+    mix = nasa_mech.namespace.mix
+    mix.setState([1e-3] * 5, [temperature, temperature], 1)
+    context = thermo_context(temperature)
+    polynomials = nasa_mech.species_nasa_thermo_polynomials
+
+    specific_gas_constants = np.array([
+        nasa_mech.specific_gas_constant(species_index)
+        for species_index in range(nasa_mech.num_species)
+    ])
+    for attribute, expected in [
+        ("cp_poly", np.array(mix.speciesCpOverR(temperature))),
+        ("enthalpy_poly", np.array(mix.speciesHOverRT())),
+        ("gibbs_poly", np.array(mix.getSTGibbsMass(temperature))
+         / specific_gas_constants / temperature),
+    ]:
+        actual = [
+            evaluate(getattr(polynomials[species_index], attribute).expr,
+                     context)
+            for species_index in range(nasa_mech.num_species)
+        ]
+        np.testing.assert_allclose(actual, expected, rtol=1e-10)
+
+
+def test_thermo_is_built_for_every_species(nasa_mech):
+    assert len(nasa_mech.species_nasa_thermo_polynomials) == \
+        nasa_mech.num_species
+    assert len(nasa_mech.equil_constants) == nasa_mech.num_reactions
+
+
+# Temperatures are kept off the NASA interval boundaries; see
+# test_interval_boundaries_pick_opposite_sides.
+@pytest.mark.parametrize("temperature", [3000.0, 6500.0, 10000.0])
+def test_equilibrium_constants_match_mutation(nasa_mech, temperature):
+    from pymbolic import evaluate
+
+    mix = nasa_mech.namespace.mix
+    # With both temperatures equal every rate coefficient is evaluated
+    # at the same temperature, so Mutation++'s own forward and backward
+    # coefficients give the equilibrium constant directly.
+    mix.setState([1e-3] * 5, [temperature, temperature], 1)
+    forward = np.array(mix.forwardRateCoefficients())
+    backward = np.array(mix.backwardRateCoefficients())
+
+    context = thermo_context(temperature)
+    context["gibbs_rt"] = np.array([
+        evaluate(
+            nasa_mech.species_nasa_thermo_polynomials[
+                species_index].gibbs_poly.expr,
+            thermo_context(temperature),
+        )
+        for species_index in range(nasa_mech.num_species)
+    ])
+    actual = np.array([
+        evaluate(nasa_mech.equil_constants[reaction_index], context)
+        for reaction_index in range(nasa_mech.num_reactions)
+    ])
+    # bandit's log_k_eq enters as r_fwd - exp(log_k_eq)*r_rev, so it is
+    # the reciprocal of the equilibrium constant. That ratio carries
+    # units of concentration to the net stoichiometry change, which is
+    # what converts between Mutation++'s mol and bandit's kmol.
+    net_stoichiometry = np.array([
+        sum(products) - sum(reactants)
+        for reactants, products in (
+            nasa_mech.stoichiometric_coefficients(reaction_index)
+            for reaction_index in range(nasa_mech.num_reactions)
+        )
+    ])
+    expected = np.log(backward / forward) + net_stoichiometry * np.log(1.0e3)
+    np.testing.assert_allclose(actual, expected, rtol=1e-9)
+
+
+def test_interval_boundaries_pick_opposite_sides(nasa_mech):
+    """At a temperature that is exactly an interval boundary, bandit
+    evaluates the lower fit and Mutation++ the upper one. The NASA-9
+    fits are only continuous there to their own tolerance, so the two
+    disagree by about 1e-8 relative -- small, but far above the 1e-14
+    they agree to everywhere else.
+    """
+    from pymbolic import evaluate
+
+    boundary = nasa_mech.species_thermo_params(0).t_bounds[2]
+    assert boundary == 6000.0
+
+    mix = nasa_mech.namespace.mix
+    specific_gas_constants = np.array([
+        nasa_mech.specific_gas_constant(species_index)
+        for species_index in range(nasa_mech.num_species)
+    ])
+
+    def gibbs(temperature):
+        mix.setState([1e-3] * 5, [temperature, temperature], 1)
+        actual = np.array([
+            evaluate(
+                nasa_mech.species_nasa_thermo_polynomials[
+                    species_index].gibbs_poly.expr,
+                thermo_context(temperature),
+            )
+            for species_index in range(nasa_mech.num_species)
+        ])
+        expected = (np.array(mix.getSTGibbsMass(temperature))
+                    / specific_gas_constants / temperature)
+        return np.abs((actual - expected) / expected).max()
+
+    assert gibbs(boundary) > 1e-9
+    assert gibbs(boundary - 1.0) < 1e-12
+    assert gibbs(boundary + 1.0) < 1e-12

@@ -4,9 +4,13 @@ from pymbolic.primitives import Variable
 from typing import Dict, List, Tuple, Union
 from pyrometheus.bandit.general_thermochem import BaseNamespace, BaseMechanism
 from pyrometheus.bandit.chem_expr.thermo import (
+    PolynomialParameters,
     SpeciesElectronicThermo,
+    SpeciesNASAThermo,
     SpeciesVibrationalThermo,
+    equilibrium_constant_expr,
     make_species_electronic_thermo,
+    make_species_nasa_thermo,
     make_species_vibrational_thermo,
 )
 from pyrometheus.bandit.chem_expr.kinetics import (
@@ -44,14 +48,16 @@ _kmol_per_mol = 1e3
 
 class Mutationpp(BaseNamespace):
 
-    gas_constant = 8314.462618
-    one_atm = 101325.0
-
     def __init__(self, mixture, state_model, thermo_database):
         options = mpp.MixtureOptions(mixture)
         options.setStateModel(state_model)
         options.setThermodynamicDatabase(thermo_database)
         self.mix = mpp.Mixture(options)
+        # Taken from the library rather than hardcoded: Mutation++
+        # carries an older CODATA gas constant, and a mismatch would
+        # shift every equilibrium constant.
+        self.gas_constant = _kmol_per_mol * self.mix.RU()
+        self.one_atm = self.mix.ONEATM()
 
     def __getattr__(self, name, *args):
         if args:
@@ -65,7 +71,7 @@ class MutationMechanism(BaseMechanism):
     def __init__(self,
                  mixture,
                  state_model="ChemNonEqTTv",
-                 thermo_database="RRHO",
+                 thermo_database="NASA-9",
                  pyro_np=np,
                  hardcode_params=True):
         self.hardcode_params = hardcode_params
@@ -75,8 +81,13 @@ class MutationMechanism(BaseMechanism):
                 f"mixture '{mixture}' carries electrons, whose separate "
                 f"temperature and third-body exclusion are not supported"
             )
-        self.nonequil_thermo = self.num_temp > 1
+        # Two temperatures are carried and the rate coefficients
+        # already select between them, but the vibrational energy and
+        # VT transfer source terms are not built yet, so the
+        # nonequilibrium thermo block stays switched off.
+        self.nonequil_thermo = False
         self.make_rates(hardcode_params)
+        self.make_thermo()
 
     # {{{ Abstract interface
 
@@ -280,6 +291,53 @@ class MutationMechanism(BaseMechanism):
             self.specific_gas_constant(species_index),
             np.array(self.species_rrho(species_index).electronic_levels),
         )
+
+    @property
+    def thermo_temperature(self):
+        """:returns: The temperature the standard-state thermodynamic
+        properties are evaluated at. Mutation++ builds equilibrium
+        constants from Gibbs energies with every temperature set equal,
+        so this is the heavy-particle temperature.
+        """
+        if self.num_temp == 1:
+            return Variable("temperature")
+        return Variable("temperature")[0]
+
+    def species_thermo_params(self, species_index) -> PolynomialParameters:
+        polynomial = self.namespace.__getattr__(
+            "species_nasa_polynomial", species_index
+        )
+        # The binding hands back one row per temperature interval,
+        # lowest first; PolynomialParameters wants one column each.
+        coeffs = np.array(polynomial["coefficients"]).T
+        num_coeff, num_intervals = coeffs.shape
+        return PolynomialParameters(
+            num_intervals=num_intervals,
+            num_coeff=num_coeff,
+            t_bounds=np.array(polynomial["t_bounds"]),
+            coeffs=coeffs,
+        )
+
+    def make_species_nasa_thermo(self, species_index) -> SpeciesNASAThermo:
+        return make_species_nasa_thermo(
+            self.species_thermo_params(species_index),
+            self.thermo_temperature,
+        )
+
+    def make_equilibrium_constant(self, reaction_index):
+        expr = equilibrium_constant_expr(
+            reaction_index,
+            (self.reactants(reaction_index), self.products(reaction_index)),
+            self.stoichiometric_coefficients(reaction_index),
+            self.namespace.one_atm,
+            self.namespace.gas_constant,
+        )
+        if self.num_temp > 1:
+            from pymbolic import substitute
+            expr = substitute(
+                expr, {Variable("temperature"): self.thermo_temperature}
+            )
+        return expr
 
     def make_mass_action_rate(self, reaction_index):
         return reaction_progress_rate_expr(
