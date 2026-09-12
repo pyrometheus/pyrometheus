@@ -289,3 +289,112 @@ def test_rate_coefficients_are_built_for_every_reaction(mech):
 def test_ionized_mixtures_are_rejected():
     with pytest.raises(NotImplementedError, match="electron"):
         MutationMechanism("air_11", state_model=STATE_MODEL)
+
+
+# --- RRHO thermodynamics ---
+#
+# Mutation++ interpolates its electronic Boltzmann factors from a
+# lookup table built with a 0.005 tolerance (RrhoDB.cpp:649), so the
+# oracle is the approximate side of these comparisons; the generated
+# expressions evaluate the partition sums exactly.
+ELECTRONIC_TABLE_TOLERANCE = 5e-3
+
+
+def mode_enthalpies(mech, temperatures, mode):
+    """Return the per-species enthalpy of one energy mode, in J/kg."""
+    heavy_temperature = temperatures[0]
+    over_rt = mech.namespace.mix.species_enthalpies_over_rt()[mode]
+    return np.array([
+        over_rt[species_index]
+        * mech.specific_gas_constant(species_index)
+        * heavy_temperature
+        for species_index in range(mech.num_species)
+    ])
+
+
+@pytest.mark.parametrize("temperatures", [
+    [9000.0, 3000.0], [9000.0, 6000.0], [12000.0, 9000.0],
+])
+def test_electronic_energy_matches_mutation(mech, temperatures):
+    from pymbolic import evaluate
+
+    mixture_state(mech, temperatures, [1e-3] * 5)
+    context = evaluation_context(mech, temperatures, np.zeros(5))
+    actual = [
+        evaluate(
+            mech.make_species_electronic_thermo(species_index).energy_expr,
+            context,
+        )
+        for species_index in range(mech.num_species)
+    ]
+    np.testing.assert_allclose(
+        actual, mode_enthalpies(mech, temperatures, "electronic"),
+        rtol=ELECTRONIC_TABLE_TOLERANCE,
+    )
+
+
+@pytest.mark.parametrize("temperatures", [[9000.0, 3000.0], [9000.0, 6000.0]])
+def test_vibrational_energy_matches_mutation(mech, temperatures):
+    from pymbolic import evaluate
+
+    mixture_state(mech, temperatures, [1e-3] * 5)
+    context = evaluation_context(mech, temperatures, np.zeros(5))
+    actual = [
+        evaluate(
+            mech.make_species_vibrational_thermo(species_index).energy_expr,
+            context,
+        )
+        for species_index in range(mech.num_species)
+    ]
+    # Vibration is a closed form on both sides, so this one is exact.
+    np.testing.assert_allclose(
+        actual, mode_enthalpies(mech, temperatures, "vibrational"),
+        rtol=1e-12, atol=1e-9,
+    )
+
+
+def test_atoms_have_electronic_energy_but_no_vibrational(mech):
+    from pymbolic import evaluate
+
+    temperatures = [9000.0, 6000.0]
+    mixture_state(mech, temperatures, [1e-3] * 5)
+    context = evaluation_context(mech, temperatures, np.zeros(5))
+    for species_name in ["N", "O"]:
+        species_index = mech.species_index(species_name)
+        assert evaluate(
+            mech.make_species_electronic_thermo(species_index).energy_expr,
+            context,
+        ) > 0.0
+        assert evaluate(
+            mech.make_species_vibrational_thermo(species_index).energy_expr,
+            context,
+        ) == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("species_name", ["N", "O", "NO", "N2", "O2"])
+def test_electronic_specific_heat_is_the_energy_derivative(
+        mech, species_name):
+    from pymbolic import evaluate
+
+    species_index = mech.species_index(species_name)
+    thermo = mech.make_species_electronic_thermo(species_index)
+    vibrational_temperature = 6000.0
+    step = 1.0
+
+    def energy(temperature):
+        return evaluate(
+            thermo.energy_expr,
+            evaluation_context(mech, [9000.0, temperature], np.zeros(5)),
+        )
+
+    finite_difference = (
+        energy(vibrational_temperature + step)
+        - energy(vibrational_temperature - step)
+    ) / (2 * step)
+    analytic = evaluate(
+        thermo.specific_heat_expr,
+        evaluation_context(
+            mech, [9000.0, vibrational_temperature], np.zeros(5)
+        ),
+    )
+    assert analytic == pytest.approx(finite_difference, rel=1e-6)

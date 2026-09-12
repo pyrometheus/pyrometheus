@@ -3,6 +3,12 @@ import mutationpp as mpp
 from pymbolic.primitives import Variable
 from typing import Dict, List, Tuple, Union
 from pyrometheus.bandit.general_thermochem import BaseNamespace, BaseMechanism
+from pyrometheus.bandit.chem_expr.thermo import (
+    SpeciesElectronicThermo,
+    SpeciesVibrationalThermo,
+    make_species_electronic_thermo,
+    make_species_vibrational_thermo,
+)
 from pyrometheus.bandit.chem_expr.kinetics import (
     RateCoefficient,
     make_arrhenius,
@@ -247,6 +253,33 @@ class MutationMechanism(BaseMechanism):
                 )
             )
         return rate_coeff, params
+
+    def species_rrho(self, species_index: int):
+        """:returns: The rigid-rotor harmonic-oscillator parameters of
+        the species with index *species_index*.
+        """
+        return self.namespace.__getattr__("species_rrho", species_index)
+
+    def specific_gas_constant(self, species_index: int) -> float:
+        return (
+            self.namespace.gas_constant
+            / self.molecular_weights[species_index]
+        )
+
+    def make_species_vibrational_thermo(
+            self, species_index) -> SpeciesVibrationalThermo:
+        return make_species_vibrational_thermo(
+            self.specific_gas_constant(species_index),
+            np.array(self.species_rrho(species_index)
+                     .vibrational_temperatures),
+        )
+
+    def make_species_electronic_thermo(
+            self, species_index) -> SpeciesElectronicThermo:
+        return make_species_electronic_thermo(
+            self.specific_gas_constant(species_index),
+            np.array(self.species_rrho(species_index).electronic_levels),
+        )
 
     def make_mass_action_rate(self, reaction_index):
         return reaction_progress_rate_expr(

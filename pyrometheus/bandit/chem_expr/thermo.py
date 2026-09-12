@@ -59,6 +59,22 @@ class SpeciesNASAThermo:
 
 
 @dataclass
+class SpeciesElectronicThermo:
+    specific_gas_constant: InitVar[np.float64]
+    electronic_levels: InitVar[np.ndarray]
+    specific_heat_expr: p.ExpressionNode = field(init=False)
+    energy_expr: p.ExpressionNode = field(init=False)
+
+    def __post_init__(self, specific_gas_constant, electronic_levels):
+        self.specific_heat_expr = electronic_specific_heat_expr(
+            specific_gas_constant, electronic_levels
+        )
+        self.energy_expr = electronic_energy_expr(
+            specific_gas_constant, electronic_levels
+        )
+
+
+@dataclass
 class SpeciesVibrationalThermo:
     specific_gas_constant: InitVar[np.float64]
     vibrational_temperatures: InitVar[np.ndarray]
@@ -351,6 +367,66 @@ def vibrational_energy_expr(specific_gas_constant: np.float64,
         / (exp(t_vib / t[1]) - 1)
         for t_vib in vibrational_temperatures
     ])
+
+
+def _electronic_boltzmann_sums(electronic_levels: np.ndarray,
+                               temperature: p.ExpressionNode):
+    """Return the partition function and its first two energy moments,
+    ``sum g exp(-theta/T)``, ``sum g theta exp(-theta/T)`` and
+    ``sum g theta**2 exp(-theta/T)``, over the (degeneracy,
+    characteristic temperature) pairs in *electronic_levels*.
+    """
+    weights = [
+        degeneracy * exp(-level_temperature / temperature)
+        for degeneracy, level_temperature in electronic_levels
+    ]
+    return (
+        np.sum(weights),
+        np.sum([
+            level_temperature * weight
+            for (_, level_temperature), weight
+            in zip(electronic_levels, weights)
+        ]),
+        np.sum([
+            level_temperature ** 2 * weight
+            for (_, level_temperature), weight
+            in zip(electronic_levels, weights)
+        ]),
+    )
+
+
+def electronic_energy_expr(
+        specific_gas_constant: np.float64,
+        electronic_levels: np.ndarray) -> p.ExpressionNode:
+    """Return the electronic energy: the Boltzmann average of the level
+    energies over the electronic partition function. For atoms this is
+    the only internal energy mode.
+    """
+    partition, first_moment, _ = _electronic_boltzmann_sums(
+        electronic_levels, t[1]
+    )
+    return specific_gas_constant * first_moment / partition
+
+
+def electronic_specific_heat_expr(
+        specific_gas_constant: np.float64,
+        electronic_levels: np.ndarray) -> p.ExpressionNode:
+    """Return the derivative of :func:`electronic_energy_expr` with
+    respect to temperature: the variance of the level energies over the
+    electronic partition function, scaled by ``R/T**2``.
+    """
+    partition, first_moment, second_moment = _electronic_boltzmann_sums(
+        electronic_levels, t[1]
+    )
+    return specific_gas_constant * (
+        second_moment / partition - (first_moment / partition) ** 2
+    ) / t[1] ** 2
+
+
+def make_species_electronic_thermo(
+        specific_gas_constant: np.float64,
+        electronic_levels: np.ndarray) -> SpeciesElectronicThermo:
+    return SpeciesElectronicThermo(specific_gas_constant, electronic_levels)
 
 # }}}
 
