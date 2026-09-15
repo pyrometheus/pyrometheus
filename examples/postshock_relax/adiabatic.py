@@ -1,3 +1,4 @@
+import os
 import time
 import jax
 import jax.numpy as jnp
@@ -10,6 +11,9 @@ from pyrometheus.codegen.python_bandit import PythonBanditCodeGenerator as pyro
 from dataclasses import dataclass
 from typing import Callable, Tuple, Any
 from matplotlib import pyplot as plt
+
+
+jax.config.update("jax_enable_x64", True)
 
 
 @jax.tree_util.register_pytree_node_class
@@ -81,7 +85,9 @@ def make_mechanism(lib_name, pyro_np, hardcode_params=True):
         mixture='air5',
         reaction_set='air5',
         transfer='TTv',
-        plato_db_path='/Users/ecisneros/Packages/plato-database/',
+        plato_db_path=os.environ.get(
+            'PLATO_DB', '/Users/ecisnero/Packages/plato/database'
+        ),
         pyro_np=pyro_np,
         hardcode_params=hardcode_params
     )
@@ -186,7 +192,10 @@ def one_step(state, state_prev, step_size):
             (
                 -jnp.sum(
                     w_dot
-                    * (heavy_temperature_energy + vibrational_temperature_energy)
+                    * (
+                        heavy_temperature_energy
+                        + vibrational_temperature_energy
+                    )
                 )
                 - vt_relax_source
             )
@@ -316,6 +325,26 @@ if __name__ == "__main__":
     step_size = 1e-8
     sol_s = time_march(
         num_steps, step_size, initial_state,
+    )
+
+    # }}}
+
+    # {{{ Save
+
+    # Persist the raw integrated state (what time_march actually advances),
+    # with time as the leading column so the file is self-describing.
+    np.savetxt(
+        'examples_postshock_relax_adiabatic.dat',
+        np.column_stack((
+            step_size * np.arange(0, num_steps + 1, 1),
+            sol_s
+        )),
+        header=' '.join(
+            ['time']
+            + [f'density_{mech.species_name(i)}'
+               for i in range(pyro_gas.num_species)]
+            + ['temperature_heavy', 'temperature_vibrational']
+        )
     )
 
     # }}}

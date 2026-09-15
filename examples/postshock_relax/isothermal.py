@@ -137,8 +137,7 @@ def time_march(num_steps: int,
     return sol
 
 
-if __name__ == "__main__":
-    import sys
+if __name__ == '__main__':
 
     lib_name = 'plato'
     mech = make_mechanism(lib_name, np, hardcode_params=True)
@@ -154,8 +153,8 @@ if __name__ == "__main__":
     ])
     pressure = 1e3
     mole_fractions = jnp.zeros(pyro_gas.num_species)
-    mole_fractions = mole_fractions.at[mech.species_index("O2")].set(0.21)
-    mole_fractions = mole_fractions.at[mech.species_index("N2")].set(0.79)
+    mole_fractions = mole_fractions.at[mech.species_index('O2')].set(0.21)
+    mole_fractions = mole_fractions.at[mech.species_index('N2')].set(0.79)
     mass_fractions = pyro_gas.molecular_weights * mole_fractions / jnp.sum(
         pyro_gas.molecular_weights * mole_fractions
     )
@@ -180,7 +179,7 @@ if __name__ == "__main__":
 
     # }}}
 
-    # {{{ Plot    
+    # {{{ Plot
     colors = ['k',
               'orangered',
               'mediumseagreen',
@@ -218,7 +217,8 @@ if __name__ == "__main__":
     ax.set_xlabel('Time', fontsize=16)
     ax.set_ylabel('Mass Fractions', fontsize=16)
     ax.legend(frameon=False, labelcolor='linecolor',
-              bbox_to_anchor=(0.5, 1.15), loc="upper center",
+              bbox_to_anchor=(0.5, 1.15),
+              loc='upper center',
               ncol=pyro_gas.num_species, fontsize=12)
     plt.savefig('./output_isothermal.png', bbox_inches='tight',)
     plt.close()
