@@ -15,7 +15,7 @@ def make_mechanism(lib_name, pyro_np, hardcode_params=True):
         mixture='air5',
         reaction_set='air5',
         transfer='TTv',
-        plato_db_path='/Users/ecisneros/Packages/plato-database/',
+        plato_db_path=os.environ.get('PLATO_DB'),
         pyro_np=pyro_np,
         hardcode_params=hardcode_params
     )
