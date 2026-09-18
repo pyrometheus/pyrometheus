@@ -715,6 +715,25 @@ def surface_rate_of_progress_expr(interface: ct.Interface, reaction_index, k_fwd
     return expr
 
 
+def surface_reverse_rate_of_progress_expr(interface: ct.Interface, reaction_index,
+                                          k_fwd, k_eq, concentrations):
+    """
+    :returns: Reverse rate of progress of heterogeneous reaction *reaction_index*,
+        as a :class:`pymbolic.primitives.Expression`.
+
+    The reverse coefficient is the forward one over the equilibrium constant, and
+    the concentration product runs over the products rather than the reactants.
+    Explicit reaction orders are a property of the forward direction only, so they
+    do not appear here.
+    """
+    expr = k_fwd/k_eq
+    for k in range(interface.n_total_species):
+        order = interface.product_stoich_coeff(k, reaction_index)
+        if order:
+            expr = expr * concentrations[k]**order
+    return expr
+
+
 def surface_production_rate_expr(interface: ct.Interface, species, r_net):
     """
     :returns: Production rate of *species* from the heterogeneous reactions of

@@ -838,3 +838,46 @@ def test_surface_kinetics_pieces(mechname: str, phase: str):
         reference = interface.forward_rates_of_progress[i]
         assert abs(rate - reference) <= 1e-10*max(abs(reference), 1e-300), \
             reaction.equation
+
+
+@pytest.mark.parametrize("mechname, phase, fuel", [
+    ("ptcombust.yaml", "Pt_surf", "CH4:0.05, O2:0.2, N2:0.75"),
+])
+def test_generated_surface_kinetics(mechname: str, phase: str, fuel: str):
+    """The generated surface class against Cantera, end to end.
+
+    The pieces are checked individually elsewhere; this is the composition, which is
+    where an ordering or unit convention that is self-consistent but wrong would
+    still show up.
+    """
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    interface = ct.Interface(mechname, phase)
+    gas = interface.adjacent["gas"]
+    gas.TPX = 900.0, ct.one_atm, fuel
+    interface.TP = 900.0, ct.one_atm
+    coverages = np.linspace(0.05, 1.0, interface.n_species)
+    interface.coverages = coverages / coverages.sum()
+
+    surface = PythonCodeGenerator.get_surface_kinetics_class(interface)(
+        gas=PythonCodeGenerator.get_thermochem_class(gas)())
+
+    temperature = interface.T
+    concentrations = np.concatenate(
+        [interface.concentrations, gas.concentrations])
+
+    for computed, reference in [
+        (surface.get_site_concentrations(interface.coverages),
+         interface.concentrations),
+        (surface.get_fwd_rate_coefficients(temperature, interface.coverages),
+         interface.forward_rate_constants),
+        (surface.get_rates_of_progress(
+            temperature, concentrations, interface.coverages),
+         interface.net_rates_of_progress),
+        (surface.get_net_production_rates(
+            temperature, concentrations, interface.coverages),
+         interface.net_production_rates),
+    ]:
+        computed = np.asarray(computed, dtype=np.float64)
+        reference = np.asarray(reference, dtype=np.float64)
+        assert np.allclose(computed, reference, rtol=1e-10, atol=1e-280)
