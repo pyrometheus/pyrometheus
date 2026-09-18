@@ -676,9 +676,9 @@ class SurfaceKinetics:
     .. attribute:: species_indices
 
     .. automethod:: get_site_concentrations
-    .. automethod:: get_fwd_rate_coefficients
-    .. automethod:: get_rates_of_progress
-    .. automethod:: get_net_production_rates
+    .. automethod:: get_surface_fwd_rate_coefficients
+    .. automethod:: get_surface_rates_of_progress
+    .. automethod:: get_surface_net_production_rates
     \"""
 
     def __init__(self, gas, pyro_np=np):
@@ -721,7 +721,7 @@ class SurfaceKinetics:
             %endfor
         ])
 
-    def get_fwd_rate_coefficients(self, temperature, coverages):
+    def get_surface_fwd_rate_coefficients(self, temperature, coverages):
         \"""Forward rate coefficient of every heterogeneous reaction.\"""
         return self._pyro_make_array([
             %for react in interface.reactions():
@@ -730,7 +730,7 @@ class SurfaceKinetics:
             %endfor
         ])
 
-    def get_equilibrium_constants(self, temperature):
+    def get_surface_equilibrium_constants(self, temperature):
         \"""Equilibrium constant of every reaction; 1 where irreversible.\"""
         c0 = self.pyro_np.log(self.one_atm / (self.gas_constant * temperature))
         g0_rt = self._pyro_make_array(
@@ -769,14 +769,15 @@ class SurfaceKinetics:
             %endfor
         ])
 
-    def get_rates_of_progress(self, temperature, concentrations, coverages):
+    def get_surface_rates_of_progress(self, temperature, concentrations,
+                                      coverages):
         \"""Net rate of progress of every heterogeneous reaction.
 
         *concentrations* is in the interface's kinetics ordering: its own surface
         species first, then the adjacent phases'.
         \"""
-        k_fwd = self.get_fwd_rate_coefficients(temperature, coverages)
-        k_eq = self.get_equilibrium_constants(temperature)
+        k_fwd = self.get_surface_fwd_rate_coefficients(temperature, coverages)
+        k_eq = self.get_surface_equilibrium_constants(temperature)
         r_fwd = self._pyro_make_array([
             %for i in range(interface.n_reactions):
             ${cgm(ce.surface_rate_of_progress_expr(interface, i,
@@ -796,9 +797,11 @@ class SurfaceKinetics:
         ])
         return r_fwd - r_rev
 
-    def get_net_production_rates(self, temperature, concentrations, coverages):
+    def get_surface_net_production_rates(self, temperature, concentrations,
+                                         coverages):
         \"""Production rate of every coupled species, in kinetics order.\"""
-        r_net = self.get_rates_of_progress(temperature, concentrations, coverages)
+        r_net = self.get_surface_rates_of_progress(
+            temperature, concentrations, coverages)
         return self._pyro_make_array([
             %for name in coupled_species:
             ${cgm(ce.surface_production_rate_expr(

@@ -869,15 +869,49 @@ def test_generated_surface_kinetics(mechname: str, phase: str, fuel: str):
     for computed, reference in [
         (surface.get_site_concentrations(interface.coverages),
          interface.concentrations),
-        (surface.get_fwd_rate_coefficients(temperature, interface.coverages),
+        (surface.get_surface_fwd_rate_coefficients(temperature, interface.coverages),
          interface.forward_rate_constants),
-        (surface.get_rates_of_progress(
+        (surface.get_surface_rates_of_progress(
             temperature, concentrations, interface.coverages),
          interface.net_rates_of_progress),
-        (surface.get_net_production_rates(
+        (surface.get_surface_net_production_rates(
             temperature, concentrations, interface.coverages),
          interface.net_production_rates),
     ]:
         computed = np.asarray(computed, dtype=np.float64)
         reference = np.asarray(reference, dtype=np.float64)
         assert np.allclose(computed, reference, rtol=1e-10, atol=1e-280)
+
+
+@pytest.mark.parametrize("mechname, phase", [
+    ("ptcombust.yaml", "Pt_surf"),
+])
+def test_surface_backends_render(mechname: str, phase: str):
+    """Every backend renders a surface mechanism.
+
+    The numbers are checked against Cantera through the Python backend; this
+    guards the other two against template errors, which Mako raises only at render
+    time and which no import or lint catches.
+    """
+    from pyrometheus.codegen.cpp import CppCodeGenerator
+    from pyrometheus.codegen.fortran import FortranCodeGenerator
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    interface = ct.Interface(mechname, phase)
+
+    python_src = PythonCodeGenerator.generate_surface("SurfaceKinetics", interface)
+    fortran_src = FortranCodeGenerator.generate_surface(
+        "surface_thermochem", interface, gas_module_name="thermochem")
+    cpp_src = CppCodeGenerator.generate_surface(
+        "SurfaceKinetics", interface, gas_header_name="thermochem.hpp")
+
+    assert "class SurfaceKinetics" in python_src
+    assert "module surface_thermochem" in fortran_src
+    assert "use thermochem" in fortran_src
+    assert "struct SurfaceKinetics" in cpp_src
+    assert '#include "thermochem.hpp"' in cpp_src
+
+    for src in (python_src, fortran_src, cpp_src):
+        for routine in ("get_site_concentrations",
+                        "get_surface_net_production_rates"):
+            assert routine in src
