@@ -775,3 +775,66 @@ def test_surface_production_rates(mechname: str, phase: str):
         expr = ce.surface_production_rate_expr(interface, name, r_net)
         value = expr if isinstance(expr, (int, float)) else evaluate(expr)
         assert abs(value - omega) <= 1e-10*max(abs(omega), 1e-20), name
+
+
+@pytest.mark.parametrize("mechname, phase", [
+    ("ptcombust.yaml", "Pt_surf"),
+])
+def test_surface_kinetics_pieces(mechname: str, phase: str):
+    """Site concentrations, equilibrium constants and rates of progress.
+
+    Each is checked against Cantera's own, because each embeds a convention that is
+    easy to get subtly wrong and impossible to notice afterwards: a surface species'
+    concentration is coverage*site_density/size, not its coverage; the kinetics
+    ordering puts the interface's own species before the adjacent phases; the
+    equilibrium constant's pressure factor is (p0/RT)^dn for the gas but
+    site_density^dn for the sites; and explicit reaction orders, where a mechanism
+    gives them, override the reactant stoichiometry.
+    """
+    import pymbolic.primitives as p
+    from pymbolic.mapper.evaluator import EvaluationMapper
+    from pyrometheus import chem_expr as ce
+
+    interface = ct.Interface(mechname, phase)
+    gas = interface.adjacent["gas"]
+    gas.TPX = 900.0, ct.one_atm, "CH4:0.05, O2:0.2, N2:0.75"
+    interface.TP = 900.0, ct.one_atm
+    coverages = np.linspace(0.05, 1.0, interface.n_species)
+    interface.coverages = coverages / coverages.sum()
+
+    concentrations = np.concatenate([interface.concentrations, gas.concentrations])
+    gibbs = np.concatenate([interface.standard_gibbs_RT, gas.standard_gibbs_RT])
+
+    context = {"exp": np.exp, "log": np.log, "sqrt": np.sqrt,
+               "c0": np.log(ct.one_atm/(ct.gas_constant*interface.T))}
+    context.update({f"theta_{k}": c for k, c in enumerate(interface.coverages)})
+    context.update({f"g_{k}": g for k, g in enumerate(gibbs)})
+    context.update({f"c_{k}": c for k, c in enumerate(concentrations)})
+    context.update({f"kf_{i}": k
+                    for i, k in enumerate(interface.forward_rate_constants)})
+    evaluate = EvaluationMapper(context=context)
+
+    def value(expr):
+        return expr if isinstance(expr, (int, float)) else evaluate(expr)
+
+    theta = [p.Variable(f"theta_{k}") for k in range(interface.n_species)]
+    for k, expr in enumerate(ce.surface_concentrations_expr(interface, theta)):
+        assert abs(value(expr) - interface.concentrations[k]) \
+            <= 1e-12*abs(interface.concentrations[k])
+
+    g0 = [p.Variable(f"g_{k}") for k in range(len(gibbs))]
+    for i, reaction in enumerate(interface.reactions()):
+        if not reaction.reversible:
+            continue
+        k_eq = np.exp(value(
+            ce.surface_equilibrium_constant_expr(interface, i, g0)))
+        assert abs(k_eq - interface.equilibrium_constants[i]) \
+            <= 1e-10*abs(interface.equilibrium_constants[i]), reaction.equation
+
+    conc = [p.Variable(f"c_{k}") for k in range(len(concentrations))]
+    for i, reaction in enumerate(interface.reactions()):
+        rate = value(ce.surface_rate_of_progress_expr(
+            interface, i, p.Variable(f"kf_{i}"), conc))
+        reference = interface.forward_rates_of_progress[i]
+        assert abs(rate - reference) <= 1e-10*max(abs(reference), 1e-300), \
+            reaction.equation

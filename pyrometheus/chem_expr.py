@@ -635,6 +635,86 @@ def surface_rate_coefficient_expr(interface: ct.Interface, react: ct.Reaction, t
     return base
 
 
+def surface_equilibrium_constant_expr(interface: ct.Interface, reaction_index, g0_rt):
+    """
+    :returns: Log of the equilibrium constant for heterogeneous reaction
+        *reaction_index*, in terms of the standard-state Gibbs energies *g0_rt* of
+        every species the interface couples, as a
+        :class:`pymbolic.primitives.Expression`.
+
+    The pressure-like factor differs per phase: a change in moles of gas carries
+    :math:`(p_0/RT)^{\\Delta n_g}`, one of surface sites carries
+    :math:`\\Gamma_0^{\\Delta n_s}`. Written in logs, so the caller exponentiates once.
+    """
+    d_g = sum(
+        nu*g0_rt[k]
+        for k, nu in enumerate(_surface_net_stoich(interface, reaction_index))
+        if nu != 0)
+
+    dn_gas, dn_surface = _surface_mole_changes(interface, reaction_index)
+
+    expr = -d_g
+    if dn_gas:
+        expr = expr + dn_gas*p.Variable("c0")
+    if dn_surface:
+        expr = expr + dn_surface*np.log(interface.site_density)
+    return expr
+
+
+def _surface_net_stoich(interface: ct.Interface, reaction_index):
+    """Net stoichiometric coefficient of every kinetics species in a reaction."""
+    return [interface.product_stoich_coeff(k, reaction_index)
+            - interface.reactant_stoich_coeff(k, reaction_index)
+            for k in range(interface.n_total_species)]
+
+
+def _surface_mole_changes(interface: ct.Interface, reaction_index):
+    """Change in moles of gas and of surface sites across a reaction.
+
+    The interface's own species occupy the first n_species slots of the kinetics
+    ordering; the adjacent phases follow.
+    """
+    nu = _surface_net_stoich(interface, reaction_index)
+    dn_surface = sum(nu[:interface.n_species])
+    dn_gas = sum(nu[interface.n_species:])
+    return dn_gas, dn_surface
+
+
+def surface_concentrations_expr(interface: ct.Interface, coverages):
+    """
+    :returns: Site concentration of every surface species, as a list of
+        :class:`pymbolic.primitives.Expression`.
+
+    A species occupying *size* sites is present at ``coverage*site_density/size``.
+    """
+    return [coverages[k]*(interface.site_density/interface.species(k).size)
+            for k in range(interface.n_species)]
+
+
+def surface_rate_of_progress_expr(interface: ct.Interface, reaction_index, k_fwd,
+                                  concentrations):
+    """
+    :returns: Forward rate of progress of heterogeneous reaction *reaction_index*,
+        in terms of its rate coefficient *k_fwd* and the concentrations of every
+        species the interface couples, as a
+        :class:`pymbolic.primitives.Expression`.
+
+    *concentrations* is in the interface's kinetics ordering: its own surface
+    species first, then those of the adjacent phases. Explicit reaction orders, where
+    a mechanism gives them, override the reactant stoichiometry.
+    """
+    reaction = interface.reaction(reaction_index)
+    orders = dict(reaction.orders)
+
+    expr = k_fwd
+    for k in range(interface.n_total_species):
+        order = orders.get(interface.kinetics_species_name(k),
+                           interface.reactant_stoich_coeff(k, reaction_index))
+        if order:
+            expr = expr * concentrations[k]**order
+    return expr
+
+
 def surface_production_rate_expr(interface: ct.Interface, species, r_net):
     """
     :returns: Production rate of *species* from the heterogeneous reactions of
