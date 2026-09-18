@@ -182,6 +182,22 @@ def _zeros_like(argument):
     # FIXME: This mishandles NaNs.
     return 0 * argument
 
+
+def _ones_from(sol: ct.Solution, rates, fallback):
+    """A broadcasting `1` shaped like the rates, or like *fallback* when there
+    are no reactions.
+
+    The rate vectors carry the array shape for vectorized evaluation, so the usual
+    source is ``rates[0]``. A mechanism with no reactions has no such element, and
+    indexing it raises IndexError when the generated code runs rather than when it
+    is generated, so the caller supplies something that is always in scope instead.
+    """
+    if sol.n_reactions == 0:
+        if fallback is None:
+            return 1.0
+        return _zeros_like(fallback) + 1.0
+    return _zeros_like(rates[0]) + 1.0
+
 # }}}
 
 
@@ -464,13 +480,13 @@ def rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
 
 # {{{ Species production rates
 
-def production_rate_expr(sol: ct.Solution, species, r_net):
+def production_rate_expr(sol: ct.Solution, species, r_net, fallback=None):
     """
     :returns: Species production rate for species *species* in terms of
         the net reaction rates of progress *r_net* as a
         :class:`pymbolic.primitives.Expression`
     """
-    ones = _zeros_like(r_net[0]) + 1.0
+    ones = _ones_from(sol, r_net, fallback)
     indices_fwd = [i for i, react in enumerate(sol.reactions())
                    if species in react.reactants]
     indices_rev = [i for i, react in enumerate(sol.reactions())
@@ -539,13 +555,13 @@ def _species_reaction_stoich(sol: ct.Solution, species):
     return idx_reactant, idx_product, nu_reactant, nu_product
 
 
-def creation_rate_expr(sol: ct.Solution, species, r_fwd, r_rev):
+def creation_rate_expr(sol: ct.Solution, species, r_fwd, r_rev, fallback=None):
     """
     :returns: Species creation rate for *species*: created as a product by
         forward reactions and as a reactant by reverse reactions. Mirrors
         Cantera's ``creation_rates``.
     """
-    ones = _zeros_like(r_fwd[0]) + 1.0
+    ones = _ones_from(sol, r_fwd, fallback)
     idx_reactant, idx_product, nu_reactant, nu_product = \
         _species_reaction_stoich(sol, species)
     made = sum(nu*r_fwd[i] for nu, i in zip(nu_product, idx_product)) \
@@ -553,13 +569,13 @@ def creation_rate_expr(sol: ct.Solution, species, r_fwd, r_rev):
     return made * ones
 
 
-def destruction_rate_expr(sol: ct.Solution, species, r_fwd, r_rev):
+def destruction_rate_expr(sol: ct.Solution, species, r_fwd, r_rev, fallback=None):
     """
     :returns: Species destruction rate for *species*: consumed as a reactant by
         forward reactions and as a product by reverse reactions. Mirrors
         Cantera's ``destruction_rates``. creation - destruction == net.
     """
-    ones = _zeros_like(r_fwd[0]) + 1.0
+    ones = _ones_from(sol, r_fwd, fallback)
     idx_reactant, idx_product, nu_reactant, nu_product = \
         _species_reaction_stoich(sol, species)
     lost = sum(nu*r_fwd[i] for nu, i in zip(nu_reactant, idx_reactant)) \
