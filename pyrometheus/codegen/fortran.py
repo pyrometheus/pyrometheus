@@ -1015,6 +1015,186 @@ end module ${module_name}
 # }}}
 
 
+surface_module_tpl = Template("""
+${gpu_routine}
+
+module ${module_name}
+
+    use ${gas_module_name}, only: sp, dp, one_atm, gas_constant, &
+        get_species_gibbs_rt
+
+    implicit none
+
+    integer, parameter :: num_surface_species = ${interface.n_species}
+    integer, parameter :: num_coupled_species = ${interface.n_total_species}
+    integer, parameter :: num_surface_reactions = ${interface.n_reactions}
+    ${real_type}, parameter :: &
+        site_density = ${float_to_fortran(interface.site_density)}
+
+    character(len=16), parameter :: &
+        surface_species_names(${interface.n_species}) = &
+        (/ ${", ".join(chr(34)+"{0: <16}".format(s)+chr(34)
+            for s in interface.species_names)} /)
+
+contains
+
+    subroutine get_site_concentrations(coverages, concentrations)
+
+        GPU_ROUTINE(get_site_concentrations)
+
+        ${real_type}, intent(in)  :: coverages(num_surface_species)
+        ${real_type}, intent(out) :: concentrations(num_surface_species)
+
+        %for k, expr in enumerate(site_conc_exprs):
+        concentrations(${k+1}) = ${cgm(expr)}
+        %endfor
+
+    end subroutine get_site_concentrations
+
+    subroutine get_surface_enthalpies_rt(temperature, h0_rt)
+
+        GPU_ROUTINE(get_surface_enthalpies_rt)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(out) :: h0_rt(num_surface_species)
+
+        %for k, sp in enumerate(interface.species()):
+        h0_rt(${k+1}) = ${cgm(ce.poly_to_enthalpy_expr(
+            sp.thermo, Variable("temperature")))}
+        %endfor
+
+    end subroutine get_surface_enthalpies_rt
+
+    subroutine get_surface_entropies_r(temperature, s0_r)
+
+        GPU_ROUTINE(get_surface_entropies_r)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(out) :: s0_r(num_surface_species)
+
+        %for k, sp in enumerate(interface.species()):
+        s0_r(${k+1}) = ${cgm(ce.poly_to_entropy_expr(
+            sp.thermo, Variable("temperature")))}
+        %endfor
+
+    end subroutine get_surface_entropies_r
+
+    subroutine get_surface_gibbs_rt(temperature, g0_rt)
+
+        GPU_ROUTINE(get_surface_gibbs_rt)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(out) :: g0_rt(num_surface_species)
+
+        ${real_type} :: h0_rt(num_surface_species), s0_r(num_surface_species)
+
+        call get_surface_enthalpies_rt(temperature, h0_rt)
+        call get_surface_entropies_r(temperature, s0_r)
+        g0_rt = h0_rt - s0_r
+
+    end subroutine get_surface_gibbs_rt
+
+    subroutine get_surface_fwd_rate_coefficients(temperature, coverages, k_fwd)
+
+        GPU_ROUTINE(get_surface_fwd_rate_coefficients)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(in)  :: coverages(num_surface_species)
+        ${real_type}, intent(out) :: k_fwd(num_surface_reactions)
+
+        %for i, react in enumerate(interface.reactions()):
+        k_fwd(${i+1}) = ${cgm(ce.surface_rate_coefficient_expr(interface,
+            react, Variable("temperature"), Variable("coverages")))}
+        %endfor
+
+    end subroutine get_surface_fwd_rate_coefficients
+
+    subroutine get_surface_equilibrium_constants(temperature, k_eq)
+
+        GPU_ROUTINE(get_surface_equilibrium_constants)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(out) :: k_eq(num_surface_reactions)
+
+        ${real_type} :: c0
+        ${real_type} :: g0_rt(num_coupled_species)
+        ${real_type} :: g0_surface(num_surface_species)
+        ${real_type} :: g0_gas(num_coupled_species - num_surface_species)
+
+        c0 = log(one_atm/(gas_constant*temperature))
+        call get_surface_gibbs_rt(temperature, g0_surface)
+        call get_species_gibbs_rt(temperature, g0_gas)
+        g0_rt(1:num_surface_species) = g0_surface
+        g0_rt(num_surface_species+1:num_coupled_species) = g0_gas
+
+        %for i, react in enumerate(interface.reactions()):
+        %if react.reversible:
+        k_eq(${i+1}) = exp(${cgm(ce.surface_equilibrium_constant_expr(
+            interface, i, Variable("g0_rt")))})
+        %else:
+        k_eq(${i+1}) = ${float_to_fortran(1.0)}
+        %endif
+        %endfor
+
+    end subroutine get_surface_equilibrium_constants
+
+    subroutine get_surface_rates_of_progress(temperature, concentrations, &
+            coverages, r_net)
+
+        GPU_ROUTINE(get_surface_rates_of_progress)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(in)  :: concentrations(num_coupled_species)
+        ${real_type}, intent(in)  :: coverages(num_surface_species)
+        ${real_type}, intent(out) :: r_net(num_surface_reactions)
+
+        ${real_type} :: k_fwd(num_surface_reactions)
+        ${real_type} :: k_eq(num_surface_reactions)
+
+        call get_surface_fwd_rate_coefficients(temperature, coverages, k_fwd)
+        call get_surface_equilibrium_constants(temperature, k_eq)
+
+        %for i, react in enumerate(interface.reactions()):
+        %if react.reversible:
+        r_net(${i+1}) = ${cgm(ce.surface_rate_of_progress_expr(interface, i,
+            Variable("k_fwd")[i], Variable("concentrations")))} &
+            - ${cgm(ce.surface_reverse_rate_of_progress_expr(interface, i,
+            Variable("k_fwd")[i], Variable("k_eq")[i],
+            Variable("concentrations")))}
+        %else:
+        r_net(${i+1}) = ${cgm(ce.surface_rate_of_progress_expr(interface, i,
+            Variable("k_fwd")[i], Variable("concentrations")))}
+        %endif
+        %endfor
+
+    end subroutine get_surface_rates_of_progress
+
+    subroutine get_surface_net_production_rates(temperature, concentrations, &
+            coverages, omega)
+
+        GPU_ROUTINE(get_surface_net_production_rates)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(in)  :: concentrations(num_coupled_species)
+        ${real_type}, intent(in)  :: coverages(num_surface_species)
+        ${real_type}, intent(out) :: omega(num_coupled_species)
+
+        ${real_type} :: r_net(num_surface_reactions)
+
+        call get_surface_rates_of_progress(temperature, concentrations, &
+            coverages, r_net)
+
+        %for k, name in enumerate(coupled_species):
+        omega(${k+1}) = ${cgm(ce.surface_production_rate_expr(
+            interface, name, Variable("r_net")))}
+        %endfor
+
+    end subroutine get_surface_net_production_rates
+
+end module ${module_name}
+""", strict_undefined=True)
+
+
 class FortranCodeGenerator(CodeGenerator):
     @staticmethod
     def get_name() -> str:
@@ -1067,6 +1247,59 @@ class FortranCodeGenerator(CodeGenerator):
 
             falloff_reactions=falloff_rxn,
             three_body_reactions=three_body_rxn
+        ))
+
+    @staticmethod
+    def generate_surface(name: str,
+                         interface: ct.Interface,
+                         gas_module_name: str = "thermochem",
+                         opts: CodeGenerationOptions = None) -> str:
+        """Generate a Fortran module for the heterogeneous kinetics of *interface*.
+
+        The module holds only the surface mechanism; it uses *gas_module_name*
+        for the gas-phase thermochemistry, which :meth:`generate` produces
+        separately.
+        """
+        if opts is None:
+            opts = CodeGenerationOptions()
+
+        if opts.directive_offload == "acc":
+            gpu_routine_str = """
+#define GPU_ROUTINE(name) !$acc routine seq
+"""
+        elif opts.directive_offload == "mp":
+            gpu_routine_str = """
+#define GPU_ROUTINE(name) !$omp declare target
+"""
+        else:
+            gpu_routine_str = """
+#define GPU_ROUTINE(name) ! name
+"""
+
+        coupled_species = [interface.kinetics_species_name(k)
+                           for k in range(interface.n_total_species)]
+        site_conc_exprs = pyrometheus.chem_expr.surface_concentrations_expr(
+            interface, p.Variable("coverages"))
+
+        return wrap_code(surface_module_tpl.render(
+            ct=ct,
+            interface=interface,
+
+            coupled_species=coupled_species,
+            site_conc_exprs=site_conc_exprs,
+
+            str_np=str_np,
+            cgm=FortranExpressionMapper(),
+            Variable=p.Variable,
+            float_to_fortran=float_to_fortran,
+
+            real_type=opts.scalar_type or "real(dp)",
+            gpu_routine=gpu_routine_str,
+
+            module_name=name,
+            gas_module_name=gas_module_name,
+
+            ce=pyrometheus.chem_expr,
         ))
 
 
