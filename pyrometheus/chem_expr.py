@@ -93,6 +93,18 @@ def _(poly: ct.NasaPoly2, arg_name):
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
 
 
+@poly_to_enthalpy_expr.register
+def _(poly: ct.ConstantCp, arg_name):
+    """Constant heat capacity: h(T) = h0 + cp0*(T - T0), normalised by RT.
+
+    Common for condensed-phase and surface-site species, whose thermo is often
+    given as a single reference point rather than a NASA fit.
+    """
+    t = p.Variable(arg_name)
+    t0, h0, _s0, cp0 = poly.coeffs
+    return (h0 + cp0*(t - t0))/(ct.gas_constant*t)
+
+
 @singledispatch
 def poly_to_entropy_expr(poly, arg_name):
     raise TypeError("unexpected argument type in poly_to_entropy_expr: "
@@ -115,6 +127,14 @@ def _(poly: ct.NasaPoly2, arg_name):
         )
 
     return nasa7_conditional(p.Variable(arg_name), poly, gen)
+
+
+@poly_to_entropy_expr.register
+def _(poly: ct.ConstantCp, arg_name):
+    """Constant heat capacity: s(T) = s0 + cp0*ln(T/T0), normalised by R."""
+    t = p.Variable(arg_name)
+    t0, _h0, s0, cp0 = poly.coeffs
+    return (s0 + cp0*p.Variable("log")(t/t0))/ct.gas_constant
 
 
 @singledispatch

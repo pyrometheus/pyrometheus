@@ -713,10 +713,56 @@ def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         assert err < 1e-10
 
 
-@pytest.mark.parametrize("mechname, phase", [
-    ("ptcombust.yaml", "Pt_surf"),
-])
-def test_surface_rate_coefficients(mechname: str, phase: str):
+# Two surface mechanisms, chosen to be complementary rather than merely different.
+#
+#   ptcombust      -- Cantera's own: 11 surface species, 43 coupled, 24 reactions
+#                     carrying every rate form at once (19 interface-Arrhenius,
+#                     5 sticking, 2 coverage-dependent, 3 reversible).
+#   carbon_surface -- a porous-graphite mechanism: adds what ptcombust lacks, namely
+#                     a bulk phase, explicit reaction orders (C(gr) at order zero)
+#                     and constant-cp rather than NASA thermo on the surface site.
+SURFACE_MECHS = [
+    ("ptcombust.yaml", "Pt_surf", ["gas"], "CH4:0.05, O2:0.2, N2:0.75"),
+    ("mechs/carbon_surface.yaml", "carbon_surface", ["gas", "graphite"],
+     "O2:0.21, N2:0.7, CO:0.05, H2O:0.04"),
+]
+
+
+def _load_surface(mechname, phase, adjacent_names):
+    """A ct.Interface with its adjacent phases resolved, plus those phases.
+
+    An interface only knows the phases it is handed, and a mechanism that reacts a
+    bulk phase needs that one loaded too or Cantera rejects its reactions outright.
+    """
+    import os
+    if not os.path.isabs(mechname) and mechname.startswith("mechs/"):
+        mechname = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                mechname)
+    adjacent = [ct.Solution(mechname, name) for name in adjacent_names]
+    interface = ct.Interface(mechname, phase, adjacent=adjacent)
+    return interface, adjacent
+
+
+def _surface_state(interface, adjacent, composition, temperature=1000.0):
+    """Put the interface and its phases in a state, and return the coupled
+    concentration vector in the interface's kinetics ordering."""
+    gas = adjacent[0]
+    gas.TPX = temperature, ct.one_atm, composition
+    interface.TP = temperature, ct.one_atm
+    # Deliberately non-uniform: a coverage-dependent rate is indistinguishable from
+    # a plain one when every coverage is equal.
+    coverages = np.linspace(0.05, 1.0, interface.n_species)
+    interface.coverages = coverages / coverages.sum()
+    for phase in adjacent[1:]:
+        phase.TP = temperature, ct.one_atm
+    concentrations = np.concatenate(
+        [interface.concentrations] + [p.concentrations for p in adjacent])
+    return concentrations
+
+
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_surface_rate_coefficients(mechname, phase, adjacent_names, composition):
     """Heterogeneous rate coefficients against Cantera's own.
 
     ptcombust is the fixture because it carries every rate form at once: plain
@@ -728,12 +774,8 @@ def test_surface_rate_coefficients(mechname: str, phase: str):
     from pymbolic.mapper.evaluator import EvaluationMapper
     from pyrometheus import chem_expr as ce
 
-    interface = ct.Interface(mechname, phase)
-    interface.TP = 900.0, ct.one_atm
-    # Deliberately non-uniform: a coverage-dependent rate is indistinguishable from a
-    # plain one when every coverage is equal.
-    coverages = np.linspace(0.05, 1.0, interface.n_species)
-    interface.coverages = coverages / coverages.sum()
+    interface, adjacent = _load_surface(mechname, phase, adjacent_names)
+    _surface_state(interface, adjacent, composition)
 
     t = p.Variable("t")
     theta = [p.Variable(f"theta_{i}") for i in range(interface.n_species)]
@@ -748,22 +790,17 @@ def test_surface_rate_coefficients(mechname: str, phase: str):
             <= 1e-12*abs(interface.forward_rate_constants[i]), reaction.equation
 
 
-@pytest.mark.parametrize("mechname, phase", [
-    ("ptcombust.yaml", "Pt_surf"),
-])
-def test_surface_production_rates(mechname: str, phase: str):
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_surface_production_rates(mechname, phase, adjacent_names, composition):
     """Production rates from heterogeneous reactions, over every phase the interface
     couples: the gas, the surface sites and the bulk."""
     import pymbolic.primitives as p
     from pymbolic.mapper.evaluator import EvaluationMapper
     from pyrometheus import chem_expr as ce
 
-    interface = ct.Interface(mechname, phase)
-    gas = interface.adjacent["gas"]
-    gas.TPX = 900.0, ct.one_atm, "CH4:0.05, O2:0.2, N2:0.75"
-    interface.TP = 900.0, ct.one_atm
-    coverages = np.linspace(0.05, 1.0, interface.n_species)
-    interface.coverages = coverages / coverages.sum()
+    interface, adjacent = _load_surface(mechname, phase, adjacent_names)
+    _surface_state(interface, adjacent, composition)
 
     r_net = [p.Variable(f"r_{i}") for i in range(interface.n_reactions)]
     context = {f"r_{i}": r for i, r in enumerate(interface.net_rates_of_progress)}
@@ -777,10 +814,9 @@ def test_surface_production_rates(mechname: str, phase: str):
         assert abs(value - omega) <= 1e-10*max(abs(omega), 1e-20), name
 
 
-@pytest.mark.parametrize("mechname, phase", [
-    ("ptcombust.yaml", "Pt_surf"),
-])
-def test_surface_kinetics_pieces(mechname: str, phase: str):
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_surface_kinetics_pieces(mechname, phase, adjacent_names, composition):
     """Site concentrations, equilibrium constants and rates of progress.
 
     Each is checked against Cantera's own, because each embeds a convention that is
@@ -795,15 +831,10 @@ def test_surface_kinetics_pieces(mechname: str, phase: str):
     from pymbolic.mapper.evaluator import EvaluationMapper
     from pyrometheus import chem_expr as ce
 
-    interface = ct.Interface(mechname, phase)
-    gas = interface.adjacent["gas"]
-    gas.TPX = 900.0, ct.one_atm, "CH4:0.05, O2:0.2, N2:0.75"
-    interface.TP = 900.0, ct.one_atm
-    coverages = np.linspace(0.05, 1.0, interface.n_species)
-    interface.coverages = coverages / coverages.sum()
-
-    concentrations = np.concatenate([interface.concentrations, gas.concentrations])
-    gibbs = np.concatenate([interface.standard_gibbs_RT, gas.standard_gibbs_RT])
+    interface, adjacent = _load_surface(mechname, phase, adjacent_names)
+    concentrations = _surface_state(interface, adjacent, composition)
+    gibbs = np.concatenate(
+        [interface.standard_gibbs_RT] + [p.standard_gibbs_RT for p in adjacent])
 
     context = {"exp": np.exp, "log": np.log, "sqrt": np.sqrt,
                "c0": np.log(ct.one_atm/(ct.gas_constant*interface.T))}
@@ -840,10 +871,9 @@ def test_surface_kinetics_pieces(mechname: str, phase: str):
             reaction.equation
 
 
-@pytest.mark.parametrize("mechname, phase, fuel", [
-    ("ptcombust.yaml", "Pt_surf", "CH4:0.05, O2:0.2, N2:0.75"),
-])
-def test_generated_surface_kinetics(mechname: str, phase: str, fuel: str):
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_generated_surface_kinetics(mechname, phase, adjacent_names, composition):
     """The generated surface class against Cantera, end to end.
 
     The pieces are checked individually elsewhere; this is the composition, which is
@@ -852,19 +882,13 @@ def test_generated_surface_kinetics(mechname: str, phase: str, fuel: str):
     """
     from pyrometheus.codegen.python import PythonCodeGenerator
 
-    interface = ct.Interface(mechname, phase)
-    gas = interface.adjacent["gas"]
-    gas.TPX = 900.0, ct.one_atm, fuel
-    interface.TP = 900.0, ct.one_atm
-    coverages = np.linspace(0.05, 1.0, interface.n_species)
-    interface.coverages = coverages / coverages.sum()
+    interface, adjacent = _load_surface(mechname, phase, adjacent_names)
+    concentrations = _surface_state(interface, adjacent, composition)
 
     surface = PythonCodeGenerator.get_surface_kinetics_class(interface)(
-        gas=PythonCodeGenerator.get_thermochem_class(gas)())
+        gas=PythonCodeGenerator.get_thermochem_class(adjacent[0])())
 
     temperature = interface.T
-    concentrations = np.concatenate(
-        [interface.concentrations, gas.concentrations])
 
     for computed, reference in [
         (surface.get_site_concentrations(interface.coverages),
@@ -883,10 +907,9 @@ def test_generated_surface_kinetics(mechname: str, phase: str, fuel: str):
         assert np.allclose(computed, reference, rtol=1e-10, atol=1e-280)
 
 
-@pytest.mark.parametrize("mechname, phase", [
-    ("ptcombust.yaml", "Pt_surf"),
-])
-def test_surface_backends_render(mechname: str, phase: str):
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_surface_backends_render(mechname, phase, adjacent_names, composition):
     """Every backend renders a surface mechanism.
 
     The numbers are checked against Cantera through the Python backend; this
@@ -897,7 +920,7 @@ def test_surface_backends_render(mechname: str, phase: str):
     from pyrometheus.codegen.fortran import FortranCodeGenerator
     from pyrometheus.codegen.python import PythonCodeGenerator
 
-    interface = ct.Interface(mechname, phase)
+    interface, _adjacent = _load_surface(mechname, phase, adjacent_names)
 
     python_src = PythonCodeGenerator.generate_surface("SurfaceKinetics", interface)
     fortran_src = FortranCodeGenerator.generate_surface(
