@@ -568,4 +568,96 @@ def destruction_rate_expr(sol: ct.Solution, species, r_fwd, r_rev):
 
 # }}}
 
+
+# {{{ surface (heterogeneous) kinetics
+
+def surface_rate_coefficient_expr(interface: ct.Interface, react: ct.Reaction, t,
+                                  coverages=None):
+    """
+    :returns: The forward rate coefficient expression for the heterogeneous
+        reaction *react* on *interface*, in terms of the temperature *t* and,
+        where the rate depends on them, the surface *coverages*, as a
+        :class:`pymbolic.primitives.Expression`.
+
+    Three rate forms are handled, all verified against
+    :attr:`cantera.Interface.forward_rate_constants`:
+
+    * ``interface-Arrhenius`` -- the modified Arrhenius form, as in the gas phase.
+
+    * ``sticking-Arrhenius`` -- the Arrhenius parameters give a dimensionless
+      sticking probability :math:`\\gamma`, not a rate coefficient. The coefficient
+      follows from kinetic theory,
+
+      .. math:: k = \\frac{\\gamma}{\\Gamma_0^n}\\sqrt{\\frac{RT}{2\\pi W}},
+
+      with :math:`\\Gamma_0` the site density, *n* the sticking order and *W* the
+      molar mass of the sticking species. With the Motz-Wise correction the
+      leading factor is :math:`\\gamma/(1 - \\gamma/2)`, which matters once
+      :math:`\\gamma` is no longer small.
+
+    * coverage dependence -- any of the above multiplied by
+
+      .. math:: 10^{a\\theta_k}\\,\\theta_k^{m}\\,e^{-E\\theta_k/RT}
+
+      for each species *k* the rate declares a dependence on.
+    """
+    rate = react.rate
+    t_a = rate.activation_energy/ct.gas_constant
+
+    # The sticking probability, or the rate coefficient itself for a plain rate.
+    if t_a == 0:
+        base = rate.pre_exponential_factor * t**rate.temperature_exponent
+    else:
+        base = p.Variable("exp")(
+            np.log(rate.pre_exponential_factor)
+            + rate.temperature_exponent*p.Variable("log")(t) - t_a/t)
+
+    if isinstance(rate, ct.StickRateBase):
+        if rate.motz_wise_correction:
+            base = base/(1 - base/2)
+        flux = p.Variable("sqrt")(
+            (ct.gas_constant/(2*np.pi*rate.sticking_weight)) * t)
+        base = base * flux / interface.site_density**rate.sticking_order
+
+    for name, dep in (dict(getattr(rate, "coverage_dependencies", {}) or {})).items():
+        if coverages is None:
+            raise ValueError(
+                f"reaction '{react.equation}' has a coverage-dependent rate, so "
+                "surface_rate_coefficient_expr needs the coverages")
+        theta = coverages[interface.species_index(name)]
+        if dep["a"]:
+            base = base * 10**(dep["a"]*theta)
+        if dep["m"]:
+            base = base * theta**dep["m"]
+        if dep["E"]:
+            base = base * p.Variable("exp")(-(dep["E"]/ct.gas_constant)*theta/t)
+
+    return base
+
+
+def surface_production_rate_expr(interface: ct.Interface, species, r_net):
+    """
+    :returns: Production rate of *species* from the heterogeneous reactions of
+        *interface*, in terms of the net rates of progress *r_net*, as a
+        :class:`pymbolic.primitives.Expression`.
+
+    *species* may be a gas-phase, surface-site or bulk species: the interface's
+    own stoichiometry covers all the phases it couples, and a species absent from
+    every reaction yields zero.
+    """
+    ones = _zeros_like(r_net[0]) + 1.0
+    index = interface.kinetics_species_index(species)
+
+    nu = [interface.product_stoich_coeff(index, i)
+          - interface.reactant_stoich_coeff(index, i)
+          for i in range(interface.n_reactions)]
+
+    terms = [coeff*r_net[i] for i, coeff in enumerate(nu) if coeff != 0]
+    if not terms:
+        return 0.0 * ones
+
+    return sum(terms) * ones
+
+# }}}
+
 # vim

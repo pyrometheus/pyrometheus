@@ -711,3 +711,67 @@ def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
             ct_diff[i] - pyro_diff[i])
 
         assert err < 1e-10
+
+
+@pytest.mark.parametrize("mechname, phase", [
+    ("ptcombust.yaml", "Pt_surf"),
+])
+def test_surface_rate_coefficients(mechname: str, phase: str):
+    """Heterogeneous rate coefficients against Cantera's own.
+
+    ptcombust is the fixture because it carries every rate form at once: plain
+    interface-Arrhenius, sticking coefficients (where the Arrhenius parameters give a
+    dimensionless probability rather than a rate, so reading them directly is wrong by
+    orders of magnitude), and coverage-dependent rates.
+    """
+    import pymbolic.primitives as p
+    from pymbolic.mapper.evaluator import EvaluationMapper
+    from pyrometheus import chem_expr as ce
+
+    interface = ct.Interface(mechname, phase)
+    interface.TP = 900.0, ct.one_atm
+    # Deliberately non-uniform: a coverage-dependent rate is indistinguishable from a
+    # plain one when every coverage is equal.
+    coverages = np.linspace(0.05, 1.0, interface.n_species)
+    interface.coverages = coverages / coverages.sum()
+
+    t = p.Variable("t")
+    theta = [p.Variable(f"theta_{i}") for i in range(interface.n_species)]
+    context = {"t": interface.T, "exp": np.exp, "log": np.log, "sqrt": np.sqrt}
+    context.update({f"theta_{i}": c for i, c in enumerate(interface.coverages)})
+    evaluate = EvaluationMapper(context=context)
+
+    for i, reaction in enumerate(interface.reactions()):
+        expr = ce.surface_rate_coefficient_expr(interface, reaction, t, theta)
+        value = expr if isinstance(expr, (int, float)) else evaluate(expr)
+        assert abs(value - interface.forward_rate_constants[i]) \
+            <= 1e-12*abs(interface.forward_rate_constants[i]), reaction.equation
+
+
+@pytest.mark.parametrize("mechname, phase", [
+    ("ptcombust.yaml", "Pt_surf"),
+])
+def test_surface_production_rates(mechname: str, phase: str):
+    """Production rates from heterogeneous reactions, over every phase the interface
+    couples: the gas, the surface sites and the bulk."""
+    import pymbolic.primitives as p
+    from pymbolic.mapper.evaluator import EvaluationMapper
+    from pyrometheus import chem_expr as ce
+
+    interface = ct.Interface(mechname, phase)
+    gas = interface.adjacent["gas"]
+    gas.TPX = 900.0, ct.one_atm, "CH4:0.05, O2:0.2, N2:0.75"
+    interface.TP = 900.0, ct.one_atm
+    coverages = np.linspace(0.05, 1.0, interface.n_species)
+    interface.coverages = coverages / coverages.sum()
+
+    r_net = [p.Variable(f"r_{i}") for i in range(interface.n_reactions)]
+    context = {f"r_{i}": r for i, r in enumerate(interface.net_rates_of_progress)}
+    evaluate = EvaluationMapper(context=context)
+
+    reference = interface.net_production_rates
+    for k, omega in enumerate(reference):
+        name = interface.kinetics_species_name(k)
+        expr = ce.surface_production_rate_expr(interface, name, r_net)
+        value = expr if isinstance(expr, (int, float)) else evaluate(expr)
+        assert abs(value - omega) <= 1e-10*max(abs(omega), 1e-20), name
