@@ -723,7 +723,7 @@ def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
 #                     and constant-cp rather than NASA thermo on the surface site.
 SURFACE_MECHS = [
     ("ptcombust.yaml", "Pt_surf", ["gas"], "CH4:0.05, O2:0.2, N2:0.75"),
-    ("mechs/carbon_surface.yaml", "carbon_surface", ["gas", "graphite"],
+    ("surface_mechs/carbon_surface.yaml", "carbon_surface", ["gas", "graphite"],
      "O2:0.21, N2:0.7, CO:0.05, H2O:0.04"),
 ]
 
@@ -735,7 +735,7 @@ def _load_surface(mechname, phase, adjacent_names):
     bulk phase needs that one loaded too or Cantera rejects its reactions outright.
     """
     import os
-    if not os.path.isabs(mechname) and mechname.startswith("mechs/"):
+    if not os.path.isabs(mechname) and mechname.startswith("surface_mechs/"):
         mechname = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 mechname)
     adjacent = [ct.Solution(mechname, name) for name in adjacent_names]
