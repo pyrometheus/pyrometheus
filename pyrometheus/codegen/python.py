@@ -692,12 +692,15 @@ class SurfaceKinetics:
         self.gas_constant = ${repr(float(ct.gas_constant))}
         self.one_atm = ${repr(float(ct.one_atm))}
 
-        self.species_names = ${repr([interface.species_name(i) for i in range(interface.n_species)])}
-        self.species_indices = dict([(name, i) for i, name in enumerate(self.species_names)])
-        self.total_species_names = ${repr([interface.kinetics_species_name(k) for k in range(interface.n_total_species)])}
+        self.species_names = ${repr([interface.species_name(i)
+            for i in range(interface.n_species)])}
+        self.species_indices = dict([(name, i)
+            for i, name in enumerate(self.species_names)])
+        self.total_species_names = ${repr([interface.kinetics_species_name(k)
+            for k in range(interface.n_total_species)])}
 
     def _pyro_make_array(self, res_list):
-        \"""Create a numpy or object array out of *res_list*, mirroring the gas class.\"""
+        \"""Make a numpy or object array from *res_list*, as the gas class does.\"""
         from numbers import Number
         all_numbers = all(isinstance(e, Number) for e in res_list)
         dtype = np.float64 if all_numbers else object
@@ -709,10 +712,12 @@ class SurfaceKinetics:
     def get_site_concentrations(self, coverages):
         \"""Site concentration of every surface species.
 
-        A species occupying *size* sites is present at ``coverage*site_density/size``.
+        A species occupying *size* sites is present at
+        ``coverage*site_density/size``.
         \"""
         return self._pyro_make_array([
-            %for expr in ce.surface_concentrations_expr(interface, Variable("coverages")):
+            %for expr in ce.surface_concentrations_expr(
+                    interface, Variable("coverages")):
             ${cgm(expr)},
             %endfor
         ])
@@ -721,12 +726,13 @@ class SurfaceKinetics:
         \"""Forward rate coefficient of every heterogeneous reaction.\"""
         return self._pyro_make_array([
             %for react in interface.reactions():
-            ${cgm(ce.surface_rate_coefficient_expr(interface, react, Variable("temperature"), Variable("coverages")))},
+            ${cgm(ce.surface_rate_coefficient_expr(interface, react,
+                Variable("temperature"), Variable("coverages")))},
             %endfor
         ])
 
     def get_equilibrium_constants(self, temperature):
-        \"""Equilibrium constant of every heterogeneous reaction; 1 where irreversible.\"""
+        \"""Equilibrium constant of every reaction; 1 where irreversible.\"""
         c0 = self.pyro_np.log(self.one_atm / (self.gas_constant * temperature))
         g0_rt = self._pyro_make_array(
             list(self.get_surface_gibbs_rt(temperature))
@@ -734,7 +740,8 @@ class SurfaceKinetics:
         return self._pyro_make_array([
             %for i, react in enumerate(interface.reactions()):
             %if react.reversible:
-            self.pyro_np.exp(${cgm(ce.surface_equilibrium_constant_expr(interface, i, Variable("g0_rt")))}),
+            self.pyro_np.exp(${cgm(ce.surface_equilibrium_constant_expr(
+                interface, i, Variable("g0_rt")))}),
             %else:
             1.0 + 0.0*temperature,
             %endif
@@ -750,14 +757,16 @@ class SurfaceKinetics:
     def get_surface_enthalpies_rt(self, temperature):
         return self._pyro_make_array([
             %for sp in interface.species():
-            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, Variable("temperature")))},
+            ${cgm(ce.poly_to_enthalpy_expr(
+                sp.thermo, Variable("temperature")))},
             %endfor
         ])
 
     def get_surface_entropies_r(self, temperature):
         return self._pyro_make_array([
             %for sp in interface.species():
-            ${cgm(ce.poly_to_entropy_expr(sp.thermo, Variable("temperature")))},
+            ${cgm(ce.poly_to_entropy_expr(
+                sp.thermo, Variable("temperature")))},
             %endfor
         ])
 
@@ -771,13 +780,16 @@ class SurfaceKinetics:
         k_eq = self.get_equilibrium_constants(temperature)
         r_fwd = self._pyro_make_array([
             %for i in range(interface.n_reactions):
-            ${cgm(ce.surface_rate_of_progress_expr(interface, i, Variable("k_fwd")[i], Variable("concentrations")))},
+            ${cgm(ce.surface_rate_of_progress_expr(interface, i,
+                Variable("k_fwd")[i], Variable("concentrations")))},
             %endfor
         ])
         r_rev = self._pyro_make_array([
             %for i, react in enumerate(interface.reactions()):
             %if react.reversible:
-            ${cgm(ce.surface_reverse_rate_of_progress_expr(interface, i, Variable("k_fwd")[i], Variable("k_eq")[i], Variable("concentrations")))},
+            ${cgm(ce.surface_reverse_rate_of_progress_expr(interface, i,
+                Variable("k_fwd")[i], Variable("k_eq")[i],
+                Variable("concentrations")))},
             %else:
             0.0*temperature,
             %endif
@@ -786,11 +798,13 @@ class SurfaceKinetics:
         return r_fwd - r_rev
 
     def get_net_production_rates(self, temperature, concentrations, coverages):
-        \"""Production rate of every species the interface couples, in kinetics order.\"""
+        \"""Production rate of every coupled species, in kinetics order.\"""
         r_net = self.get_rates_of_progress(temperature, concentrations, coverages)
         return self._pyro_make_array([
-            %for name in [interface.kinetics_species_name(k) for k in range(interface.n_total_species)]:
-            ${cgm(ce.surface_production_rate_expr(interface, name, Variable("r_net")))},
+            %for name in [interface.kinetics_species_name(k)
+                    for k in range(interface.n_total_species)]:
+            ${cgm(ce.surface_production_rate_expr(
+                interface, name, Variable("r_net")))},
             %endfor
         ])
 """, strict_undefined=True)

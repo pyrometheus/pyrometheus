@@ -721,7 +721,7 @@ def test_surface_rate_coefficients(mechname: str, phase: str):
 
     ptcombust is the fixture because it carries every rate form at once: plain
     interface-Arrhenius, sticking coefficients (where the Arrhenius parameters give a
-    dimensionless probability rather than a rate, so reading them directly is wrong by
+    dimensionless probability rather than a rate, so reading them directly is wrong
     orders of magnitude), and coverage-dependent rates.
     """
     import pymbolic.primitives as p

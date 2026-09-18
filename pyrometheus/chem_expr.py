@@ -619,7 +619,8 @@ def surface_rate_coefficient_expr(interface: ct.Interface, react: ct.Reaction, t
             (ct.gas_constant/(2*np.pi*rate.sticking_weight)) * t)
         base = base * flux / interface.site_density**rate.sticking_order
 
-    for name, dep in (dict(getattr(rate, "coverage_dependencies", {}) or {})).items():
+    coverage = dict(getattr(rate, "coverage_dependencies", {}) or {})
+    for name, dep in coverage.items():
         if coverages is None:
             raise ValueError(
                 f"reaction '{react.equation}' has a coverage-dependent rate, so "
@@ -635,7 +636,8 @@ def surface_rate_coefficient_expr(interface: ct.Interface, react: ct.Reaction, t
     return base
 
 
-def surface_equilibrium_constant_expr(interface: ct.Interface, reaction_index, g0_rt):
+def surface_equilibrium_constant_expr(interface: ct.Interface, reaction_index,
+                                      g0_rt):
     """
     :returns: Log of the equilibrium constant for heterogeneous reaction
         *reaction_index*, in terms of the standard-state Gibbs energies *g0_rt* of
@@ -644,7 +646,8 @@ def surface_equilibrium_constant_expr(interface: ct.Interface, reaction_index, g
 
     The pressure-like factor differs per phase: a change in moles of gas carries
     :math:`(p_0/RT)^{\\Delta n_g}`, one of surface sites carries
-    :math:`\\Gamma_0^{\\Delta n_s}`. Written in logs, so the caller exponentiates once.
+    :math:`\\Gamma_0^{\\Delta n_s}`. Written in logs, so the caller exponentiates
+    once.
     """
     d_g = sum(
         nu*g0_rt[k]
