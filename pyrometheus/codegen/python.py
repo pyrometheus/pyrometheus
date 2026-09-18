@@ -358,10 +358,12 @@ class Thermochemistry:
         return h0_rt - s0_r
 
     def get_equilibrium_constants(self, temperature):
+        %if sol.n_reactions:
         rt = self.gas_constant * temperature
         c0 = self.pyro_np.log(self.one_atm / rt)
 
         g0_rt = self.get_species_gibbs_rt(temperature)
+        %endif
         return self._pyro_make_array([
             %for i, react in enumerate(sol.reactions()):
             %if react.reversible:
@@ -451,7 +453,9 @@ class Thermochemistry:
 
     %endif
     def get_fwd_rate_coefficients(self, temperature, concentrations):
+        %if sol.n_reactions:
         ones = self._pyro_zeros_like(temperature) + 1.0
+        %endif
         k_fwd = [
         %for react in sol.reactions():
         %if react.equation in [r.equation for _, r in falloff_reactions]:
@@ -473,8 +477,10 @@ class Thermochemistry:
         return self._pyro_make_array(k_fwd)
 
     def get_net_rates_of_progress(self, temperature, concentrations):
+        %if sol.n_reactions:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
+        %endif
         return self._pyro_make_array([
             %for i in range(sol.n_reactions):
             ${cgm(ce.rate_of_progress_expr(sol, i,
@@ -484,18 +490,23 @@ class Thermochemistry:
             ])
 
     def get_net_production_rates(self, rho, temperature, mass_fractions):
+        %if sol.n_reactions:
         c = self.get_concentrations(rho, mass_fractions)
         r_net = self.get_net_rates_of_progress(temperature, c)
-        ones = self._pyro_zeros_like(r_net[0]) + 1.0
+        %endif
+        ones = self._pyro_zeros_like(${shape_src('r_net')}) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
-            ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))} <%
+            ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net"),
+            Variable("temperature")))} <%
             %>* ones,
             %endfor
             ])
 
     def get_fwd_rates_of_progress(self, temperature, concentrations):
+        %if sol.n_reactions:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
+        %endif
         return self._pyro_make_array([
             %for i in range(sol.n_reactions):
             ${cgm(ce.fwd_rate_of_progress_expr(sol, i,
@@ -504,8 +515,10 @@ class Thermochemistry:
             ])
 
     def get_rev_rates_of_progress(self, temperature, concentrations):
+        %if sol.n_reactions:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
+        %endif
         return self._pyro_make_array([
             %for i in range(sol.n_reactions):
             ${cgm(ce.rev_rate_of_progress_expr(sol, i,
@@ -515,10 +528,12 @@ class Thermochemistry:
             ])
 
     def get_creation_rates(self, rho, temperature, mass_fractions):
+        %if sol.n_reactions:
         c = self.get_concentrations(rho, mass_fractions)
         r_fwd = self.get_fwd_rates_of_progress(temperature, c)
         r_rev = self.get_rev_rates_of_progress(temperature, c)
-        ones = self._pyro_zeros_like(r_fwd[0]) + 1.0
+        %endif
+        ones = self._pyro_zeros_like(${shape_src('r_fwd')}) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
             ${cgm(ce.creation_rate_expr(sol, sp.name,
@@ -528,10 +543,12 @@ class Thermochemistry:
             ])
 
     def get_destruction_rates(self, rho, temperature, mass_fractions):
+        %if sol.n_reactions:
         c = self.get_concentrations(rho, mass_fractions)
         r_fwd = self.get_fwd_rates_of_progress(temperature, c)
         r_rev = self.get_rev_rates_of_progress(temperature, c)
-        ones = self._pyro_zeros_like(r_fwd[0]) + 1.0
+        %endif
+        ones = self._pyro_zeros_like(${shape_src('r_fwd')}) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
             ${cgm(ce.destruction_rate_expr(sol, sp.name,
@@ -541,10 +558,12 @@ class Thermochemistry:
             ])
 
     def get_creation_destruction_rates(self, rho, temperature, mass_fractions):
+        %if sol.n_reactions:
         c = self.get_concentrations(rho, mass_fractions)
         r_fwd = self.get_fwd_rates_of_progress(temperature, c)
         r_rev = self.get_rev_rates_of_progress(temperature, c)
-        ones = self._pyro_zeros_like(r_fwd[0]) + 1.0
+        %endif
+        ones = self._pyro_zeros_like(${shape_src('r_fwd')}) + 1.0
         cdot = self._pyro_make_array([
             %for sp in sol.species():
             ${cgm(ce.creation_rate_expr(sol, sp.name,
@@ -670,9 +689,15 @@ class PythonCodeGenerator(CodeGenerator):
         three_body_rxn = [(i, r) for i, r in enumerate(sol.reactions())
                           if r.reaction_type == "three-body-Arrhenius"]
 
+        def shape_src(rates):
+            # With no reactions there is no rates[0] to take an array shape from.
+            return f"{rates}[0]" if sol.n_reactions else "temperature"
+
         return code_tpl.render(
             ct=ct,
             sol=sol,
+
+            shape_src=shape_src,
 
             product=product,
 
