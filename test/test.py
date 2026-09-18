@@ -724,7 +724,11 @@ def test_a_mechanism_without_reactions_generates_working_code():
     """
     from pyrometheus.codegen.python import PythonCodeGenerator
 
-    sol = ct.Solution("mechs/inert.yaml")
+    # Resolved from this file, as backends.py does: pytest's working directory is
+    # not the test directory, so a relative mechanism name does not find it.
+    import pathlib
+    mech = pathlib.Path(__file__).parent / "mechs" / "inert.yaml"
+    sol = ct.Solution(str(mech))
     assert sol.n_reactions == 0, "this fixture exists to have no reactions"
 
     thermochem = PythonCodeGenerator.get_thermochem_class(sol)()
