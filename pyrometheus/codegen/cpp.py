@@ -722,7 +722,7 @@ struct ${name}
     {
         SurfaceT h0_rt = {
         %for sp in interface.species():
-        ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, Variable("temperature")))},
+        ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
         %endfor
         };
         return h0_rt;
@@ -732,7 +732,7 @@ struct ${name}
     {
         SurfaceT s0_r = {
         %for sp in interface.species():
-        ${cgm(ce.poly_to_entropy_expr(sp.thermo, Variable("temperature")))},
+        ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
         %endfor
         };
         return s0_r;

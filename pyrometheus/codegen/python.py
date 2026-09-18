@@ -757,7 +757,7 @@ class SurfaceKinetics:
         return self._pyro_make_array([
             %for sp in interface.species():
             ${cgm(ce.poly_to_enthalpy_expr(
-                sp.thermo, Variable("temperature")))},
+                sp.thermo, "temperature"))},
             %endfor
         ])
 
@@ -765,7 +765,7 @@ class SurfaceKinetics:
         return self._pyro_make_array([
             %for sp in interface.species():
             ${cgm(ce.poly_to_entropy_expr(
-                sp.thermo, Variable("temperature")))},
+                sp.thermo, "temperature"))},
             %endfor
         ])
 

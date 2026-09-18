@@ -1060,7 +1060,7 @@ contains
 
         %for k, sp in enumerate(interface.species()):
         h0_rt(${k+1}) = ${cgm(ce.poly_to_enthalpy_expr(
-            sp.thermo, Variable("temperature")))}
+            sp.thermo, "temperature"))}
         %endfor
 
     end subroutine get_surface_enthalpies_rt
@@ -1074,7 +1074,7 @@ contains
 
         %for k, sp in enumerate(interface.species()):
         s0_r(${k+1}) = ${cgm(ce.poly_to_entropy_expr(
-            sp.thermo, Variable("temperature")))}
+            sp.thermo, "temperature"))}
         %endfor
 
     end subroutine get_surface_entropies_r
