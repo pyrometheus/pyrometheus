@@ -716,8 +716,7 @@ class SurfaceKinetics:
         ``coverage*site_density/size``.
         \"""
         return self._pyro_make_array([
-            %for expr in ce.surface_concentrations_expr(
-                    interface, Variable("coverages")):
+            %for expr in site_conc_exprs:
             ${cgm(expr)},
             %endfor
         ])
@@ -801,8 +800,7 @@ class SurfaceKinetics:
         \"""Production rate of every coupled species, in kinetics order.\"""
         r_net = self.get_rates_of_progress(temperature, concentrations, coverages)
         return self._pyro_make_array([
-            %for name in [interface.kinetics_species_name(k)
-                    for k in range(interface.n_total_species)]:
+            %for name in coupled_species:
             ${cgm(ce.surface_production_rate_expr(
                 interface, name, Variable("r_net")))},
             %endfor
@@ -878,9 +876,17 @@ class PythonCodeGenerator(CodeGenerator):
                 "Python code generation"
                 )
 
+        coupled_species = [interface.kinetics_species_name(k)
+                           for k in range(interface.n_total_species)]
+        site_conc_exprs = pyrometheus.chem_expr.surface_concentrations_expr(
+            interface, p.Variable("coverages"))
+
         return surface_code_tpl.render(
             ct=ct,
             interface=interface,
+
+            coupled_species=coupled_species,
+            site_conc_exprs=site_conc_exprs,
 
             str_np=str_np,
             cgm=CodeGenerationMapper(),
