@@ -1031,6 +1031,15 @@ module ${module_name}
 %if bulk_species:
     integer, parameter :: num_coupled_bulk_species = ${len(bulk_species)}
 %endif
+
+    ! Where each phase's species start in the coupled ordering. A caller
+    ! assembling the coupled concentration vector, or reading a production
+    ! rate back out of it, needs these: which phase comes first after the
+    ! interface's own species is a property of the mechanism, not a
+    ! convention.
+    %for kind, start, stop, src in phase_blocks:
+    integer, parameter :: coupled_${kind}_offset = ${start}
+    %endfor
     integer, parameter :: num_surface_reactions = ${interface.n_reactions}
     ${real_type}, parameter :: &
         site_density = ${float_to_fortran(interface.site_density)}

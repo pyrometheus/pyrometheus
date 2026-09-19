@@ -690,6 +690,13 @@ struct ${name}
     // Every species the interface couples, its own first and then the adjacent
     // phases', which is the ordering used for concentrations and production rates.
     constexpr static int num_coupled_species = ${interface.n_total_species};
+    // Where each phase's species start in the coupled ordering. A caller
+    // assembling the coupled concentration vector, or reading a production rate
+    // back out of it, needs these: which phase comes first after the interface's
+    // own species is a property of the mechanism, not a convention.
+    %for kind, start, stop, src in phase_blocks:
+    constexpr static int coupled_${kind}_offset = ${start};
+    %endfor
     constexpr static int num_surface_reactions = ${interface.n_reactions};
 
     constexpr static const char* surface_species_names[] = {

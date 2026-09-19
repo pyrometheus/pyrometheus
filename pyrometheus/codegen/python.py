@@ -700,6 +700,15 @@ class SurfaceKinetics:
         self.total_species_names = ${repr([interface.kinetics_species_name(k)
             for k in range(interface.n_total_species)])}
 
+        # Where each phase's species start in the coupled ordering. A caller
+        # assembling the coupled concentration vector, or reading a production
+        # rate back out of it, needs these: which phase comes first after the
+        # interface's own species is a property of the mechanism, not a
+        # convention.
+        %for kind, start, stop, src in phase_blocks:
+        self.coupled_${kind}_offset = ${start}
+        %endfor
+
     def _pyro_make_array(self, res_list):
         \"""Make a numpy or object array from *res_list*, as the gas class does.\"""
         from numbers import Number
