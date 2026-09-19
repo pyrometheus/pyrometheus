@@ -725,12 +725,27 @@ def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
 #   carbon_surface -- a porous-graphite mechanism: adds what ptcombust lacks, namely
 #                     a bulk phase, explicit reaction orders (C(gr) at order zero)
 #                     and constant-cp rather than NASA thermo on the surface site.
+_CANTERA_VERSION = tuple(int(part) for part in ct.__version__.split(".")[:2])
+
 SURFACE_MECHS = [
     ("ptcombust.yaml", "Pt_surf", ["gas"], "CH4:0.05, O2:0.2, N2:0.75"),
     ("surface_mechs/carbon_surface.yaml", "carbon_surface", ["gas", "graphite"],
      "O2:0.21, N2:0.7, CO:0.05, H2O:0.04"),
-    ("surface_mechs/bulk_multisite.yaml", "surf", ["gas", "bulk"],
-     "H2:0.4, H:0.01, O2:0.2, CO:0.2, CO2:0.19"),
+    # Cantera before 3.2 normalizes a multi-site surface phase so that the species
+    # concentrations sum to the site density rather than the *sites* do, which makes
+    # its own coverages and concentrations disagree under c = theta*site_density/size
+    # -- by a factor of 1.47 on this mechanism. There is no reference to test against
+    # on those versions, so the fixture is skipped rather than the convention bent to
+    # match a version that has since changed it. Cantera 3.1 is the newest release
+    # that supports Python 3.9, so in practice this is the 3.9 job only, and every
+    # other job still covers the bulk-phase conventions this fixture exists for.
+    pytest.param(
+        "surface_mechs/bulk_multisite.yaml", "surf", ["gas", "bulk"],
+        "H2:0.4, H:0.01, O2:0.2, CO:0.2, CO2:0.19",
+        marks=pytest.mark.skipif(
+            _CANTERA_VERSION < (3, 2),
+            reason="multi-site coverages are normalized differently "
+                   "before Cantera 3.2")),
 ]
 
 
