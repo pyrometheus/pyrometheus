@@ -1,0 +1,40 @@
+description: |-
+  Two rate forms Pyrometheus does not translate, one of each kind: an interface
+  Blowers-Masel rate, and its sticking variant.
+
+  Neither can be read as an Arrhenius rate. Cantera shifts a Blowers-Masel
+  activation energy by the reaction enthalpy at run time, so the Ea0 stored on the
+  rate is an intrinsic barrier rather than the one that appears in the exponent --
+  reading it directly was wrong by a factor of 319 on the carbon mechanism. Every
+  surface rate class exposes the same three Arrhenius attributes, so nothing about
+  the objects themselves signals the difference; only the class does.
+
+  The thermodynamic data is made up. This fixture exists to be rejected.
+
+phases:
+- name: gas
+  thermo: ideal-gas
+  species: [{gri30.yaml/species: [H2, H, OH, H2O]}]
+  state: {T: 1000.0, P: 1 atm, X: {H2: 1.0}}
+- name: surf
+  thermo: ideal-surface
+  adjacent-phases: [gas]
+  species: [S, H_S]
+  kinetics: surface
+  reactions: all
+  site-density: 3.0e-09
+  state: {T: 1000.0, coverages: {S: 0.9, H_S: 0.1}}
+species:
+- name: S
+  composition: {}
+  thermo: {model: constant-cp, h0: 0.0, s0: 0.0}
+- name: H_S
+  composition: {H: 1}
+  thermo: {model: constant-cp, h0: -1.0e+07, s0: 4.0e+04}
+reactions:
+- equation: H + S => H_S
+  type: interface-Blowers-Masel
+  rate-constant: {A: 1.0e+12, b: 0.0, Ea0: 5.0e+07, w: 1.0e+09}
+- equation: H2 + 2 S => 2 H_S
+  type: sticking-Blowers-Masel
+  sticking-coefficient: {A: 0.1, b: 0.0, Ea0: 1.0e+07, w: 1.0e+09}

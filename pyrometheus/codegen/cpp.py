@@ -662,6 +662,265 @@ struct ${name}
 # }}}
 
 
+surface_header_tpl = Template("""
+#pragma once
+
+#if __cplusplus < 202002L
+#error "Pyrometheus requires C++20 or later."
+#endif
+
+#include <array>
+#include <cmath>
+#include <string>
+
+#include "${gas_header_name}"
+
+namespace pyro {
+
+// Heterogeneous kinetics on the ${interface.name} interface.
+//
+// Holds only the surface mechanism: the gas-phase thermochemistry is supplied as
+// the GasT template parameter, the struct generated for the adjacent phase.
+template <typename GasT,
+          IntegralLike _DataTypeT = double, typename _ContainerT = _DataTypeT>
+struct ${name}
+{
+    // Species of the interface itself, i.e. the surface sites.
+    constexpr static int num_surface_species = ${interface.n_species};
+    // Every species the interface couples, its own first and then the adjacent
+    // phases', which is the ordering used for concentrations and production rates.
+    constexpr static int num_coupled_species = ${interface.n_total_species};
+    // Where each phase's species start in the coupled ordering. A caller
+    // assembling the coupled concentration vector, or reading a production rate
+    // back out of it, needs these: which phase comes first after the interface's
+    // own species is a property of the mechanism, not a convention.
+    %for kind, start, stop, src in phase_blocks:
+    constexpr static int coupled_${kind}_offset = ${start};
+    %endfor
+    constexpr static int num_surface_reactions = ${interface.n_reactions};
+
+    constexpr static const char* surface_species_names[] = {
+        ${", ".join(f'"{name}"' for name in interface.species_names)}
+    };
+
+    using DataTypeT   = _DataTypeT;
+    using ContainerT  = _ContainerT;
+    using SurfaceT    = std::array<ContainerT, num_surface_species>;
+    using CoupledT    = std::array<ContainerT, num_coupled_species>;
+%if bulk_species:
+    using BulkT       = std::array<ContainerT, ${len(bulk_species)}>;
+%endif
+    using ReactionsT  = std::array<ContainerT, num_surface_reactions>;
+
+    constexpr static DataTypeT site_density = ${repr(float(interface.site_density))};
+    constexpr static DataTypeT gas_constant = ${repr(float(ct.gas_constant))};
+    constexpr static DataTypeT one_atm = ${repr(float(ct.one_atm))};
+
+    // Site concentration of every surface species: a species occupying `size`
+    // sites is present at coverage*site_density/size.
+    static SurfaceT get_site_concentrations(SurfaceT const &coverages)
+    {
+        SurfaceT concentrations = {
+        %for expr in site_conc_exprs:
+        ${cgm(expr)},
+        %endfor
+        };
+        return concentrations;
+    }
+
+    static SurfaceT get_surface_enthalpies_rt(ContainerT temperature)
+    {
+        SurfaceT h0_rt = {
+        %for sp in interface.species():
+        ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
+        %endfor
+        };
+        return h0_rt;
+    }
+
+    static SurfaceT get_surface_entropies_r(ContainerT temperature)
+    {
+        SurfaceT s0_r = {
+        %for sp in interface.species():
+        ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+        %endfor
+        };
+        return s0_r;
+    }
+
+%if bulk_species:
+    // Standard-state Gibbs energy over RT of every bulk species. A bulk phase has
+    // no Pyrometheus struct of its own, so unlike the gas phase its thermodynamics
+    // is generated here.
+    static BulkT get_bulk_enthalpies_rt(ContainerT temperature)
+    {
+        BulkT h0_rt = {
+        %for sp in bulk_species:
+        ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
+        %endfor
+        };
+        return h0_rt;
+    }
+
+    static BulkT get_bulk_entropies_r(ContainerT temperature)
+    {
+        BulkT s0_r = {
+        %for sp in bulk_species:
+        ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+        %endfor
+        };
+        return s0_r;
+    }
+
+    static BulkT get_bulk_gibbs_rt(ContainerT temperature)
+    {
+        BulkT h0_rt = get_bulk_enthalpies_rt(temperature);
+        BulkT s0_r = get_bulk_entropies_r(temperature);
+        BulkT g0_rt;
+        for (int k = 0; k < ${len(bulk_species)}; ++k)
+            g0_rt[k] = h0_rt[k] - s0_r[k];
+        return g0_rt;
+    }
+
+%endif
+    static SurfaceT get_surface_gibbs_rt(ContainerT temperature)
+    {
+        SurfaceT h0_rt = get_surface_enthalpies_rt(temperature);
+        SurfaceT s0_r = get_surface_entropies_r(temperature);
+        SurfaceT g0_rt;
+        for (int k = 0; k < num_surface_species; ++k)
+            g0_rt[k] = h0_rt[k] - s0_r[k];
+        return g0_rt;
+    }
+
+    static ReactionsT get_surface_fwd_rate_coefficients(
+        ContainerT temperature, SurfaceT const &coverages)
+    {
+        ReactionsT k_fwd = {
+        %for react in interface.reactions():
+        ${cgm(ce.surface_rate_coefficient_expr(interface, react,
+            Variable("temperature"), Variable("coverages")))},
+        %endfor
+        };
+        return k_fwd;
+    }
+
+    static ReactionsT get_surface_equilibrium_constants(ContainerT temperature)
+    {
+        ContainerT c0 = log(one_atm/(gas_constant*temperature));
+        SurfaceT g0_surface = get_surface_gibbs_rt(temperature);
+        auto g0_gas = GasT::get_species_gibbs_rt(temperature);
+%if bulk_species:
+        BulkT g0_bulk = get_bulk_gibbs_rt(temperature);
+%endif
+
+        CoupledT g0_rt;
+        %for kind, start, stop, src in phase_blocks:
+        for (int k = ${start}; k < ${stop}; ++k)
+            g0_rt[k] = g0_${kind}[k - ${start - src}];
+        %endfor
+
+        ReactionsT k_eq = {
+        %for i, react in enumerate(interface.reactions()):
+        %if react.reversible:
+        exp(${cgm(ce.surface_equilibrium_constant_expr(
+            interface, i, Variable("g0_rt")))}),
+        %else:
+        ContainerT(1.0),
+        %endif
+        %endfor
+        };
+        return k_eq;
+    }
+
+    // Net rate of progress of every heterogeneous reaction. `concentrations` is in
+    // the interface's kinetics ordering: its own surface species first, then the
+    // adjacent phases'. They are activity concentrations: molar concentration for a
+    // gas species, coverage*site_density/size for a surface one, and activity --
+    // unity for a pure solid -- for a bulk one, whose molar density would be wrong
+    // by that density.
+    static ReactionsT get_surface_rates_of_progress(
+        ContainerT temperature, CoupledT const &concentrations,
+        SurfaceT const &coverages)
+    {
+        ReactionsT k_fwd = get_surface_fwd_rate_coefficients(temperature, coverages);
+        ReactionsT k_eq = get_surface_equilibrium_constants(temperature);
+        ReactionsT r_net = {
+        %for i, react in enumerate(interface.reactions()):
+        %if react.reversible:
+        ${cgm(ce.surface_rate_of_progress_expr(interface, i,
+            Variable("k_fwd")[i], Variable("concentrations")))}
+            - ${cgm(ce.surface_reverse_rate_of_progress_expr(interface, i,
+            Variable("k_fwd")[i], Variable("k_eq")[i],
+            Variable("concentrations")))},
+        %else:
+        ${cgm(ce.surface_rate_of_progress_expr(interface, i,
+            Variable("k_fwd")[i], Variable("concentrations")))},
+        %endif
+        %endfor
+        };
+        return r_net;
+    }
+
+    // Production rate of every coupled species, in kinetics order.
+    static CoupledT get_surface_net_production_rates(
+        ContainerT temperature, CoupledT const &concentrations,
+        SurfaceT const &coverages)
+    {
+        ReactionsT r_net = get_surface_rates_of_progress(
+            temperature, concentrations, coverages);
+        CoupledT omega = {
+        %for species_name in coupled_species:
+        ${cgm(ce.surface_production_rate_expr(
+            interface, species_name, Variable("r_net")))},
+        %endfor
+        };
+        return omega;
+    }
+
+    // Standard-state enthalpy over RT of every coupled species, assembled per
+    // phase in kinetics order: the gas species come from the separately generated
+    // gas-phase struct, the rest from this one.
+    static CoupledT get_coupled_enthalpies_rt(ContainerT temperature)
+    {
+        SurfaceT h0_surface = get_surface_enthalpies_rt(temperature);
+        auto h0_gas = GasT::get_species_enthalpies_rt(temperature);
+%if bulk_species:
+        BulkT h0_bulk = get_bulk_enthalpies_rt(temperature);
+%endif
+
+        CoupledT h0_rt;
+        %for kind, start, stop, src in phase_blocks:
+        for (int k = ${start}; k < ${stop}; ++k)
+            h0_rt[k] = h0_${kind}[k - ${start - src}];
+        %endfor
+        return h0_rt;
+    }
+
+    // Heat released by the heterogeneous reactions, per unit surface area:
+    // positive when the chemistry is exothermic, and in W/m^2, since the
+    // production rates are per unit area rather than per unit volume. This is
+    // -sum(omega*h), which equals -sum over reactions of the reaction enthalpy
+    // times the rate of progress without needing the stoichiometry a second time.
+    static ContainerT get_surface_net_heat_release_rate(
+        ContainerT temperature, CoupledT const &concentrations,
+        SurfaceT const &coverages)
+    {
+        CoupledT omega = get_surface_net_production_rates(
+            temperature, concentrations, coverages);
+        CoupledT h0_rt = get_coupled_enthalpies_rt(temperature);
+
+        ContainerT q = ContainerT(0.0);
+        for (int k = 0; k < num_coupled_species; ++k)
+            q -= omega[k]*h0_rt[k];
+        return q*gas_constant*temperature;
+    }
+};
+
+} // namespace pyro
+""", strict_undefined=True)
+
+
 class CppCodeGenerator(CodeGenerator):
     @staticmethod
     def get_name() -> str:
@@ -703,6 +962,50 @@ class CppCodeGenerator(CodeGenerator):
 
             falloff_reactions=falloff_rxn,
             three_body_reactions=three_body_rxn,
+        )
+
+    @staticmethod
+    def generate_surface(name: str,
+                         interface: ct.Interface,
+                         gas_header_name: str = "thermochem.hpp",
+                         opts: CodeGenerationOptions = None) -> str:
+        """Generate a C++ header for the heterogeneous kinetics of *interface*.
+
+        The struct holds only the surface mechanism and takes the struct generated
+        for the adjacent gas phase as its ``GasT`` template parameter;
+        *gas_header_name* is the header it includes to find it.
+        """
+        if opts is None:
+            opts = CodeGenerationOptions()
+
+        if opts.directive_offload is not None:
+            raise TypeError(
+                "OpenMP/ACC directive based offloading is not supported for "
+                "C++ code generation"
+                )
+
+        coupled_species = [interface.kinetics_species_name(k)
+                           for k in range(interface.n_total_species)]
+        site_conc_exprs = pyrometheus.chem_expr.surface_concentrations_expr(
+            interface, p.Variable("coverages"))
+
+        return surface_header_tpl.render(
+            ct=ct,
+            interface=interface,
+
+            name=name,
+            gas_header_name=gas_header_name,
+
+            coupled_species=coupled_species,
+            site_conc_exprs=site_conc_exprs,
+            phase_blocks=pyrometheus.chem_expr.surface_phase_blocks(interface),
+            bulk_species=pyrometheus.chem_expr.surface_bulk_species(interface),
+
+            str_np=str_np,
+            cgm=CodeGenerationMapper(),
+            Variable=p.Variable,
+
+            ce=pyrometheus.chem_expr,
         )
 
 
