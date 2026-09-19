@@ -1,0 +1,56 @@
+description: |-
+  A synthetic interface covering the two standard-concentration conventions that
+  neither ptcombust nor carbon_surface exercises, both of which only show up in
+  reversible reactions:
+
+    * a reacting bulk phase, whose species have unit activity and so contribute no
+      standard-concentration factor to the equilibrium constant -- unlike the gas
+      species they sit next to in the kinetics ordering;
+
+    * a surface species occupying more than one site, whose standard concentration
+      is site_density/sites rather than site_density.
+
+  The thermodynamic data is made up. Nothing here is a physical mechanism; the
+  point is only that Cantera and Pyrometheus agree on the conventions.
+
+phases:
+- name: gas
+  thermo: ideal-gas
+  species: [{gri30.yaml/species: [H2, H, O2, CO, CO2]}]
+  transport: mixture-averaged
+  state: {T: 1000.0, P: 1 atm, X: {H2: 0.5, CO: 0.5}}
+- name: bulk
+  thermo: fixed-stoichiometry
+  species: [{graphite.yaml/species: [C(gr)]}]
+- name: surf
+  thermo: ideal-surface
+  adjacent-phases: [gas, bulk]
+  species: [S, H_S, D_S]
+  kinetics: surface
+  reactions: all
+  site-density: 3.0e-09
+  state: {T: 1000.0, coverages: {S: 0.6, H_S: 0.3, D_S: 0.1}}
+
+species:
+- name: S
+  composition: {}
+  thermo: {model: constant-cp, h0: 0.0, s0: 0.0}
+- name: H_S
+  composition: {H: 1}
+  thermo: {model: constant-cp, h0: -1.0e+07, s0: 4.0e+04}
+- name: D_S
+  composition: {H: 2}
+  sites: 2
+  thermo: {model: constant-cp, h0: -2.0e+07, s0: 7.0e+04}
+
+reactions:
+# Adsorption: the moles of gas change, the moles of sites do not.
+- equation: H + S <=> H_S
+  rate-constant: {A: 1.0e+12, b: 0.0, Ea: 0.0}
+# The product occupies two sites, so the sites balance while the number of
+# surface species does not.
+- equation: H2 + 2 S <=> D_S
+  rate-constant: {A: 1.0e+12, b: 0.0, Ea: 0.0}
+# Boudouard: consumes bulk carbon, and the sites take no part at all.
+- equation: C(gr) + CO2 <=> 2 CO
+  rate-constant: {A: 1.0e+10, b: 0.0, Ea: 0.0}

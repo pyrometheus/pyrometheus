@@ -664,23 +664,25 @@ def surface_equilibrium_constant_expr(interface: ct.Interface, reaction_index,
         every species the interface couples, as a
         :class:`pymbolic.primitives.Expression`.
 
-    The pressure-like factor differs per phase: a change in moles of gas carries
-    :math:`(p_0/RT)^{\\Delta n_g}`, one of surface sites carries
-    :math:`\\Gamma_0^{\\Delta n_s}`. Written in logs, so the caller exponentiates
-    once.
+    Each species carries its own phase's standard concentration,
+    :math:`\\log K = -\\Delta G/RT + \\sum_k \\nu_k \\log c^{0}_{k}`, and the three
+    phases an interface couples do not share one: a gas species has
+    :math:`p_0/RT`, a surface species occupying :math:`\\sigma_k` sites has
+    :math:`\\Gamma_0/\\sigma_k`, and a bulk species has unit activity and so
+    contributes nothing. Written in logs, so the caller exponentiates once.
     """
     d_g = sum(
         nu*g0_rt[k]
         for k, nu in enumerate(_surface_net_stoich(interface, reaction_index))
         if nu != 0)
 
-    dn_gas, dn_surface = _surface_mole_changes(interface, reaction_index)
-
     expr = -d_g
+    dn_gas, log_c0_surface = _surface_standard_concentrations(
+        interface, reaction_index)
     if dn_gas:
         expr = expr + dn_gas*p.Variable("c0")
-    if dn_surface:
-        expr = expr + dn_surface*np.log(interface.site_density)
+    if log_c0_surface:
+        expr = expr + log_c0_surface
     return expr
 
 
@@ -691,16 +693,140 @@ def _surface_net_stoich(interface: ct.Interface, reaction_index):
             for k in range(interface.n_total_species)]
 
 
-def _surface_mole_changes(interface: ct.Interface, reaction_index):
-    """Change in moles of gas and of surface sites across a reaction.
+# How many dimensions of length a phase's standard concentration carries is what
+# distinguishes the three kinds of phase an interface can couple: kmol/m^3 in a
+# volume, kmol/m^2 on a surface, and a dimensionless activity in a bulk solid.
+# Classifying on the thermo model instead would mean enumerating every model name
+# Cantera has.
+_PHASE_KIND_BY_LENGTH_DIMENSION = {-3.0: "gas", -2.0: "surface", 0.0: "bulk"}
+
+
+def surface_phase_kind(phase):
+    """Which of ``"gas"``, ``"surface"`` or ``"bulk"`` *phase* behaves as.
+
+    Raises for anything else -- a one-dimensional edge phase, say -- rather than
+    guessing at a standard concentration for it.
+    """
+    units = phase.standard_concentration_units
+    try:
+        return _PHASE_KIND_BY_LENGTH_DIMENSION[units.dimensions["length"]]
+    except KeyError:
+        raise ValueError(
+            f"phase '{phase.name}' has standard concentration units '{units}', "
+            "which heterogeneous kinetics does not handle") from None
+
+
+def _surface_kinetics_phases(interface: ct.Interface):
+    """The interface and its adjacent phases, paired with their kinetics ranges.
 
     The interface's own species occupy the first n_species slots of the kinetics
-    ordering; the adjacent phases follow.
+    ordering and the adjacent phases follow, in the order Cantera lists them.
+    """
+    phases = [interface, *interface.adjacent.values()]
+
+    offset = 0
+    for phase in phases:
+        yield phase, offset
+        offset += phase.n_species
+
+    assert offset == interface.n_total_species
+
+
+def surface_gibbs_blocks(interface: ct.Interface):
+    """Where the standard-state Gibbs energy of each kinetics species comes from.
+
+    An equilibrium constant needs a Gibbs energy for every species the interface
+    couples, but they do not all come from the same place: the surface species and
+    any bulk species are generated with the surface code, while the gas-phase ones
+    come from the separately generated gas class. This returns one block per phase,
+    in kinetics order, as ``(kind, start, stop, source_start)`` -- *kind* being
+    ``"surface"``, ``"gas"`` or ``"bulk"``, ``start:stop`` the block's span in the
+    kinetics ordering, and *source_start* its offset within its own source array,
+    which differs from *start* only for bulk phases, since they share one array
+    while not necessarily being adjacent in the kinetics ordering.
+
+    Raises if the interface couples more than one gas phase, which the generated
+    code has no way to name.
+    """
+    blocks = []
+    bulk_offset = 0
+    n_gas_phases = 0
+
+    for phase, offset in _surface_kinetics_phases(interface):
+        stop = offset + phase.n_species
+
+        if phase is interface:
+            blocks.append(("surface", offset, stop, 0))
+        elif surface_phase_kind(phase) == "gas":
+            n_gas_phases += 1
+            blocks.append(("gas", offset, stop, 0))
+        else:
+            blocks.append(("bulk", offset, stop, bulk_offset))
+            bulk_offset += phase.n_species
+
+    if n_gas_phases > 1:
+        raise ValueError(
+            f"interface '{interface.name}' couples {n_gas_phases} gas phases; the "
+            "generated code takes a single gas-phase class")
+
+    return blocks
+
+
+def surface_needs_gas_standard_concentration(interface: ct.Interface):
+    """Whether any equilibrium constant of *interface* carries a :math:`p_0/RT`.
+
+    A reversible reaction that leaves the moles of gas unchanged -- an adsorption
+    that consumes one site per gas molecule, say -- does not, and a mechanism whose
+    reversible reactions are all of that kind never references the factor at all.
+    """
+    return any(
+        react.reversible
+        and _surface_standard_concentrations(interface, i)[0]
+        for i, react in enumerate(interface.reactions()))
+
+
+def surface_bulk_species(interface: ct.Interface):
+    """Species of the interface's bulk phases, in the order the blocks expect.
+
+    Their thermodynamics is generated with the surface code: unlike the gas phase,
+    a bulk phase has no Pyrometheus class of its own to defer to.
+    """
+    return [sp
+            for phase, _offset in _surface_kinetics_phases(interface)
+            if phase is not interface and surface_phase_kind(phase) != "gas"
+            for sp in phase.species()]
+
+
+def _surface_standard_concentrations(interface: ct.Interface, reaction_index):
+    """Standard-concentration contribution of a reaction, split by phase kind.
+
+    :returns: the net change in moles of gas-phase species, whose standard
+        concentration is temperature-dependent and so stays symbolic, and the log
+        of the surface contribution, which is a number.
+
+    Bulk species have unit activity and drop out; lumping them in with the gas
+    species would leave a spurious factor of :math:`(p_0/RT)^{\\Delta n_b}`, which
+    is two orders of magnitude per mole of bulk at combustion temperatures.
     """
     nu = _surface_net_stoich(interface, reaction_index)
-    dn_surface = sum(nu[:interface.n_species])
-    dn_gas = sum(nu[interface.n_species:])
-    return dn_gas, dn_surface
+
+    dn_gas = 0.0
+    log_c0_surface = 0.0
+
+    for phase, offset in _surface_kinetics_phases(interface):
+        kind = surface_phase_kind(phase)
+        nu_phase = nu[offset:offset + phase.n_species]
+
+        if kind == "gas":
+            dn_gas += sum(nu_phase)
+        elif kind == "surface":
+            # A species occupying several sites has a proportionally smaller
+            # standard concentration, so the factor is per species, not per mole.
+            log_c0_surface += sum(
+                nu_k*np.log(phase.site_density/phase.species(k).size)
+                for k, nu_k in enumerate(nu_phase) if nu_k != 0)
+
+    return dn_gas, log_c0_surface
 
 
 def surface_concentrations_expr(interface: ct.Interface, coverages):
@@ -723,8 +849,12 @@ def surface_rate_of_progress_expr(interface: ct.Interface, reaction_index, k_fwd
         :class:`pymbolic.primitives.Expression`.
 
     *concentrations* is in the interface's kinetics ordering: its own surface
-    species first, then those of the adjacent phases. Explicit reaction orders, where
-    a mechanism gives them, override the reactant stoichiometry.
+    species first, then those of the adjacent phases. They are activity
+    concentrations -- molar concentration for a gas species, coverage*site_density
+    /size for a surface one, and activity, unity for a pure solid, for a bulk one --
+    which is what makes a rate of progress dimensionally coherent across phases of
+    different dimensionality. Explicit reaction orders, where a mechanism gives them,
+    override the reactant stoichiometry.
     """
     reaction = interface.reaction(reaction_index)
     orders = dict(reaction.orders)

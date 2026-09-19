@@ -732,10 +732,16 @@ class SurfaceKinetics:
 
     def get_surface_equilibrium_constants(self, temperature):
         \"""Equilibrium constant of every reaction; 1 where irreversible.\"""
+%if any_reversible:
+%if uses_c0:
         c0 = self.pyro_np.log(self.one_atm / (self.gas_constant * temperature))
+%endif
         g0_rt = self._pyro_make_array(
-            list(self.get_surface_gibbs_rt(temperature))
-            + list(self.gas.get_species_gibbs_rt(temperature)))
+            %for n, (k, a, b, c) in enumerate(gibbs_blocks):
+            ${"" if n == 0 else "+ "}list(${gibbs_source[k]})[${c}:${c+b-a}]
+            %endfor
+            )
+%endif
         return self._pyro_make_array([
             %for i, react in enumerate(interface.reactions()):
             %if react.reversible:
@@ -760,6 +766,21 @@ class SurfaceKinetics:
                 sp.thermo, "temperature"))},
             %endfor
         ])
+%if bulk_species:
+
+    def get_bulk_gibbs_rt(self, temperature):
+        \"""Standard-state Gibbs energy over RT of every bulk species.
+
+        A bulk phase has no Pyrometheus class of its own, so unlike the gas phase
+        its thermodynamics is generated here.
+        \"""
+        return self._pyro_make_array([
+            %for sp in bulk_species:
+            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))}
+            - (${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}),
+            %endfor
+        ])
+%endif
 
     def get_surface_entropies_r(self, temperature):
         return self._pyro_make_array([
@@ -774,10 +795,15 @@ class SurfaceKinetics:
         \"""Net rate of progress of every heterogeneous reaction.
 
         *concentrations* is in the interface's kinetics ordering: its own surface
-        species first, then the adjacent phases'.
+        species first, then the adjacent phases'. They are activity concentrations:
+        molar concentration for a gas species, coverage*site_density/size for a
+        surface one, and activity -- unity for a pure solid -- for a bulk one, whose
+        molar density would be wrong by that density.
         \"""
         k_fwd = self.get_surface_fwd_rate_coefficients(temperature, coverages)
+%if any_reversible:
         k_eq = self.get_surface_equilibrium_constants(temperature)
+%endif
         r_fwd = self._pyro_make_array([
             %for i in range(interface.n_reactions):
             ${cgm(ce.surface_rate_of_progress_expr(interface, i,
@@ -890,6 +916,16 @@ class PythonCodeGenerator(CodeGenerator):
 
             coupled_species=coupled_species,
             site_conc_exprs=site_conc_exprs,
+            gibbs_blocks=pyrometheus.chem_expr.surface_gibbs_blocks(interface),
+            any_reversible=any(r.reversible for r in interface.reactions()),
+            uses_c0=pyrometheus.chem_expr
+            .surface_needs_gas_standard_concentration(interface),
+            bulk_species=pyrometheus.chem_expr.surface_bulk_species(interface),
+            gibbs_source={
+                "surface": "self.get_surface_gibbs_rt(temperature)",
+                "gas": "self.gas.get_species_gibbs_rt(temperature)",
+                "bulk": "self.get_bulk_gibbs_rt(temperature)",
+            },
 
             str_np=str_np,
             cgm=CodeGenerationMapper(),

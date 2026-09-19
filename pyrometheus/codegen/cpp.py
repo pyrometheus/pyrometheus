@@ -700,6 +700,9 @@ struct ${name}
     using ContainerT  = _ContainerT;
     using SurfaceT    = std::array<ContainerT, num_surface_species>;
     using CoupledT    = std::array<ContainerT, num_coupled_species>;
+%if bulk_species:
+    using BulkT       = std::array<ContainerT, ${len(bulk_species)}>;
+%endif
     using ReactionsT  = std::array<ContainerT, num_surface_reactions>;
 
     constexpr static DataTypeT site_density = ${repr(float(interface.site_density))};
@@ -738,6 +741,22 @@ struct ${name}
         return s0_r;
     }
 
+%if bulk_species:
+    // Standard-state Gibbs energy over RT of every bulk species. A bulk phase has
+    // no Pyrometheus struct of its own, so unlike the gas phase its thermodynamics
+    // is generated here.
+    static BulkT get_bulk_gibbs_rt(ContainerT temperature)
+    {
+        BulkT g0_rt = {
+        %for sp in bulk_species:
+        ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))}
+            - (${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}),
+        %endfor
+        };
+        return g0_rt;
+    }
+
+%endif
     static SurfaceT get_surface_gibbs_rt(ContainerT temperature)
     {
         SurfaceT h0_rt = get_surface_enthalpies_rt(temperature);
@@ -765,12 +784,15 @@ struct ${name}
         ContainerT c0 = log(one_atm/(gas_constant*temperature));
         SurfaceT g0_surface = get_surface_gibbs_rt(temperature);
         auto g0_gas = GasT::get_species_gibbs_rt(temperature);
+%if bulk_species:
+        BulkT g0_bulk = get_bulk_gibbs_rt(temperature);
+%endif
 
         CoupledT g0_rt;
-        for (int k = 0; k < num_surface_species; ++k)
-            g0_rt[k] = g0_surface[k];
-        for (int k = num_surface_species; k < num_coupled_species; ++k)
-            g0_rt[k] = g0_gas[k - num_surface_species];
+        %for kind, start, stop, src in gibbs_blocks:
+        for (int k = ${start}; k < ${stop}; ++k)
+            g0_rt[k] = g0_${kind}[k - ${start - src}];
+        %endfor
 
         ReactionsT k_eq = {
         %for i, react in enumerate(interface.reactions()):
@@ -787,7 +809,10 @@ struct ${name}
 
     // Net rate of progress of every heterogeneous reaction. `concentrations` is in
     // the interface's kinetics ordering: its own surface species first, then the
-    // adjacent phases'.
+    // adjacent phases'. They are activity concentrations: molar concentration for a
+    // gas species, coverage*site_density/size for a surface one, and activity --
+    // unity for a pure solid -- for a bulk one, whose molar density would be wrong
+    // by that density.
     static ReactionsT get_surface_rates_of_progress(
         ContainerT temperature, CoupledT const &concentrations,
         SurfaceT const &coverages)
@@ -909,6 +934,8 @@ class CppCodeGenerator(CodeGenerator):
 
             coupled_species=coupled_species,
             site_conc_exprs=site_conc_exprs,
+            gibbs_blocks=pyrometheus.chem_expr.surface_gibbs_blocks(interface),
+            bulk_species=pyrometheus.chem_expr.surface_bulk_species(interface),
 
             str_np=str_np,
             cgm=CodeGenerationMapper(),

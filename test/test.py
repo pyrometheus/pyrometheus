@@ -728,6 +728,8 @@ SURFACE_MECHS = [
     ("ptcombust.yaml", "Pt_surf", ["gas"], "CH4:0.05, O2:0.2, N2:0.75"),
     ("surface_mechs/carbon_surface.yaml", "carbon_surface", ["gas", "graphite"],
      "O2:0.21, N2:0.7, CO:0.05, H2O:0.04"),
+    ("surface_mechs/bulk_multisite.yaml", "surf", ["gas", "bulk"],
+     "H2:0.4, H:0.01, O2:0.2, CO:0.2, CO2:0.19"),
 ]
 
 
@@ -746,9 +748,23 @@ def _load_surface(mechname, phase, adjacent_names):
     return interface, adjacent
 
 
+def _surface_activity_concentrations(phase):
+    """What a heterogeneous rate of progress multiplies for *phase*'s species.
+
+    Molar concentration for a gas or surface phase, but a bulk phase has a
+    dimensionless standard concentration, so its species enter at their activity --
+    unity for the pure solids these mechanisms react. Passing `concentrations` for a
+    bulk phase instead, as its molar density, is wrong by that density.
+    """
+    from pyrometheus.chem_expr import surface_phase_kind
+    if surface_phase_kind(phase) == "bulk":
+        return phase.activities
+    return phase.concentrations
+
+
 def _surface_state(interface, adjacent, composition, temperature=1000.0):
     """Put the interface and its phases in a state, and return the coupled
-    concentration vector in the interface's kinetics ordering."""
+    activity-concentration vector in the interface's kinetics ordering."""
     gas = adjacent[0]
     gas.TPX = temperature, ct.one_atm, composition
     interface.TP = temperature, ct.one_atm
@@ -759,7 +775,8 @@ def _surface_state(interface, adjacent, composition, temperature=1000.0):
     for phase in adjacent[1:]:
         phase.TP = temperature, ct.one_atm
     concentrations = np.concatenate(
-        [interface.concentrations] + [p.concentrations for p in adjacent])
+        [interface.concentrations]
+        + [_surface_activity_concentrations(p) for p in adjacent])
     return concentrations
 
 
@@ -826,9 +843,10 @@ def test_surface_kinetics_pieces(mechname, phase, adjacent_names, composition):
     easy to get subtly wrong and impossible to notice afterwards: a surface species'
     concentration is coverage*site_density/size, not its coverage; the kinetics
     ordering puts the interface's own species before the adjacent phases; the
-    equilibrium constant's pressure factor is (p0/RT)^dn for the gas but
-    site_density^dn for the sites; and explicit reaction orders, where a mechanism
-    gives them, override the reactant stoichiometry.
+    equilibrium constant takes a standard concentration per phase -- (p0/RT) for a
+    gas species, site_density/sites for a surface one, and nothing at all for a bulk
+    one; and explicit reaction orders, where a mechanism gives them, override the
+    reactant stoichiometry.
     """
     import pymbolic.primitives as p
     from pymbolic.mapper.evaluator import EvaluationMapper
@@ -919,6 +937,7 @@ def test_surface_backends_render(mechname, phase, adjacent_names, composition):
     guards the other two against template errors, which Mako raises only at render
     time and which no import or lint catches.
     """
+    from pyrometheus import chem_expr as ce
     from pyrometheus.codegen.cpp import CppCodeGenerator
     from pyrometheus.codegen.fortran import FortranCodeGenerator
     from pyrometheus.codegen.python import PythonCodeGenerator
@@ -941,6 +960,12 @@ def test_surface_backends_render(mechname, phase, adjacent_names, composition):
         for routine in ("get_site_concentrations",
                         "get_surface_net_production_rates"):
             assert routine in src
+
+    # A bulk phase has no generated class of its own, so its thermodynamics has to
+    # come out of the surface code -- and only when there is a bulk phase to need it.
+    has_bulk = bool(ce.surface_bulk_species(interface))
+    for src in (python_src, fortran_src, cpp_src):
+        assert ("get_bulk_gibbs_rt" in src) == has_bulk
 
 
 @pytest.mark.parametrize("lang, gas_name, expected", [

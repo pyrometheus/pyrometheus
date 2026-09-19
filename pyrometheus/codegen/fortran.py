@@ -1027,6 +1027,10 @@ module ${module_name}
 
     integer, parameter :: num_surface_species = ${interface.n_species}
     integer, parameter :: num_coupled_species = ${interface.n_total_species}
+    integer, parameter :: num_coupled_gas_species = ${num_gas_species}
+%if bulk_species:
+    integer, parameter :: num_coupled_bulk_species = ${len(bulk_species)}
+%endif
     integer, parameter :: num_surface_reactions = ${interface.n_reactions}
     ${real_type}, parameter :: &
         site_density = ${float_to_fortran(interface.site_density)}
@@ -1078,6 +1082,26 @@ contains
         %endfor
 
     end subroutine get_surface_entropies_r
+%if bulk_species:
+
+    ! Standard-state Gibbs energy over RT of every bulk
+    ! species. A bulk phase has no Pyrometheus module of
+    ! its own, so unlike the gas phase its thermodynamics
+    ! is generated here.
+    subroutine get_bulk_gibbs_rt(temperature, g0_rt)
+
+        GPU_ROUTINE(get_bulk_gibbs_rt)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(out) :: g0_rt(num_coupled_bulk_species)
+
+        %for k, sp in enumerate(bulk_species):
+        g0_rt(${k+1}) = ${cgm(ce.poly_to_enthalpy_expr(sp.thermo,
+            "temperature"))} &
+            - (${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))})
+        %endfor
+    end subroutine get_bulk_gibbs_rt
+%endif
 
     subroutine get_surface_gibbs_rt(temperature, g0_rt)
 
@@ -1119,13 +1143,20 @@ contains
         ${real_type} :: c0
         ${real_type} :: g0_rt(num_coupled_species)
         ${real_type} :: g0_surface(num_surface_species)
-        ${real_type} :: g0_gas(num_coupled_species - num_surface_species)
+        ${real_type} :: g0_gas(num_coupled_gas_species)
+%if bulk_species:
+        ${real_type} :: g0_bulk(num_coupled_bulk_species)
+%endif
 
         c0 = log(one_atm/(gas_constant*temperature))
         call get_surface_gibbs_rt(temperature, g0_surface)
         call get_species_gibbs_rt(temperature, g0_gas)
-        g0_rt(1:num_surface_species) = g0_surface
-        g0_rt(num_surface_species+1:num_coupled_species) = g0_gas
+%if bulk_species:
+        call get_bulk_gibbs_rt(temperature, g0_bulk)
+%endif
+        %for kind, start, stop, src in gibbs_blocks:
+        g0_rt(${start+1}:${stop}) = g0_${kind}(${src+1}:${src+stop-start})
+        %endfor
 
         %for i, react in enumerate(interface.reactions()):
         %if react.reversible:
@@ -1138,6 +1169,13 @@ contains
 
     end subroutine get_surface_equilibrium_constants
 
+    ! Net rate of progress of every heterogeneous reaction.
+    ! `concentrations` is in the interface's kinetics ordering:
+    ! its own surface species first, then the adjacent phases'.
+    ! They are activity concentrations: molar concentration for
+    ! a gas species, coverage*site_density/size for a surface
+    ! one, and activity -- unity for a pure solid -- for a bulk
+    ! one, whose molar density would be wrong by that density.
     subroutine get_surface_rates_of_progress(temperature, concentrations, &
             coverages, r_net)
 
@@ -1287,6 +1325,12 @@ class FortranCodeGenerator(CodeGenerator):
 
             coupled_species=coupled_species,
             site_conc_exprs=site_conc_exprs,
+            gibbs_blocks=pyrometheus.chem_expr.surface_gibbs_blocks(interface),
+            bulk_species=pyrometheus.chem_expr.surface_bulk_species(interface),
+            num_gas_species=sum(
+                stop - start for kind, start, stop, _src
+                in pyrometheus.chem_expr.surface_gibbs_blocks(interface)
+                if kind == "gas"),
 
             str_np=str_np,
             cgm=FortranExpressionMapper(),
