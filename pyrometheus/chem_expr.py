@@ -591,6 +591,13 @@ def destruction_rate_expr(sol: ct.Solution, species, r_fwd, r_rev):
 
 # {{{ surface (heterogeneous) kinetics
 
+# Sticking and Blowers-Masel are flat siblings in Cantera rather than a hierarchy,
+# so an isinstance check against the two supported classes is exact. Note that
+# StickingArrheniusRate is not an InterfaceArrheniusRate and needs its own entry.
+_SUPPORTED_SURFACE_RATES = (
+    ct.ArrheniusRate, ct.InterfaceArrheniusRate, ct.StickingArrheniusRate)
+
+
 def surface_rate_coefficient_expr(interface: ct.Interface, react: ct.Reaction, t,
                                   coverages=None):
     """
@@ -622,6 +629,20 @@ def surface_rate_coefficient_expr(interface: ct.Interface, react: ct.Reaction, t
       for each species *k* the rate declares a dependence on.
     """
     rate = react.rate
+
+    # An allowlist, not a duck-typed probe. Every Cantera surface rate class
+    # exposes pre_exponential_factor / temperature_exponent / activation_energy, so
+    # reading those three off an unsupported one yields a plausible Arrhenius
+    # expression that is wrong by orders of magnitude and raises nothing. For a
+    # Blowers-Masel rate the activation energy is an intrinsic barrier that Cantera
+    # shifts by the reaction enthalpy at run time; the sticking variant is a
+    # StickRateBase, so the sticking branch below would accept it too.
+    if not isinstance(rate, _SUPPORTED_SURFACE_RATES):
+        raise ValueError(
+            f"reaction '{react.equation}' uses rate type '{rate.type}', which "
+            "heterogeneous kinetics does not handle; only interface-Arrhenius and "
+            "sticking-Arrhenius rates are translated")
+
     t_a = rate.activation_energy/ct.gas_constant
 
     # The sticking probability, or the rate coefficient itself for a plain rate.

@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+import os
 import sys
 from unittest import mock
 
@@ -966,6 +967,33 @@ def test_surface_backends_render(mechname, phase, adjacent_names, composition):
     has_bulk = bool(ce.surface_bulk_species(interface))
     for src in (python_src, fortran_src, cpp_src):
         assert ("get_bulk_gibbs_rt" in src) == has_bulk
+
+
+@pytest.mark.parametrize("reaction_index, rate_type", [
+    (0, "interface-Blowers-Masel"),
+    (1, "sticking-Blowers-Masel"),
+])
+def test_an_untranslatable_surface_rate_is_refused(reaction_index, rate_type):
+    """A rate form the generator cannot express must raise, not approximate.
+
+    Every Cantera surface rate class carries pre_exponential_factor,
+    temperature_exponent and activation_energy, so reading those off an unsupported
+    one produces a plausible Arrhenius expression rather than an error. The sticking
+    variant is a StickRateBase, so the sticking branch would swallow it as well.
+    """
+    import pymbolic.primitives as p
+    from pyrometheus import chem_expr as ce
+
+    mechname = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "surface_mechs", "blowers_masel.yaml")
+    interface = ct.Interface(mechname, "surf")
+    reaction = interface.reaction(reaction_index)
+    assert reaction.rate.type == rate_type
+
+    coverages = [p.Variable(f"theta_{k}") for k in range(interface.n_species)]
+    with pytest.raises(ValueError, match=rate_type):
+        ce.surface_rate_coefficient_expr(
+            interface, reaction, p.Variable("t"), coverages)
 
 
 @pytest.mark.parametrize("lang, gas_name, expected", [
