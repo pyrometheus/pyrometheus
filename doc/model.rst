@@ -240,6 +240,35 @@ The third is coverage dependence, which multiplies either of the above by
 over the species :math:`k` the reaction declares a dependence on. It expresses
 how the binding energy of an adsorbate changes as the surface fills up.
 
+.. _subsec:surface_heat:
+
+Surface Heat Release
+~~~~~~~~~~~~~~~~~~~~
+
+Heterogeneous reactions release or absorb heat at the wall, and a surface energy
+balance needs that rate. It follows from the production rates and the species
+enthalpies,
+
+.. math::
+
+   \label{eq:surface_heat_release}
+     \dot{q} = -\sum_{i = 1}^{N_{c}}\dot{\omega}_{i}h_{i}(T)
+     = -\sum_{j = 1}^{M_{s}}\Delta h_{j}(T)R_{j},\qquad
+     \Delta h_{j} = \sum_{i = 1}^{N_{c}}\nu_{ij}h_{i}(T),
+
+in :math:`\mathrm{W/m^{2}}` --- per unit *area*, since the production rates are
+--- and positive when the surface chemistry is exothermic. The two forms are
+identical, the second following from the first by
+`[production_rates] <#production_rates>`__; the first is what the generated code
+evaluates, because it needs the stoichiometry only once, inside
+:math:`\dot{\omega}`.
+
+The sum runs over every coupled species, so a reaction that consumes solid
+carries the enthalpy of the solid it consumes. Like the Gibbs functions of
+`[surface_equil_constants] <#surface_equil_constants>`__, the gas-phase
+enthalpies come from the separately generated gas-phase code and the surface and
+bulk ones are generated alongside the surface mechanism.
+
 .. _subsec:surface_equilibrium:
 
 Equilibrium Constants

@@ -745,14 +745,33 @@ struct ${name}
     // Standard-state Gibbs energy over RT of every bulk species. A bulk phase has
     // no Pyrometheus struct of its own, so unlike the gas phase its thermodynamics
     // is generated here.
-    static BulkT get_bulk_gibbs_rt(ContainerT temperature)
+    static BulkT get_bulk_enthalpies_rt(ContainerT temperature)
     {
-        BulkT g0_rt = {
+        BulkT h0_rt = {
         %for sp in bulk_species:
-        ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))}
-            - (${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}),
+        ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
         %endfor
         };
+        return h0_rt;
+    }
+
+    static BulkT get_bulk_entropies_r(ContainerT temperature)
+    {
+        BulkT s0_r = {
+        %for sp in bulk_species:
+        ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+        %endfor
+        };
+        return s0_r;
+    }
+
+    static BulkT get_bulk_gibbs_rt(ContainerT temperature)
+    {
+        BulkT h0_rt = get_bulk_enthalpies_rt(temperature);
+        BulkT s0_r = get_bulk_entropies_r(temperature);
+        BulkT g0_rt;
+        for (int k = 0; k < ${len(bulk_species)}; ++k)
+            g0_rt[k] = h0_rt[k] - s0_r[k];
         return g0_rt;
     }
 
@@ -789,7 +808,7 @@ struct ${name}
 %endif
 
         CoupledT g0_rt;
-        %for kind, start, stop, src in gibbs_blocks:
+        %for kind, start, stop, src in phase_blocks:
         for (int k = ${start}; k < ${stop}; ++k)
             g0_rt[k] = g0_${kind}[k - ${start - src}];
         %endfor
@@ -850,6 +869,44 @@ struct ${name}
         %endfor
         };
         return omega;
+    }
+
+    // Standard-state enthalpy over RT of every coupled species, assembled per
+    // phase in kinetics order: the gas species come from the separately generated
+    // gas-phase struct, the rest from this one.
+    static CoupledT get_coupled_enthalpies_rt(ContainerT temperature)
+    {
+        SurfaceT h0_surface = get_surface_enthalpies_rt(temperature);
+        auto h0_gas = GasT::get_species_enthalpies_rt(temperature);
+%if bulk_species:
+        BulkT h0_bulk = get_bulk_enthalpies_rt(temperature);
+%endif
+
+        CoupledT h0_rt;
+        %for kind, start, stop, src in phase_blocks:
+        for (int k = ${start}; k < ${stop}; ++k)
+            h0_rt[k] = h0_${kind}[k - ${start - src}];
+        %endfor
+        return h0_rt;
+    }
+
+    // Heat released by the heterogeneous reactions, per unit surface area:
+    // positive when the chemistry is exothermic, and in W/m^2, since the
+    // production rates are per unit area rather than per unit volume. This is
+    // -sum(omega*h), which equals -sum over reactions of the reaction enthalpy
+    // times the rate of progress without needing the stoichiometry a second time.
+    static ContainerT get_surface_net_heat_release_rate(
+        ContainerT temperature, CoupledT const &concentrations,
+        SurfaceT const &coverages)
+    {
+        CoupledT omega = get_surface_net_production_rates(
+            temperature, concentrations, coverages);
+        CoupledT h0_rt = get_coupled_enthalpies_rt(temperature);
+
+        ContainerT q = ContainerT(0.0);
+        for (int k = 0; k < num_coupled_species; ++k)
+            q -= omega[k]*h0_rt[k];
+        return q*gas_constant*temperature;
     }
 };
 
@@ -934,7 +991,7 @@ class CppCodeGenerator(CodeGenerator):
 
             coupled_species=coupled_species,
             site_conc_exprs=site_conc_exprs,
-            gibbs_blocks=pyrometheus.chem_expr.surface_gibbs_blocks(interface),
+            phase_blocks=pyrometheus.chem_expr.surface_phase_blocks(interface),
             bulk_species=pyrometheus.chem_expr.surface_bulk_species(interface),
 
             str_np=str_np,

@@ -1021,7 +1021,7 @@ ${gpu_routine}
 module ${module_name}
 
     use ${gas_module_name}, only: sp, dp, one_atm, gas_constant, &
-        get_species_gibbs_rt
+        get_species_gibbs_rt, get_species_enthalpies_rt
 
     implicit none
 
@@ -1088,6 +1088,32 @@ contains
     ! species. A bulk phase has no Pyrometheus module of
     ! its own, so unlike the gas phase its thermodynamics
     ! is generated here.
+    subroutine get_bulk_enthalpies_rt(temperature, h0_rt)
+
+        GPU_ROUTINE(get_bulk_enthalpies_rt)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(out) :: h0_rt(num_coupled_bulk_species)
+
+        %for k, sp in enumerate(bulk_species):
+        h0_rt(${k+1}) = ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))}
+        %endfor
+
+    end subroutine get_bulk_enthalpies_rt
+
+    subroutine get_bulk_entropies_r(temperature, s0_r)
+
+        GPU_ROUTINE(get_bulk_entropies_r)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(out) :: s0_r(num_coupled_bulk_species)
+
+        %for k, sp in enumerate(bulk_species):
+        s0_r(${k+1}) = ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}
+        %endfor
+
+    end subroutine get_bulk_entropies_r
+
     subroutine get_bulk_gibbs_rt(temperature, g0_rt)
 
         GPU_ROUTINE(get_bulk_gibbs_rt)
@@ -1095,11 +1121,13 @@ contains
         ${real_type}, intent(in)  :: temperature
         ${real_type}, intent(out) :: g0_rt(num_coupled_bulk_species)
 
-        %for k, sp in enumerate(bulk_species):
-        g0_rt(${k+1}) = ${cgm(ce.poly_to_enthalpy_expr(sp.thermo,
-            "temperature"))} &
-            - (${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))})
-        %endfor
+        ${real_type} :: h0_rt(num_coupled_bulk_species)
+        ${real_type} :: s0_r(num_coupled_bulk_species)
+
+        call get_bulk_enthalpies_rt(temperature, h0_rt)
+        call get_bulk_entropies_r(temperature, s0_r)
+        g0_rt = h0_rt - s0_r
+
     end subroutine get_bulk_gibbs_rt
 %endif
 
@@ -1154,7 +1182,7 @@ contains
 %if bulk_species:
         call get_bulk_gibbs_rt(temperature, g0_bulk)
 %endif
-        %for kind, start, stop, src in gibbs_blocks:
+        %for kind, start, stop, src in phase_blocks:
         g0_rt(${start+1}:${stop}) = g0_${kind}(${src+1}:${src+stop-start})
         %endfor
 
@@ -1228,6 +1256,62 @@ contains
         %endfor
 
     end subroutine get_surface_net_production_rates
+
+    ! Standard-state enthalpy over RT of every coupled
+    ! species, assembled per phase in kinetics order: the
+    ! gas species come from the separately generated
+    ! gas-phase module, the rest from this one.
+    subroutine get_coupled_enthalpies_rt(temperature, h0_rt)
+
+        GPU_ROUTINE(get_coupled_enthalpies_rt)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(out) :: h0_rt(num_coupled_species)
+
+        ${real_type} :: h0_surface(num_surface_species)
+        ${real_type} :: h0_gas(num_coupled_gas_species)
+%if bulk_species:
+        ${real_type} :: h0_bulk(num_coupled_bulk_species)
+%endif
+
+        call get_surface_enthalpies_rt(temperature, h0_surface)
+        call get_species_enthalpies_rt(temperature, h0_gas)
+%if bulk_species:
+        call get_bulk_enthalpies_rt(temperature, h0_bulk)
+%endif
+        %for kind, start, stop, src in phase_blocks:
+        h0_rt(${start+1}:${stop}) = h0_${kind}(${src+1}:${src+stop-start})
+        %endfor
+
+    end subroutine get_coupled_enthalpies_rt
+
+    ! Heat released by the heterogeneous reactions, per unit
+    ! surface area: positive when the chemistry is
+    ! exothermic, and in W/m^2, since the production rates
+    ! are per unit area rather than per unit volume. This is
+    ! -sum(omega*h), which equals -sum over reactions of the
+    ! reaction enthalpy times the rate of progress without
+    ! needing the stoichiometry a second time.
+    subroutine get_surface_net_heat_release_rate(temperature, concentrations, &
+            coverages, q)
+
+        GPU_ROUTINE(get_surface_net_heat_release_rate)
+
+        ${real_type}, intent(in)  :: temperature
+        ${real_type}, intent(in)  :: concentrations(num_coupled_species)
+        ${real_type}, intent(in)  :: coverages(num_surface_species)
+        ${real_type}, intent(out) :: q
+
+        ${real_type} :: omega(num_coupled_species)
+        ${real_type} :: h0_rt(num_coupled_species)
+
+        call get_surface_net_production_rates(temperature, concentrations, &
+            coverages, omega)
+        call get_coupled_enthalpies_rt(temperature, h0_rt)
+
+        q = -gas_constant*temperature*sum(omega*h0_rt)
+
+    end subroutine get_surface_net_heat_release_rate
 
 end module ${module_name}
 """, strict_undefined=True)
@@ -1325,11 +1409,11 @@ class FortranCodeGenerator(CodeGenerator):
 
             coupled_species=coupled_species,
             site_conc_exprs=site_conc_exprs,
-            gibbs_blocks=pyrometheus.chem_expr.surface_gibbs_blocks(interface),
+            phase_blocks=pyrometheus.chem_expr.surface_phase_blocks(interface),
             bulk_species=pyrometheus.chem_expr.surface_bulk_species(interface),
             num_gas_species=sum(
                 stop - start for kind, start, stop, _src
-                in pyrometheus.chem_expr.surface_gibbs_blocks(interface)
+                in pyrometheus.chem_expr.surface_phase_blocks(interface)
                 if kind == "gas"),
 
             str_np=str_np,

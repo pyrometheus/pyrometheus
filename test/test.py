@@ -928,6 +928,16 @@ def test_generated_surface_kinetics(mechname, phase, adjacent_names, composition
         reference = np.asarray(reference, dtype=np.float64)
         assert np.allclose(computed, reference, rtol=1e-10, atol=1e-280)
 
+    # Cantera's own Interface.heat_release_rate cannot be used as the reference: it
+    # multiplies production rates over every coupled species by enthalpies of the
+    # interface alone, and raises on a mechanism whose adjacent phases add species.
+    # Its per-reaction enthalpy change and rates of progress are well defined.
+    heat_release = float(surface.get_surface_net_heat_release_rate(
+        temperature, concentrations, interface.coverages))
+    reference = -float(np.dot(interface.delta_enthalpy,
+                              interface.net_rates_of_progress))
+    assert abs(heat_release - reference) <= 1e-10*max(abs(reference), 1e-280)
+
 
 @pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
                          SURFACE_MECHS)
@@ -959,14 +969,18 @@ def test_surface_backends_render(mechname, phase, adjacent_names, composition):
 
     for src in (python_src, fortran_src, cpp_src):
         for routine in ("get_site_concentrations",
-                        "get_surface_net_production_rates"):
+                        "get_surface_net_production_rates",
+                        "get_coupled_enthalpies_rt",
+                        "get_surface_net_heat_release_rate"):
             assert routine in src
 
     # A bulk phase has no generated class of its own, so its thermodynamics has to
     # come out of the surface code -- and only when there is a bulk phase to need it.
     has_bulk = bool(ce.surface_bulk_species(interface))
     for src in (python_src, fortran_src, cpp_src):
-        assert ("get_bulk_gibbs_rt" in src) == has_bulk
+        for routine in ("get_bulk_enthalpies_rt", "get_bulk_entropies_r",
+                        "get_bulk_gibbs_rt"):
+            assert (routine in src) == has_bulk
 
 
 @pytest.mark.parametrize("reaction_index, rate_type", [

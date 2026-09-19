@@ -753,7 +753,7 @@ def _surface_kinetics_phases(interface: ct.Interface):
     assert offset == interface.n_total_species
 
 
-def surface_gibbs_blocks(interface: ct.Interface):
+def surface_phase_blocks(interface: ct.Interface):
     """Where the standard-state Gibbs energy of each kinetics species comes from.
 
     An equilibrium constant needs a Gibbs energy for every species the interface

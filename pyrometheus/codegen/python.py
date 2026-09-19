@@ -679,6 +679,7 @@ class SurfaceKinetics:
     .. automethod:: get_surface_fwd_rate_coefficients
     .. automethod:: get_surface_rates_of_progress
     .. automethod:: get_surface_net_production_rates
+    .. automethod:: get_surface_net_heat_release_rate
     \"""
 
     def __init__(self, gas, pyro_np=np):
@@ -737,7 +738,7 @@ class SurfaceKinetics:
         c0 = self.pyro_np.log(self.one_atm / (self.gas_constant * temperature))
 %endif
         g0_rt = self._pyro_make_array(
-            %for n, (k, a, b, c) in enumerate(gibbs_blocks):
+            %for n, (k, a, b, c) in enumerate(phase_blocks):
             ${"" if n == 0 else "+ "}list(${gibbs_source[k]})[${c}:${c+b-a}]
             %endfor
             )
@@ -768,18 +769,31 @@ class SurfaceKinetics:
         ])
 %if bulk_species:
 
-    def get_bulk_gibbs_rt(self, temperature):
-        \"""Standard-state Gibbs energy over RT of every bulk species.
+    def get_bulk_enthalpies_rt(self, temperature):
+        \"""Standard-state enthalpy over RT of every bulk species.
 
         A bulk phase has no Pyrometheus class of its own, so unlike the gas phase
         its thermodynamics is generated here.
         \"""
         return self._pyro_make_array([
             %for sp in bulk_species:
-            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))}
-            - (${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))}),
+            ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             %endfor
         ])
+
+    def get_bulk_entropies_r(self, temperature):
+        \"""Standard-state entropy over R of every bulk species.\"""
+        return self._pyro_make_array([
+            %for sp in bulk_species:
+            ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
+            %endfor
+        ])
+
+    def get_bulk_gibbs_rt(self, temperature):
+        \"""Standard-state Gibbs energy over RT of every bulk species.\"""
+        h0_rt = self.get_bulk_enthalpies_rt(temperature)
+        s0_r = self.get_bulk_entropies_r(temperature)
+        return h0_rt - s0_r
 %endif
 
     def get_surface_entropies_r(self, temperature):
@@ -834,6 +848,32 @@ class SurfaceKinetics:
                 interface, name, Variable("r_net")))},
             %endfor
         ])
+
+    def get_coupled_enthalpies_rt(self, temperature):
+        \"""Standard-state enthalpy over RT of every coupled species.
+
+        Assembled per phase, in kinetics order: the gas species come from the
+        separately generated gas-phase class, the rest from this one.
+        \"""
+        return self._pyro_make_array(
+            %for n, (k, a, b, c) in enumerate(phase_blocks):
+            ${"" if n == 0 else "+ "}list(${enthalpy_source[k]})[${c}:${c+b-a}]
+            %endfor
+            )
+
+    def get_surface_net_heat_release_rate(self, temperature, concentrations,
+                                          coverages):
+        \"""Heat released by the heterogeneous reactions, per unit surface area.
+
+        Positive when the surface chemistry is exothermic, and in W/m^2, since the
+        production rates are per unit area rather than per unit volume. This is
+        -sum(omega*h), which equals -sum over reactions of (reaction enthalpy times
+        rate of progress) without needing the stoichiometry a second time.
+        \"""
+        omega = self.get_surface_net_production_rates(
+            temperature, concentrations, coverages)
+        h0_rt = self.get_coupled_enthalpies_rt(temperature)
+        return -self.gas_constant*temperature*sum(omega*h0_rt)
 """, strict_undefined=True)
 
 
@@ -916,7 +956,7 @@ class PythonCodeGenerator(CodeGenerator):
 
             coupled_species=coupled_species,
             site_conc_exprs=site_conc_exprs,
-            gibbs_blocks=pyrometheus.chem_expr.surface_gibbs_blocks(interface),
+            phase_blocks=pyrometheus.chem_expr.surface_phase_blocks(interface),
             any_reversible=any(r.reversible for r in interface.reactions()),
             uses_c0=pyrometheus.chem_expr
             .surface_needs_gas_standard_concentration(interface),
@@ -925,6 +965,11 @@ class PythonCodeGenerator(CodeGenerator):
                 "surface": "self.get_surface_gibbs_rt(temperature)",
                 "gas": "self.gas.get_species_gibbs_rt(temperature)",
                 "bulk": "self.get_bulk_gibbs_rt(temperature)",
+            },
+            enthalpy_source={
+                "surface": "self.get_surface_enthalpies_rt(temperature)",
+                "gas": "self.gas.get_species_enthalpies_rt(temperature)",
+                "bulk": "self.get_bulk_enthalpies_rt(temperature)",
             },
 
             str_np=str_np,
