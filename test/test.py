@@ -22,6 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+import sys
+from unittest import mock
+
 import cantera as ct
 import numpy as np
 import pytest
@@ -938,3 +941,50 @@ def test_surface_backends_render(mechname, phase, adjacent_names, composition):
         for routine in ("get_site_concentrations",
                         "get_surface_net_production_rates"):
             assert routine in src
+
+
+@pytest.mark.parametrize("lang, gas_name, expected", [
+    ("python", "thermochem", "class SurfaceKinetics"),
+    ("fortran", "ptgas", "use ptgas"),
+    ("cpp", "ptgas", '#include "ptgas.hpp"'),
+])
+def test_cli_generates_surface_code(tmp_path, lang, gas_name, expected):
+    """The CLI reaches the surface generators.
+
+    Each backend names the gas-phase code it was generated against differently, so
+    --gas-name has to be routed to a different keyword per backend; this checks the
+    name actually lands in the output rather than the backend's default.
+    """
+    from pyrometheus.cli import main
+
+    out = tmp_path / f"surface.{lang}"
+    argv = ["pyrometheus", "-l", lang, "-m", "ptcombust.yaml", "-p", "Pt_surf",
+            "-n", "SurfaceKinetics" if lang != "fortran" else "surface_thermochem",
+            "-s", "--gas-name", gas_name, "-o", str(out)]
+
+    with mock.patch.object(sys, "argv", argv):
+        main()
+
+    source = out.read_text()
+    assert expected in source
+    assert "get_surface_net_production_rates" in source
+
+
+def test_cli_rejects_an_interface_phase_without_the_surface_flag(tmp_path):
+    """An interface asked for as a gas phase is an error, not gas-phase code.
+
+    Cantera hands back a Solution for a surface phase rather than raising, and that
+    Solution reports only the interface's own species with no reactions, so the gas
+    path would quietly emit a near-empty module instead of the surface kinetics the
+    caller meant.
+    """
+    from pyrometheus.cli import main
+
+    argv = ["pyrometheus", "-l", "python", "-m", "ptcombust.yaml", "-p", "Pt_surf",
+            "-n", "Thermochemistry", "-o", str(tmp_path / "gas.py")]
+
+    with mock.patch.object(sys, "argv", argv):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+    assert excinfo.value.code == 2
