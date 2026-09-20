@@ -29,9 +29,9 @@ jobs:
           run: |
             python3 -m pip install .[dev]
             for mech in test/mechs/*.yaml; do
-              python3 -m pyrometheus                            \
-                  --language python      --mechanism "$mech"    \
-                  --name     pyrometheus --output    "$mech.py" \
+              python3 -m pyrometheus                                \
+                  --language python          --mechanism "$mech"    \
+                  --name     Thermochemistry --output    "$mech.py" \
                   --phase    gas
             done
             python3 -m flake8 --extend-ignore E501,Q000 test/mechs
@@ -69,8 +69,8 @@ jobs:
         - name: 'Build Docs'
           run: |
             python3 -m pip install -e .[docs]
-            python3 -m pyrometheus                                                   \
-                --language python      --mechanism test/mechs/sandiego.yaml          \
-                --name     pyrometheus --output    pyrometheus/thermochem_example.py \
+            python3 -m pyrometheus                                                       \
+                --language python          --mechanism test/mechs/sandiego.yaml          \
+                --name     Thermochemistry --output    pyrometheus/thermochem_example.py \
                 --phase    gas
             cd doc && make html SPHINXOPTS='-W --keep-going -n'
