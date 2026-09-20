@@ -1,0 +1,15 @@
+description: |-
+  An inert mixture: species and thermo, no kinetics. Mechanisms like this are used
+  for transport-only or frozen-chemistry calculations, and are the case that has no
+  reactions for the generated code to iterate over.
+
+phases:
+- name: gas
+  thermo: ideal-gas
+  elements: [O, N, Ar]
+  species:
+  - gri30.yaml/species: [O2, N2, AR]
+  kinetics: gas
+  reactions: none
+  transport: mixture-averaged
+  state: {T: 300.0, P: 1 atm, X: {O2: 0.21, N2: 0.78, AR: 0.01}}
