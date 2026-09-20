@@ -113,6 +113,205 @@ the species enthalpies and entropies.
 Species Thermodynamics
 ~~~~~~~~~~~~~~~~~~~~~~
 
+.. _subsec:surface:
+
+Heterogeneous Kinetics
+----------------------
+
+Pyrometheus also generates code for reactions that take place on a surface rather
+than in the bulk gas. These are described by a Cantera *interface* phase, which
+couples the surface sites to the phases that react at them: a gas phase and,
+for mechanisms such as char gasification, one or more bulk (solid) phases.
+
+Throughout, :math:`N_{s}` is the number of surface species, :math:`N_{c}` the
+number of species the interface couples in total, and :math:`M_{s}` the number of
+heterogeneous reactions. Concentrations and production rates over all coupled
+phases are ordered as Cantera orders them for kinetics: the interface's own
+species first, then those of each adjacent phase in turn. This is *not* the
+order in which the phases are written in the mechanism file, and it is the
+order the generated routines expect.
+
+.. _subsec:surface_state:
+
+Surface State
+~~~~~~~~~~~~~
+
+The state of the surface is given by the site fractions, or coverages,
+:math:`\boldsymbol{\theta} = \{ \theta_{k} \}_{k = 1}^{N_{s}}`, which satisfy
+:math:`\sum_{k}\theta_{k} = 1`. A surface species may occupy more than one site;
+writing :math:`\sigma_{k}` for the number it occupies and :math:`\Gamma_{0}` for
+the site density of the interface (in :math:`\mathrm{kmol/m^{2}}`), its
+concentration is
+
+.. math::
+
+   \label{eq:site_concentration}
+     [\mathcal{S}_{k}] = \frac{ \theta_{k}\Gamma_{0} }{ \sigma_{k} },\qquad
+     k = 1,\dots,N_{s}.
+
+The factor :math:`\sigma_{k}` is easy to overlook, since the great majority of
+mechanisms give every surface species a single site.
+
+Because the species that meet at an interface live in phases of different
+dimensionality, the quantity that enters a rate of progress is not the molar
+concentration for all of them but the *activity concentration*: the molar
+concentration for a gas species (in :math:`\mathrm{kmol/m^{3}}`), the site
+concentration `[site_concentration] <#site_concentration>`__ for a surface
+species (in :math:`\mathrm{kmol/m^{2}}`), and the activity for a bulk species,
+which is unity for the pure solids these mechanisms react. Passing a bulk
+species' molar density in its place, which is what Cantera's
+:attr:`~cantera.ThermoPhase.concentrations` returns for that phase, is wrong by
+that density, some two hundred :math:`\mathrm{kmol/m^{3}}` for graphite.
+
+.. _subsec:surface_rates:
+
+Rates of Progress
+~~~~~~~~~~~~~~~~~
+
+The rates of progress follow the law of mass action, as in the gas phase, but
+over the activity concentrations :math:`C_{i}` of every species the interface
+couples,
+
+.. math::
+
+   \label{eq:surface_reaction_rates}
+     R_{j} = k_{j}(T)\prod_{\ell = 1}^{N_{c}}C_{\ell}^{\nu_{\ell j}^{\prime}}
+     - \frac{ k_{j}(T) }{ K_{j}(T) }
+     \prod_{k = 1}^{N_{c}}C_{k}^{\nu_{kj}^{\prime\prime}},\qquad
+     j = 1,\dots,M_{s},
+
+in :math:`\mathrm{kmol/m^{2}\textrm{-}s}`. Where a mechanism declares explicit
+reaction orders, they replace the reactant stoichiometric coefficients
+:math:`\nu_{\ell j}^{\prime}` in the forward product. Orders are a property of
+the forward direction alone, so the reverse product always uses
+:math:`\nu_{kj}^{\prime\prime}`. The production rates then follow exactly as in
+the gas phase,
+
+.. math::
+
+   \dot{\omega}_{i} = \sum_{j = 1}^{M_{s}}\nu_{ij}R_{j},\qquad i = 1,\dots,N_{c},
+
+and cover every phase the interface couples: gas species consumed or released at
+the wall, surface species whose coverages evolve, and bulk species consumed as
+the solid is eaten away.
+
+.. _subsec:surface_rate_coeffs:
+
+Rate Coefficients
+~~~~~~~~~~~~~~~~~
+
+Three forms of rate coefficient appear in surface mechanisms.
+
+The first is the modified Arrhenius expression `[rate_coeff] <#rate_coeff>`__,
+unchanged from the gas phase.
+
+The second is the *sticking coefficient*, where the Arrhenius parameters give not
+a rate coefficient but a dimensionless sticking probability,
+
+.. math::
+
+   \gamma_{j}(T) = A_{j}T^{b_{j}}\exp\left({ -\frac{\theta_{a,j}}{T} }\right),
+
+the fraction of collisions with the surface that react. Converting it to a rate
+coefficient is a result of kinetic theory: the flux of a gas species of molecular
+weight :math:`W_{m}` onto a surface is :math:`\sqrt{RT/2\pi W_{m}}` per unit
+concentration, and each of the :math:`n_{j}` sites the reaction consumes divides
+by the site density, so
+
+.. math::
+
+   \label{eq:sticking}
+     k_{j}(T) = \frac{ \gamma_{j}(T) }{ \Gamma_{0}^{n_{j}} }
+     \sqrt{ \frac{RT}{2\pi W_{m}} }.
+
+Reading :math:`A_{j}`, :math:`b_{j}` and :math:`\theta_{a,j}` as though they were
+an ordinary Arrhenius rate is therefore wrong by orders of magnitude, and
+nothing reports it. When the mechanism asks for the Motz-Wise correction,
+which matters once :math:`\gamma_{j}` is no longer small compared to one, the
+leading factor becomes :math:`\gamma_{j}/(1 - \gamma_{j}/2)`.
+
+The third is coverage dependence, which multiplies either of the above by
+
+.. math::
+
+   \label{eq:coverage_dependence}
+     \prod_{k}10^{\,a_{jk}\theta_{k}}\;\theta_{k}^{\,m_{jk}}\;
+     \exp\left( -\frac{ E_{jk}\theta_{k} }{ RT } \right)
+
+over the species :math:`k` the reaction declares a dependence on. It expresses
+how the binding energy of an adsorbate changes as the surface fills up.
+
+.. _subsec:surface_heat:
+
+Surface Heat Release
+~~~~~~~~~~~~~~~~~~~~
+
+Heterogeneous reactions release or absorb heat at the wall, and a surface energy
+balance needs that rate. It follows from the production rates and the species
+enthalpies,
+
+.. math::
+
+   \label{eq:surface_heat_release}
+     \dot{q} = -\sum_{i = 1}^{N_{c}}\dot{\omega}_{i}h_{i}(T)
+     = -\sum_{j = 1}^{M_{s}}\Delta h_{j}(T)R_{j},\qquad
+     \Delta h_{j} = \sum_{i = 1}^{N_{c}}\nu_{ij}h_{i}(T),
+
+in :math:`\mathrm{W/m^{2}}`, since the production rates are per unit *area*,
+and positive when the surface chemistry is exothermic. The two forms are
+identical, the second following from the first by
+`[production_rates] <#production_rates>`__; the first is what the generated code
+evaluates, because it needs the stoichiometry only once, inside
+:math:`\dot{\omega}`.
+
+The sum runs over every species the interface couples, so a reaction that
+consumes solid carries the enthalpy of the solid it consumes. Like the Gibbs
+functions of `[surface_equil_constants] <#surface_equil_constants>`__, the gas-phase
+enthalpies come from the separately generated gas-phase code and the surface and
+bulk ones are generated alongside the surface mechanism.
+
+.. _subsec:surface_equilibrium:
+
+Equilibrium Constants
+~~~~~~~~~~~~~~~~~~~~~
+
+The equilibrium constant follows from equilibrium thermodynamics as in the gas
+phase, but the factor that converts between the activity of a species and its
+activity concentration, the standard concentration :math:`c^{0}_{i}`, is not
+the same for every species, because the phases have different dimensionality:
+
+.. math::
+
+   \label{eq:surface_equil_constants}
+     K_{j}(T) = \left( \prod_{i = 1}^{N_{c}}
+     \left( c^{0}_{i} \right)^{\nu_{ij}} \right)
+     \exp\left( -\sum_{i = 1}^{N_{c}}\frac{\nu_{ij}g_{i}(T)}{RT} \right),\qquad
+     j = 1,\dots,M_{s},
+
+with
+
+.. math::
+
+   c^{0}_{i} = \begin{cases}
+     p_{0}/RT, & \text{$i$ a gas species,} \\
+     \Gamma_{0}/\sigma_{i}, & \text{$i$ a surface species,} \\
+     1, & \text{$i$ a bulk species.}
+   \end{cases}
+
+A reaction that changes the moles of gas thus carries
+:math:`(p_{0}/RT)^{\Delta n_{g,j}}` as it does in the gas phase, one that changes
+the number of occupied sites carries the corresponding power of the site density,
+and a bulk species contributes nothing at all. Treating a bulk species as though
+it were a gas species leaves a spurious factor of
+:math:`(p_{0}/RT)^{\Delta n_{b,j}}`, roughly two orders of magnitude per mole
+of solid at combustion temperatures.
+
+The Gibbs functions :math:`g_{i}` are needed for every species the interface
+couples. For the gas species they come from the separately generated gas-phase
+code, which the generated surface code refers to; for the surface and
+bulk species, which have no Pyrometheus code of their own, they are generated
+alongside the surface mechanism.
+
 .. _subsec:energy:
 
 Conservation of Energy
