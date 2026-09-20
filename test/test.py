@@ -22,6 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+import os
+import sys
+from unittest import mock
+
 import cantera as ct
 import numpy as np
 import pytest
@@ -748,3 +752,446 @@ def test_a_mechanism_without_reactions_generates_working_code():
     # Thermo does not depend on the kinetics.
     assert np.allclose(thermochem.get_species_enthalpies_rt(sol.T),
                        sol.standard_enthalpies_RT, rtol=1e-12)
+
+
+# Two surface mechanisms, chosen to cover different ground.
+#
+#   ptcombust:      Cantera's own. 11 surface species, 43 total, 24 reactions
+#                     carrying every rate form at once (19 interface-Arrhenius,
+#                     5 sticking, 2 coverage-dependent, 3 reversible).
+#   carbon_surface: a porous-graphite mechanism. Adds what ptcombust lacks:
+#                     a bulk phase, explicit reaction orders (C(gr) at order zero)
+#                   and constant-cp instead of NASA thermo on the surface site.
+_CANTERA_VERSION = tuple(int(part) for part in ct.__version__.split(".")[:2])
+
+SURFACE_MECHS = [
+    ("ptcombust.yaml", "Pt_surf", ["gas"], "CH4:0.05, O2:0.2, N2:0.75"),
+    ("surface_mechs/carbon_surface.yaml", "carbon_surface", ["gas", "graphite"],
+     "O2:0.21, N2:0.7, CO:0.05, H2O:0.04"),
+    # Cantera before 3.2 normalizes a multi-site surface phase so the species
+    # concentrations sum to the site density, not the sites. That disagrees with
+    # c = theta*site_density/size by a factor of 1.47 here, so the fixture is
+    # skipped on those versions. Cantera 3.1 is the newest release supporting
+    # Python 3.9, so this is the 3.9 job only.
+    pytest.param(
+        "surface_mechs/bulk_multisite.yaml", "surf", ["gas", "bulk"],
+        "H2:0.4, H:0.01, O2:0.2, CO:0.2, CO2:0.19",
+        marks=pytest.mark.skipif(
+            _CANTERA_VERSION < (3, 2),
+            reason="multi-site coverages are normalized differently "
+                   "before Cantera 3.2")),
+]
+
+
+def _load_surface(mechname, phase, adjacent_names):
+    """A ct.Interface with its adjacent phases resolved, plus those phases.
+
+    An interface only knows the phases it is handed, and a mechanism that reacts a
+    bulk phase needs that one loaded too or Cantera rejects its reactions outright.
+    """
+    import os
+    if not os.path.isabs(mechname) and mechname.startswith("surface_mechs/"):
+        mechname = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                mechname)
+    adjacent = [ct.Solution(mechname, name) for name in adjacent_names]
+    interface = ct.Interface(mechname, phase, adjacent=adjacent)
+    return interface, adjacent
+
+
+def _surface_activity_concentrations(phase):
+    """What a heterogeneous rate of progress multiplies for *phase*'s species.
+
+    Molar concentration for a gas or surface phase, but a bulk phase has a
+    dimensionless standard concentration, so its species enter at their activity --
+    unity for the pure solids these mechanisms react. Passing `concentrations` for a
+    bulk phase instead, as its molar density, is wrong by that density.
+    """
+    from pyrometheus.chem_expr import surface_phase_kind
+    if surface_phase_kind(phase) == "bulk":
+        return phase.activities
+    return phase.concentrations
+
+
+def _surface_state(interface, adjacent, composition, temperature=1000.0):
+    """Put the interface and its phases in a state, and return the total-species
+    activity-concentration vector in the interface's kinetics ordering."""
+    gas = adjacent[0]
+    gas.TPX = temperature, ct.one_atm, composition
+    interface.TP = temperature, ct.one_atm
+    # Deliberately non-uniform: a coverage-dependent rate is indistinguishable from
+    # a plain one when every coverage is equal.
+    coverages = np.linspace(0.05, 1.0, interface.n_species)
+    interface.coverages = coverages / coverages.sum()
+    for phase in adjacent[1:]:
+        phase.TP = temperature, ct.one_atm
+    concentrations = np.concatenate(
+        [interface.concentrations]
+        + [_surface_activity_concentrations(p) for p in adjacent])
+    return concentrations
+
+
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_surface_rate_coefficients(mechname, phase, adjacent_names, composition):
+    """Heterogeneous rate coefficients against Cantera's own.
+
+    ptcombust is the fixture because it carries every rate form at once: plain
+    interface-Arrhenius, sticking coefficients (where the Arrhenius parameters give a
+    dimensionless probability, not a rate, so reading them directly is wrong
+    orders of magnitude), and coverage-dependent rates.
+    """
+    import pymbolic.primitives as p
+    from pymbolic.mapper.evaluator import EvaluationMapper
+    from pyrometheus import chem_expr as ce
+
+    interface, adjacent = _load_surface(mechname, phase, adjacent_names)
+    _surface_state(interface, adjacent, composition)
+
+    t = p.Variable("t")
+    theta = [p.Variable(f"theta_{i}") for i in range(interface.n_species)]
+    context = {"t": interface.T, "exp": np.exp, "log": np.log, "sqrt": np.sqrt}
+    context.update({f"theta_{i}": c for i, c in enumerate(interface.coverages)})
+    evaluate = EvaluationMapper(context=context)
+
+    for i, reaction in enumerate(interface.reactions()):
+        expr = ce.surface_rate_coefficient_expr(interface, reaction, t, theta)
+        value = expr if isinstance(expr, (int, float)) else evaluate(expr)
+        assert abs(value - interface.forward_rate_constants[i]) \
+            <= 1e-12*abs(interface.forward_rate_constants[i]), reaction.equation
+
+
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_surface_production_rates(mechname, phase, adjacent_names, composition):
+    """Production rates from heterogeneous reactions, over every phase the interface
+    couples: the gas, the surface sites and the bulk."""
+    import pymbolic.primitives as p
+    from pymbolic.mapper.evaluator import EvaluationMapper
+    from pyrometheus import chem_expr as ce
+
+    interface, adjacent = _load_surface(mechname, phase, adjacent_names)
+    _surface_state(interface, adjacent, composition)
+
+    r_net = [p.Variable(f"r_{i}") for i in range(interface.n_reactions)]
+    context = {f"r_{i}": r for i, r in enumerate(interface.net_rates_of_progress)}
+    evaluate = EvaluationMapper(context=context)
+
+    reference = interface.net_production_rates
+    for k, omega in enumerate(reference):
+        name = interface.kinetics_species_name(k)
+        expr = ce.surface_production_rate_expr(interface, name, r_net)
+        value = expr if isinstance(expr, (int, float)) else evaluate(expr)
+        assert abs(value - omega) <= 1e-10*max(abs(omega), 1e-20), name
+
+
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_surface_kinetics_pieces(mechname, phase, adjacent_names, composition):
+    """Site concentrations, equilibrium constants and rates of progress.
+
+    Each is checked against Cantera's own, because each embeds a convention that is
+    easy to get subtly wrong and impossible to notice afterwards: a surface species'
+    concentration is coverage*site_density/size, not its coverage; the kinetics
+    ordering puts the interface's own species before the adjacent phases; the
+    equilibrium constant takes a standard concentration per phase: (p0/RT) for a
+    gas species, site_density/sites for a surface one, and nothing at all for a bulk
+    one; and explicit reaction orders, where a mechanism gives them, override the
+    reactant stoichiometry.
+    """
+    import pymbolic.primitives as p
+    from pymbolic.mapper.evaluator import EvaluationMapper
+    from pyrometheus import chem_expr as ce
+
+    interface, adjacent = _load_surface(mechname, phase, adjacent_names)
+    concentrations = _surface_state(interface, adjacent, composition)
+    gibbs = np.concatenate(
+        [interface.standard_gibbs_RT] + [p.standard_gibbs_RT for p in adjacent])
+
+    context = {"exp": np.exp, "log": np.log, "sqrt": np.sqrt,
+               "c0": np.log(ct.one_atm/(ct.gas_constant*interface.T))}
+    context.update({f"theta_{k}": c for k, c in enumerate(interface.coverages)})
+    context.update({f"g_{k}": g for k, g in enumerate(gibbs)})
+    context.update({f"c_{k}": c for k, c in enumerate(concentrations)})
+    context.update({f"kf_{i}": k
+                    for i, k in enumerate(interface.forward_rate_constants)})
+    evaluate = EvaluationMapper(context=context)
+
+    def value(expr):
+        return expr if isinstance(expr, (int, float)) else evaluate(expr)
+
+    theta = [p.Variable(f"theta_{k}") for k in range(interface.n_species)]
+    for k, expr in enumerate(ce.surface_concentrations_expr(interface, theta)):
+        assert abs(value(expr) - interface.concentrations[k]) \
+            <= 1e-12*abs(interface.concentrations[k])
+
+    g0 = [p.Variable(f"g_{k}") for k in range(len(gibbs))]
+    for i, reaction in enumerate(interface.reactions()):
+        if not reaction.reversible:
+            continue
+        k_eq = np.exp(value(
+            ce.surface_equilibrium_constant_expr(interface, i, g0)))
+        assert abs(k_eq - interface.equilibrium_constants[i]) \
+            <= 1e-10*abs(interface.equilibrium_constants[i]), reaction.equation
+
+    conc = [p.Variable(f"c_{k}") for k in range(len(concentrations))]
+    for i, reaction in enumerate(interface.reactions()):
+        rate = value(ce.surface_rate_of_progress_expr(
+            interface, i, p.Variable(f"kf_{i}"), conc))
+        reference = interface.forward_rates_of_progress[i]
+        assert abs(rate - reference) <= 1e-10*max(abs(reference), 1e-300), \
+            reaction.equation
+
+
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_generated_surface_kinetics(mechname, phase, adjacent_names, composition):
+    """The generated surface class against Cantera, end to end.
+
+    The pieces are checked individually elsewhere; this is the composition, which is
+    where an ordering or unit convention that is self-consistent but wrong would
+    still show up.
+    """
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    interface, adjacent = _load_surface(mechname, phase, adjacent_names)
+    concentrations = _surface_state(interface, adjacent, composition)
+
+    surface = PythonCodeGenerator.get_surface_thermochem_class(interface)(
+        gas=PythonCodeGenerator.get_thermochem_class(adjacent[0])())
+
+    temperature = interface.T
+
+    for computed, reference in [
+        (surface.get_site_concentrations(interface.coverages),
+         interface.concentrations),
+        (surface.get_surface_fwd_rate_coefficients(temperature, interface.coverages),
+         interface.forward_rate_constants),
+        (surface.get_surface_rates_of_progress(
+            temperature, concentrations, interface.coverages),
+         interface.net_rates_of_progress),
+        (surface.get_surface_net_production_rates(
+            temperature, concentrations, interface.coverages),
+         interface.net_production_rates),
+    ]:
+        computed = np.asarray(computed, dtype=np.float64)
+        reference = np.asarray(reference, dtype=np.float64)
+        assert np.allclose(computed, reference, rtol=1e-10, atol=1e-280)
+
+    # Cantera's own Interface.heat_release_rate cannot be used as the reference: it
+    # multiplies production rates over every species it couples by enthalpies of the
+    # interface alone, and raises on a mechanism whose adjacent phases add species.
+    # Its per-reaction enthalpy change and rates of progress are well defined.
+    heat_release = float(surface.get_surface_net_heat_release_rate(
+        temperature, concentrations, interface.coverages))
+    reference = -float(np.dot(interface.delta_enthalpy,
+                              interface.net_rates_of_progress))
+    assert abs(heat_release - reference) <= 1e-10*max(abs(reference), 1e-280)
+
+
+def test_every_backend_honors_the_name_it_is_given():
+    """The name argument has to reach the generated artifact.
+
+    The Python backend used to ignore it and always emit Thermochemistry, so
+    compile_class could only ever look up that one name, and the class name was
+    fixed for every caller.
+    """
+    from pyrometheus.codegen.cpp import CppCodeGenerator
+    from pyrometheus.codegen.fortran import FortranCodeGenerator
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    sol = ct.Solution("h2o2.yaml")
+    interface, _adjacent = _load_surface("ptcombust.yaml", "Pt_surf", ["gas"])
+
+    assert "class Chosen:" in PythonCodeGenerator.generate("Chosen", sol)
+    assert "module chosen\n" in FortranCodeGenerator.generate("chosen", sol)
+    assert "struct Chosen" in CppCodeGenerator.generate("Chosen", sol)
+
+    assert "class ChosenSurface:" in PythonCodeGenerator.generate_surface(
+        "ChosenSurface", interface)
+    assert "module chosen_surface\n" in FortranCodeGenerator.generate_surface(
+        "chosen_surface", interface)
+    assert "struct ChosenSurface" in CppCodeGenerator.generate_surface(
+        "ChosenSurface", interface)
+
+    # compile_class looks the class up by name, so an ignored name is a KeyError
+    for name, source in [
+        ("Chosen", PythonCodeGenerator.generate("Chosen", sol)),
+        ("ChosenSurface",
+         PythonCodeGenerator.generate_surface("ChosenSurface", interface)),
+    ]:
+        assert PythonCodeGenerator.compile_class(name, source).__name__ == name
+
+
+def test_the_surface_class_annotates_the_gas_it_is_given():
+    """The gas argument is annotated, against the module and class it names.
+
+    Behind TYPE_CHECKING: the surface class takes a gas object at run time and
+    must stay importable without the gas module being on the path.
+    """
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    interface, _adjacent = _load_surface("ptcombust.yaml", "Pt_surf", ["gas"])
+    source = PythonCodeGenerator.generate_surface(
+        "SurfaceThermochemistry", interface,
+        gas_module_name="my_gas_mod", gas_class_name="MyGas")
+
+    assert "from my_gas_mod import MyGas" in source
+    assert 'def __init__(self, gas: "MyGas", pyro_np=np):' in source
+
+    # still usable with no such module importable
+    klass = PythonCodeGenerator.compile_class("SurfaceThermochemistry", source)
+    gas = PythonCodeGenerator.get_thermochem_class(interface.adjacent["gas"])()
+    assert klass(gas).num_species == interface.n_species
+
+
+def test_the_gas_standard_concentration_is_emitted_only_when_used():
+    """c0 appears in a backend's output exactly when a reaction needs it.
+
+    Only a reversible reaction that changes the number of moles of gas needs it.
+    Emitting it anyway leaves an unused local and a log() per call, in a routine
+    the rates of progress reach and Fortran marks for the device.
+    """
+    import re
+
+    from pyrometheus import chem_expr as ce
+    from pyrometheus.codegen.cpp import CppCodeGenerator
+    from pyrometheus.codegen.fortran import FortranCodeGenerator
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    cases = [("ptcombust.yaml", "Pt_surf", ["gas"], False)]
+    if _CANTERA_VERSION >= (3, 2):
+        cases.append(("surface_mechs/bulk_multisite.yaml", "surf",
+                      ["gas", "bulk"], True))
+
+    for mechname, phase, adjacent_names, expected in cases:
+        interface, _adjacent = _load_surface(mechname, phase, adjacent_names)
+        assert ce._surface_needs_gas_standard_concentration(interface) is expected
+
+        for generator in (PythonCodeGenerator, FortranCodeGenerator,
+                          CppCodeGenerator):
+            source = generator.generate_surface("SurfaceThermochemistry",
+                                                interface)
+            found = bool(re.search(r"\bc0\b", source))
+            assert found is expected, (
+                f"{generator.__name__} on {phase}: c0 present={found}, "
+                f"needed={expected}")
+
+
+@pytest.mark.parametrize("mechname, phase, adjacent_names, composition",
+                         SURFACE_MECHS)
+def test_surface_backends_render(mechname, phase, adjacent_names, composition):
+    """Every backend renders a surface mechanism.
+
+    The numbers are checked against Cantera through the Python backend; this
+    guards the other two against template errors, which Mako raises only at render
+    time and which no import or lint catches.
+    """
+    from pyrometheus import chem_expr as ce
+    from pyrometheus.codegen.cpp import CppCodeGenerator
+    from pyrometheus.codegen.fortran import FortranCodeGenerator
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    interface, _adjacent = _load_surface(mechname, phase, adjacent_names)
+
+    python_src = PythonCodeGenerator.generate_surface(
+        "SurfaceThermochemistry", interface)
+    fortran_src = FortranCodeGenerator.generate_surface(
+        "surface_thermochem", interface, gas_module_name="thermochem")
+    cpp_src = CppCodeGenerator.generate_surface(
+        "SurfaceThermochemistry", interface, gas_header_name="thermochem.hpp")
+
+    assert "class SurfaceThermochemistry" in python_src
+    assert "module surface_thermochem" in fortran_src
+    assert "use thermochem" in fortran_src
+    assert "struct SurfaceThermochemistry" in cpp_src
+    assert '#include "thermochem.hpp"' in cpp_src
+
+    for src in (python_src, fortran_src, cpp_src):
+        for routine in ("get_site_concentrations",
+                        "get_surface_net_production_rates",
+                        "get_total_enthalpies_rt",
+                        "get_surface_net_heat_release_rate"):
+            assert routine in src
+
+    # A bulk phase has no generated class of its own, so its thermodynamics has to
+    # come out of the surface code, and only when a bulk phase needs it.
+    has_bulk = bool(ce.surface_bulk_species(interface))
+    for src in (python_src, fortran_src, cpp_src):
+        for routine in ("get_bulk_enthalpies_rt", "get_bulk_entropies_r",
+                        "get_bulk_gibbs_rt"):
+            assert (routine in src) == has_bulk
+
+
+@pytest.mark.parametrize("reaction_index, rate_type", [
+    (0, "interface-Blowers-Masel"),
+    (1, "sticking-Blowers-Masel"),
+])
+def test_an_untranslatable_surface_rate_is_refused(reaction_index, rate_type):
+    """A rate form the generator cannot express must raise, not approximate.
+
+    Every Cantera surface rate class carries pre_exponential_factor,
+    temperature_exponent and activation_energy, so reading those off an unsupported
+    one produces a plausible Arrhenius expression instead of an error. The sticking
+    variant is a StickRateBase, so the sticking branch would swallow it as well.
+    """
+    import pymbolic.primitives as p
+    from pyrometheus import chem_expr as ce
+
+    mechname = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "surface_mechs", "blowers_masel.yaml")
+    interface = ct.Interface(mechname, "surf")
+    reaction = interface.reaction(reaction_index)
+    assert reaction.rate.type == rate_type
+
+    coverages = [p.Variable(f"theta_{k}") for k in range(interface.n_species)]
+    with pytest.raises(ValueError, match=rate_type):
+        ce.surface_rate_coefficient_expr(
+            interface, reaction, p.Variable("t"), coverages)
+
+
+@pytest.mark.parametrize("lang, gas_name, expected", [
+    ("python", "thermochem", "class SurfaceThermochemistry"),
+    ("fortran", "ptgas", "use ptgas"),
+    ("cpp", "ptgas", '#include "ptgas.hpp"'),
+])
+def test_cli_generates_surface_code(tmp_path, lang, gas_name, expected):
+    """The CLI reaches the surface generators.
+
+    Each backend names the gas-phase code it was generated against differently, so
+    --gas-name has to be routed to a different keyword per backend; this checks the
+    name actually lands in the output, not the backend's default.
+    """
+    from pyrometheus.cli import main
+
+    out = tmp_path / f"surface.{lang}"
+    argv = ["pyrometheus", "-l", lang, "-m", "ptcombust.yaml", "-p", "Pt_surf",
+            "-n",
+            "SurfaceThermochemistry" if lang != "fortran" else "surface_thermochem",
+            "-s", "--gas-name", gas_name, "-o", str(out)]
+
+    with mock.patch.object(sys, "argv", argv):
+        main()
+
+    source = out.read_text()
+    assert expected in source
+    assert "get_surface_net_production_rates" in source
+
+
+def test_cli_rejects_an_interface_phase_without_the_surface_flag(tmp_path):
+    """An interface asked for as a gas phase is an error, not gas-phase code.
+
+    Cantera hands back a Solution for a surface phase instead of raising, and that
+    Solution reports only the interface's own species with no reactions, so the gas
+    path would emit a near-empty module instead of the surface kinetics the
+    caller meant.
+    """
+    from pyrometheus.cli import main
+
+    argv = ["pyrometheus", "-l", "python", "-m", "ptcombust.yaml", "-p", "Pt_surf",
+            "-n", "Thermochemistry", "-o", str(tmp_path / "gas.py")]
+
+    with mock.patch.object(sys, "argv", argv):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+    assert excinfo.value.code == 2
