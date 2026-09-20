@@ -497,8 +497,12 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(${shape_src('r_net')}) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
+            %if sol.n_reactions:
             ${cgm(ce.production_rate_expr(sol, sp.name, Variable("r_net")))} <%
             %>* ones,
+            %else:
+            0.0 * ones,
+            %endif
             %endfor
             ])
 
@@ -535,9 +539,13 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(${shape_src('r_fwd')}) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
+            %if sol.n_reactions:
             ${cgm(ce.creation_rate_expr(sol, sp.name,
                 Variable("r_fwd"), Variable("r_rev")))} <%
             %>* ones,
+            %else:
+            0.0 * ones,
+            %endif
             %endfor
             ])
 
@@ -550,9 +558,13 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(${shape_src('r_fwd')}) + 1.0
         return self._pyro_make_array([
             %for sp in sol.species():
+            %if sol.n_reactions:
             ${cgm(ce.destruction_rate_expr(sol, sp.name,
                 Variable("r_fwd"), Variable("r_rev")))} <%
             %>* ones,
+            %else:
+            0.0 * ones,
+            %endif
             %endfor
             ])
 
@@ -565,16 +577,24 @@ class Thermochemistry:
         ones = self._pyro_zeros_like(${shape_src('r_fwd')}) + 1.0
         cdot = self._pyro_make_array([
             %for sp in sol.species():
+            %if sol.n_reactions:
             ${cgm(ce.creation_rate_expr(sol, sp.name,
                 Variable("r_fwd"), Variable("r_rev")))} <%
             %>* ones,
+            %else:
+            0.0 * ones,
+            %endif
             %endfor
             ])
         ddot = self._pyro_make_array([
             %for sp in sol.species():
+            %if sol.n_reactions:
             ${cgm(ce.destruction_rate_expr(sol, sp.name,
                 Variable("r_fwd"), Variable("r_rev")))} <%
             %>* ones,
+            %else:
+            0.0 * ones,
+            %endif
             %endfor
             ])
         return cdot, ddot
