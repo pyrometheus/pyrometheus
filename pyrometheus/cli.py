@@ -18,12 +18,12 @@ def generate_surface_source(generator, args):
     interface = ct.Interface(args.mech, args.phase)
 
     if generator.get_name() == "fortran":
-        return generator.generate_surface(args.name, interface,
+        return generator.generate_surface_thermochem(args.name, interface,
                                           gas_module_name=args.gas_name)
     if generator.get_name() == "cpp":
-        return generator.generate_surface(args.name, interface,
+        return generator.generate_surface_thermochem(args.name, interface,
                                           gas_header_name=f"{args.gas_name}.hpp")
-    return generator.generate_surface(args.name, interface,
+    return generator.generate_surface_thermochem(args.name, interface,
                                       gas_module_name=args.gas_name)
 
 

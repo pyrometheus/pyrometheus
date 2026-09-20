@@ -303,8 +303,8 @@ A reaction that changes the moles of gas thus carries
 the number of occupied sites carries the corresponding power of the site density,
 and a bulk species contributes nothing at all. Treating a bulk species as though
 it were a gas species leaves a spurious factor of
-:math:`(p_{0}/RT)^{\Delta n_{b,j}}`, roughly two orders of magnitude per mole
-of solid at combustion temperatures.
+:math:`(p_{0}/RT)^{\Delta n_{b,j}}`. That factor is :math:`RT/p_{0}` per mole of
+solid, which is 123 at 1500 K, 164 at 2000 K and 205 at 2500 K.
 
 The Gibbs functions :math:`g_{i}` are needed for every species the interface
 couples. For the gas species they come from the separately generated gas-phase

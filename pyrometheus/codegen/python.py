@@ -751,23 +751,13 @@ class ${name}:
         self.total_${kind}_offset = ${start}
         %endfor
 
-    def _pyro_make_array(self, res_list):
-        \"""Make a numpy or object array from *res_list*, as the gas class does.\"""
-        from numbers import Number
-        all_numbers = all(isinstance(e, Number) for e in res_list)
-        dtype = np.float64 if all_numbers else object
-        result = np.empty((len(res_list),), dtype=dtype)
-        for idx in range(len(res_list)):
-            result[idx] = res_list[idx]
-        return result
-
     def get_site_concentrations(self, coverages):
         \"""Site concentration of every surface species.
 
         A species occupying *size* sites is present at
         ``coverage*site_density/size``.
         \"""
-        return self._pyro_make_array([
+        return self.gas._pyro_make_array([
             %for expr in site_conc_exprs:
             ${cgm(expr)},
             %endfor
@@ -775,7 +765,7 @@ class ${name}:
 
     def get_surface_fwd_rate_coefficients(self, temperature, coverages):
         \"""Forward rate coefficient of every heterogeneous reaction.\"""
-        return self._pyro_make_array([
+        return self.gas._pyro_make_array([
             %for react in interface.reactions():
             ${cgm(ce.surface_rate_coefficient_expr(interface, react,
                 Variable("temperature"), Variable("coverages")))},
@@ -788,13 +778,13 @@ class ${name}:
 %if uses_c0:
         c0 = self.pyro_np.log(self.one_atm / (self.gas_constant * temperature))
 %endif
-        g0_rt = self._pyro_make_array(
+        g0_rt = self.gas._pyro_make_array(
             %for n, (k, a, b, c) in enumerate(phase_blocks):
             ${"" if n == 0 else "+ "}list(${gibbs_source[k]})[${c}:${c+b-a}]
             %endfor
             )
 %endif
-        return self._pyro_make_array([
+        return self.gas._pyro_make_array([
             %for i, react in enumerate(interface.reactions()):
             %if react.reversible:
             self.pyro_np.exp(${cgm(ce.surface_equilibrium_constant_expr(
@@ -812,7 +802,7 @@ class ${name}:
         return h0_rt - s0_r
 
     def get_surface_enthalpies_rt(self, temperature):
-        return self._pyro_make_array([
+        return self.gas._pyro_make_array([
             %for sp in interface.species():
             ${cgm(ce.poly_to_enthalpy_expr(
                 sp.thermo, "temperature"))},
@@ -826,7 +816,7 @@ class ${name}:
         A bulk phase has no Pyrometheus class of its own, so unlike the gas phase
         its thermodynamics is generated here.
         \"""
-        return self._pyro_make_array([
+        return self.gas._pyro_make_array([
             %for sp in bulk_species:
             ${cgm(ce.poly_to_enthalpy_expr(sp.thermo, "temperature"))},
             %endfor
@@ -834,7 +824,7 @@ class ${name}:
 
     def get_bulk_entropies_r(self, temperature):
         \"""Standard-state entropy over R of every bulk species.\"""
-        return self._pyro_make_array([
+        return self.gas._pyro_make_array([
             %for sp in bulk_species:
             ${cgm(ce.poly_to_entropy_expr(sp.thermo, "temperature"))},
             %endfor
@@ -848,7 +838,7 @@ class ${name}:
 %endif
 
     def get_surface_entropies_r(self, temperature):
-        return self._pyro_make_array([
+        return self.gas._pyro_make_array([
             %for sp in interface.species():
             ${cgm(ce.poly_to_entropy_expr(
                 sp.thermo, "temperature"))},
@@ -868,13 +858,13 @@ class ${name}:
 %if any_reversible:
         k_eq = self.get_surface_equilibrium_constants(temperature)
 %endif
-        r_fwd = self._pyro_make_array([
+        r_fwd = self.gas._pyro_make_array([
             %for i in range(interface.n_reactions):
             ${cgm(ce.surface_rate_of_progress_expr(interface, i,
                 Variable("k_fwd")[i], Variable("concentrations")))},
             %endfor
         ])
-        r_rev = self._pyro_make_array([
+        r_rev = self.gas._pyro_make_array([
             %for i, react in enumerate(interface.reactions()):
             %if react.reversible:
             ${cgm(ce.surface_reverse_rate_of_progress_expr(interface, i,
@@ -893,7 +883,7 @@ class ${name}:
         kinetics order.\"""
         r_net = self.get_surface_rates_of_progress(
             temperature, concentrations, coverages)
-        return self._pyro_make_array([
+        return self.gas._pyro_make_array([
             %for species_name in total_species:
             ${cgm(ce.surface_production_rate_expr(
                 interface, species_name, Variable("r_net")))},
@@ -906,7 +896,7 @@ class ${name}:
         Assembled per phase, in kinetics order: the gas species come from the
         separately generated gas-phase class, the rest from this one.
         \"""
-        return self._pyro_make_array(
+        return self.gas._pyro_make_array(
             %for n, (k, a, b, c) in enumerate(phase_blocks):
             ${"" if n == 0 else "+ "}list(${enthalpy_source[k]})[${c}:${c+b-a}]
             %endfor
@@ -979,7 +969,7 @@ class PythonCodeGenerator(CodeGenerator):
         return exec_dict[name]
 
     @staticmethod
-    def generate_surface(name: str, interface: ct.Interface,
+    def generate_surface_thermochem(name: str, interface: ct.Interface,
                          gas_module_name: str = "thermochem",
                          gas_class_name: str = "Thermochemistry",
                          opts: CodeGenerationOptions = None) -> str:
@@ -1042,7 +1032,7 @@ class PythonCodeGenerator(CodeGenerator):
         name = "SurfaceThermochemistry"
         return PythonCodeGenerator.compile_class(
             name=name,
-            source=PythonCodeGenerator.generate_surface(name, interface)
+            source=PythonCodeGenerator.generate_surface_thermochem(name, interface)
         )
 
     @staticmethod

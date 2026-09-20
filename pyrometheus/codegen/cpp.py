@@ -963,7 +963,7 @@ class CppCodeGenerator(CodeGenerator):
         )
 
     @staticmethod
-    def generate_surface(name: str,
+    def generate_surface_thermochem(name: str,
                          interface: ct.Interface,
                          gas_header_name: str = "thermochem.hpp",
                          opts: CodeGenerationOptions = None) -> str:

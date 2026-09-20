@@ -1006,18 +1006,19 @@ def test_every_backend_honors_the_name_it_is_given():
     assert "module chosen\n" in FortranCodeGenerator.generate("chosen", sol)
     assert "struct Chosen" in CppCodeGenerator.generate("Chosen", sol)
 
-    assert "class ChosenSurface:" in PythonCodeGenerator.generate_surface(
+    assert "class ChosenSurface:" in PythonCodeGenerator.generate_surface_thermochem(
         "ChosenSurface", interface)
-    assert "module chosen_surface\n" in FortranCodeGenerator.generate_surface(
+    fortran_surface = FortranCodeGenerator.generate_surface_thermochem(
         "chosen_surface", interface)
-    assert "struct ChosenSurface" in CppCodeGenerator.generate_surface(
+    assert "module chosen_surface\n" in fortran_surface
+    assert "struct ChosenSurface" in CppCodeGenerator.generate_surface_thermochem(
         "ChosenSurface", interface)
 
     # compile_class looks the class up by name, so an ignored name is a KeyError
     for name, source in [
         ("Chosen", PythonCodeGenerator.generate("Chosen", sol)),
-        ("ChosenSurface",
-         PythonCodeGenerator.generate_surface("ChosenSurface", interface)),
+        ("ChosenSurface", PythonCodeGenerator.generate_surface_thermochem(
+            "ChosenSurface", interface)),
     ]:
         assert PythonCodeGenerator.compile_class(name, source).__name__ == name
 
@@ -1031,7 +1032,7 @@ def test_the_surface_class_annotates_the_gas_it_is_given():
     from pyrometheus.codegen.python import PythonCodeGenerator
 
     interface, _adjacent = _load_surface("ptcombust.yaml", "Pt_surf", ["gas"])
-    source = PythonCodeGenerator.generate_surface(
+    source = PythonCodeGenerator.generate_surface_thermochem(
         "SurfaceThermochemistry", interface,
         gas_module_name="my_gas_mod", gas_class_name="MyGas")
 
@@ -1069,7 +1070,7 @@ def test_the_gas_standard_concentration_is_emitted_only_when_used():
 
         for generator in (PythonCodeGenerator, FortranCodeGenerator,
                           CppCodeGenerator):
-            source = generator.generate_surface("SurfaceThermochemistry",
+            source = generator.generate_surface_thermochem("SurfaceThermochemistry",
                                                 interface)
             found = bool(re.search(r"\bc0\b", source))
             assert found is expected, (
@@ -1093,11 +1094,11 @@ def test_surface_backends_render(mechname, phase, adjacent_names, composition):
 
     interface, _adjacent = _load_surface(mechname, phase, adjacent_names)
 
-    python_src = PythonCodeGenerator.generate_surface(
+    python_src = PythonCodeGenerator.generate_surface_thermochem(
         "SurfaceThermochemistry", interface)
-    fortran_src = FortranCodeGenerator.generate_surface(
+    fortran_src = FortranCodeGenerator.generate_surface_thermochem(
         "surface_thermochem", interface, gas_module_name="thermochem")
-    cpp_src = CppCodeGenerator.generate_surface(
+    cpp_src = CppCodeGenerator.generate_surface_thermochem(
         "SurfaceThermochemistry", interface, gas_header_name="thermochem.hpp")
 
     assert "class SurfaceThermochemistry" in python_src

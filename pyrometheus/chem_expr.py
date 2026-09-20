@@ -697,7 +697,7 @@ def surface_equilibrium_constant_expr(interface: ct.Interface, reaction_index,
         if nu != 0)
 
     expr = -d_g
-    dn_gas, log_c0_surface = _surface_standard_concentrations(
+    dn_gas, log_c0_surface = _surface_standard_concentration_exponents(
         interface, reaction_index)
     if dn_gas:
         expr = expr + dn_gas*p.Variable("c0")
@@ -763,7 +763,7 @@ def surface_phase_blocks(interface: ct.Interface):
     while not necessarily being adjacent in the kinetics ordering.
 
     Raises if the interface couples more than one gas phase, which the generated
-    code has no way to name.
+    code has no way to name. See pyrometheus/pyrometheus#121.
     """
     blocks = []
     bulk_offset = 0
@@ -798,15 +798,17 @@ def _surface_needs_gas_standard_concentration(interface: ct.Interface):
     """
     return any(
         react.reversible
-        and _surface_standard_concentrations(interface, i)[0]
+        and _surface_standard_concentration_exponents(interface, i)[0]
         for i, react in enumerate(interface.reactions()))
 
 
-def surface_bulk_species(interface: ct.Interface):
+def surface_bulk_species(interface: ct.Interface) -> list:
     """Species of the interface's bulk phases, in the order the blocks expect.
 
     Their thermodynamics is generated with the surface code: unlike the gas phase,
     a bulk phase has no Pyrometheus class of its own to defer to.
+
+    :returns: a list of :class:`cantera.Species`.
     """
     return [sp
             for phase, _offset in _surface_kinetics_phases(interface)
@@ -814,16 +816,15 @@ def surface_bulk_species(interface: ct.Interface):
             for sp in phase.species()]
 
 
-def _surface_standard_concentrations(interface: ct.Interface, reaction_index):
-    """Standard-concentration contribution of a reaction, split by phase kind.
+def _surface_standard_concentration_exponents(interface: ct.Interface,
+                                              reaction_index) -> tuple:
+    """How the standard concentrations enter one reaction's equilibrium constant.
 
-    :returns: the net change in moles of gas-phase species, whose standard
-        concentration is temperature-dependent and so stays symbolic, and the log
-        of the surface contribution, which is a number.
-
-    Bulk species have unit activity and drop out; lumping them in with the gas
-    species would leave a spurious factor of :math:`(p_0/RT)^{\\Delta n_b}`, which
-    is two orders of magnitude per mole of bulk at combustion temperatures.
+    :returns: a ``(float, float)`` pair. The first is the net change in moles of
+        gas-phase species, the exponent on :math:`p_0/RT`, which is
+        temperature-dependent and so stays symbolic. The second is the log of
+        the surface contribution, which is a number. Bulk species have unit
+        activity and contribute to neither. See :ref:`subsec:surface_equilibrium`.
     """
     nu = _surface_net_stoich(interface, reaction_index)
 

@@ -1378,7 +1378,7 @@ class FortranCodeGenerator(CodeGenerator):
         ))
 
     @staticmethod
-    def generate_surface(name: str,
+    def generate_surface_thermochem(name: str,
                          interface: ct.Interface,
                          gas_module_name: str = "thermochem",
                          opts: CodeGenerationOptions = None) -> str:
