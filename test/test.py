@@ -711,3 +711,40 @@ def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
             ct_diff[i] - pyro_diff[i])
 
         assert err < 1e-10
+
+
+def test_a_mechanism_without_reactions_generates_working_code():
+    """Species and thermo with no kinetics, as in a transport-only calculation.
+
+    With no reactions the generated rate bodies are empty, but the prologues
+    still took rates[0] for an array shape. That raised IndexError when called,
+    and the unused fetches failed the generated-code lint.
+    """
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    # Resolved from this file, as backends.py does: pytest's working directory
+    # is not the test directory.
+    import pathlib
+    mech = pathlib.Path(__file__).parent / "mechs" / "inert.yaml"
+    sol = ct.Solution(str(mech))
+    assert sol.n_reactions == 0, "this fixture exists to have no reactions"
+
+    thermochem = PythonCodeGenerator.get_thermochem_class(sol)()
+    sol.TPX = 1200.0, ct.one_atm, "O2:0.21, N2:0.78, AR:0.01"
+
+    for computed, reference in [
+        (thermochem.get_net_production_rates(sol.density, sol.T, sol.Y),
+         sol.net_production_rates),
+        (thermochem.get_creation_rates(sol.density, sol.T, sol.Y),
+         sol.creation_rates),
+        (thermochem.get_destruction_rates(sol.density, sol.T, sol.Y),
+         sol.destruction_rates),
+    ]:
+        computed = np.asarray(computed, dtype=np.float64)
+        assert computed.shape == (sol.n_species,)
+        assert np.allclose(computed, np.asarray(reference, dtype=np.float64),
+                           atol=1e-300)
+
+    # Thermo does not depend on the kinetics.
+    assert np.allclose(thermochem.get_species_enthalpies_rt(sol.T),
+                       sol.standard_enthalpies_RT, rtol=1e-12)
