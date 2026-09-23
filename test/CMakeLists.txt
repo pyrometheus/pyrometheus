@@ -59,7 +59,7 @@ if (TEST_python)
 
         pyro_generate_backend_impl(
             MECHANISM "${mech_in}"    BACKEND python
-            NAME      "${mechanism}"  OUTPUT  "${py_out}"
+            NAME      Thermochemistry OUTPUT  "${py_out}"
         )
 
         add_custom_target(pyro_python_${mechanism} ALL DEPENDS "${py_out}")
