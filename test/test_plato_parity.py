@@ -49,7 +49,7 @@ two_temperature_states = [
     (1500.0, 1500.0), (6500.0, 6500.0), (12000.0, 12000.0),
     (9000.0, 3000.0), (15000.0, 7000.0), (4000.0, 8000.0),
 ]
-single_temperatures = [800.0, 3000.0, 6000.0, 12000.0]
+single_temperatures = [800.0, 3000.0, 6500.0, 12000.0]
 
 # Crosses both NASA-9 interval breaks (1000 K, 6000 K) from either side.
 nasa_temperatures = [300.0, 999.0, 1001.0, 3000.0, 5999.0, 6001.0, 18000.0]
