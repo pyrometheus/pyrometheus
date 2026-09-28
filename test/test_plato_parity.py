@@ -165,6 +165,15 @@ def test_specific_gas_constants_match_plato(ttv):
     )
 
 
+def test_energies_of_formation_match_plato(ttv):
+    # Plato splits energy with its tabulated heat of formation, not the
+    # NASA-9 fit evaluated at 298.15 K; the two differ by ~200 J/kg.
+    np.testing.assert_allclose(
+        ttv.mech.standard_energy_of_formation,
+        ttv.oracle.formation_energies, rtol=1e-14, atol=1e-8
+    )
+
+
 def test_species_names_match_plato(ttv):
     assert ttv.gas.species_names == ttv.oracle.species_names
 

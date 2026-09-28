@@ -1,7 +1,6 @@
 import numpy as np
 import pymbolic.primitives as p
 from typing import Dict, List, Union, Tuple
-from pymbolic import evaluate
 from pymbolic.primitives import Variable
 from pyrometheus.bandit.general_thermochem import BaseNamespace, BaseMechanism
 from pyrometheus.bandit.chem_expr.kinetics import (
@@ -334,42 +333,26 @@ class PlatoMechanism(BaseMechanism):
 
     @property
     def standard_enthalpy_of_formation(self):
-        """Return per-species standard enthalpy of formation [J/kg]: the
-        NASA9 enthalpy evaluated at the standard reference temperature.
+        """Return per-species standard enthalpy of formation [J/kg] at the
+        standard reference temperature.
         """
         specific_gas_constant = (
             self.namespace.gas_constant
             / self.molecular_weights
         )
-        context = {
-            "temperature": [standard_reference_temperature] * self.num_temp,
-            "exp": np.exp,
-            "log": np.log,
-        }
-        nasa_poly = self.species_nasa_thermo_polynomials
-        enthalpy_rt_at_reference = np.array([
-            evaluate(
-                nasa_poly[species_index].enthalpy_poly.expr,
-                context
-            )
-            for species_index in range(self.num_species)
-        ])
         return (
-            enthalpy_rt_at_reference
-            * specific_gas_constant * standard_reference_temperature
+            self.standard_energy_of_formation
+            + specific_gas_constant * standard_reference_temperature
         )
 
     @property
     def standard_energy_of_formation(self):
-        """Return per-species standard energy of formation [J/kg]."""
-        specific_gas_constant = (
-            self.namespace.gas_constant
-            / self.molecular_weights
-        )
-        return (
-            self.standard_enthalpy_of_formation
-            - specific_gas_constant * standard_reference_temperature
-        )
+        """Return per-species standard energy of formation [J/kg] at the
+        standard reference temperature.
+        """
+        # Plato's tabulated value, not the NASA9 fit at 298.15 K: the two
+        # differ by up to ~200 J/kg, and Plato splits energy with the former.
+        return np.array(self.namespace.__getattr__("formation_energies"))
 
     @property
     def species_names(self):
