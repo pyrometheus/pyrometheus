@@ -6,14 +6,18 @@ parameters bandit reads. Plato does not expose per-reaction rate
 coefficients, so they are recovered from ``get_source`` at sparse
 compositions where only one reaction's reactants are present.
 
+The tests are written once and run for every case in :data:`cases`, as
+the release suite does for Cantera mechanisms. What a case lacks (a
+vibrational temperature, VT transfer) skips; what bandit gets wrong for
+it is listed in :data:`known_gaps` and runs as a strict xfail.
+
 Requires PLATO_DB and an importable ``plato`` package.
 """
 
 import ctypes
-import itertools
 import os
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Callable, List
 
 import numpy as np
 import pytest
@@ -39,28 +43,96 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-# {{{ states
+# {{{ cases and known gaps
 
-# (Th, Tv) pairs: thermal equilibrium, vibrationally frozen (Tv < Th,
-# post-shock) and vibrationally hot (Tv > Th, expansion). Every value
-# sits above Plato's rate-evaluation floor of 350 K.
-two_temperature_states = [
-    (1500.0, 1500.0), (6500.0, 6500.0), (12000.0, 12000.0),
-    (9000.0, 3000.0), (15000.0, 7000.0), (4000.0, 8000.0),
+@dataclass(frozen=True)
+class PlatoSpec:
+    mixture: str
+    reaction_set: str
+    transfer: str
+
+    @property
+    def label(self):
+        return f"{self.reaction_set}-{self.transfer}"
+
+    @property
+    def is_ionized(self):
+        return self.mixture.startswith("air11")
+
+
+# Every NASA-9 mixture in the Plato database whose kinetics Plato's NASA
+# build can evaluate. air11_dunn_kang is left out: its heavy-impact
+# ionization (Ih) rates end the process in compute_rate_coeff.
+cases = [
+    PlatoSpec(mixture, reaction_set, transfer)
+    for mixture, reaction_set in [
+        ("air5", "air5"),
+        ("air11", "air11_park93"),
+    ]
+    for transfer in ["empty", "TTv", "TTvTe"]
 ]
-single_temperatures = [800.0, 3000.0, 6500.0, 12000.0]
 
-# Crosses both NASA-9 interval breaks (1000 K, 6000 K) from either side.
-nasa_temperatures = [300.0, 999.0, 1001.0, 3000.0, 5999.0, 6001.0, 18000.0]
 
-# Mass fractions ordered as Plato's air5: N, O, N2, NO, O2.
-compositions = {
-    "cold_air": [1e-12, 1e-12, 0.767, 1e-12, 0.233],
-    "partially_dissociated": [0.1, 0.1, 0.5, 0.1, 0.2],
-    "nitric_oxide_rich": [0.02, 0.08, 0.4, 0.4, 0.1],
-    "atomic": [0.7, 0.25, 0.02, 0.02, 0.01],
-}
-densities = [1e-3, 5e-2]
+@dataclass(frozen=True)
+class KnownGap:
+    """A strict xfail for the tests of *block* whose case and parameters
+    satisfy *applies*(spec, params)."""
+    applies: Callable[[PlatoSpec, dict], bool]
+    block: str
+    reason: str
+
+
+def _ionized(spec, params):
+    return spec.is_ionized
+
+
+def _electron_temperature(spec, state):
+    return state[{"TTv": 1, "TTvTe": 2}[spec.transfer]]
+
+
+def _ionized_multi_temperature(spec, params):
+    return spec.is_ionized and spec.transfer != "empty"
+
+
+def _electrons_out_of_equilibrium(spec, params):
+    state = params["state"]
+    return (_ionized_multi_temperature(spec, params)
+            and _electron_temperature(spec, state) != state[0])
+
+
+def _electron_energy_exchange(spec, params):
+    if not _ionized_multi_temperature(spec, params):
+        return False
+    # Batched states draw random compositions, electrons included.
+    composition = params.get("composition", "ionized")
+    return spec.transfer == "TTvTe" or composition == "ionized"
+
+
+known_gaps = [
+    KnownGap(_ionized, "kinetics", (
+        "bandit drops the electron from electron-impact rates and "
+        "stoichiometry (N + e -> N+ + 2e is built as N -> N+), from the "
+        "products of associative ionization, and evaluates their backward "
+        "rates at Th instead of Te")),
+    KnownGap(_ionized_multi_temperature, "electron_heat_capacity", (
+        "the electron's translational heat capacity is booked to Th; "
+        "Plato books it to the electron temperature")),
+    KnownGap(_electrons_out_of_equilibrium, "energy_split", (
+        "the electron's translational energy is evaluated at Th instead "
+        "of the electron temperature")),
+    KnownGap(_electron_energy_exchange, "energy_exchange", (
+        "Plato's Tv source carries TE and CEL electron terms bandit does "
+        "not generate, and with TTvTe it books electronic excitation to "
+        "Te where bandit's NASA split lumps it into Tv")),
+]
+
+
+def block(*names):
+    """Tag a test with the physics blocks :data:`known_gaps` refers to."""
+    def decorate(test):
+        test.physics_blocks = set(names)
+        return test
+    return decorate
 
 # }}}
 
@@ -83,6 +155,7 @@ def make_generated_gas(mech, pyro_np=np):
 
 @dataclass
 class PlatoCase:
+    spec: PlatoSpec
     mech: "PlatoMechanism"
     gas: object
 
@@ -90,47 +163,74 @@ class PlatoCase:
     def oracle(self):
         return self.mech.namespace.thermochem
 
-    def temperature(self, heavy, vibrational=None):
-        if self.mech.num_temp == 1:
-            return heavy
-        return np.array([heavy, heavy if vibrational is None else vibrational])
+    @property
+    def num_temp(self):
+        return self.mech.num_temp
+
+    def temperature(self, state):
+        """Return the temperature argument for a (Th, Tv, Te) *state*,
+        truncated to the temperatures this case carries.
+        """
+        if self.num_temp == 1:
+            return state[0]
+        return np.array(state[:self.num_temp])
+
+    def species_of_class(self, kind):
+        return [
+            species_index for species_index, name
+            in enumerate(self.oracle.species_names)
+            if species_class(self, species_index) == kind
+        ]
 
 
-def open_case(mixture, reaction_set, transfer):
+def species_class(case, species_index):
+    name = case.oracle.species_names[species_index]
+    if name == "em":
+        return "electron"
+    if name.endswith("p"):
+        return "ion"
+    # theta_vib expects a 1-based component index.
+    if len(case.oracle.theta_vib(species_index + 1)):
+        return "molecule"
+    return "atom"
+
+
+# Plato holds one live instance per process; pytest closes a
+# module-scoped parametrized fixture before opening its next parameter.
+@pytest.fixture(scope="module", params=cases, ids=lambda spec: spec.label)
+def case(request):
+    spec = request.param
     mech = PlatoMechanism(
-        mixture, reaction_set, transfer, os.environ["PLATO_DB"]
+        spec.mixture, spec.reaction_set, spec.transfer,
+        os.environ["PLATO_DB"]
     )
-    return PlatoCase(mech=mech, gas=make_generated_gas(mech))
+    yield PlatoCase(spec=spec, mech=mech, gas=make_generated_gas(mech))
+    mech.finalize()
 
 
-# Plato holds one live instance per process, so switching mixtures
-# closes the open one first.
-_open_cases: Dict[tuple, PlatoCase] = {}
+@pytest.fixture(autouse=True)
+def _mark_known_gaps(request, case):
+    blocks = getattr(request.function, "physics_blocks", set())
+    params = dict(getattr(request.node, "callspec", None).params)
+    for gap in known_gaps:
+        if gap.block in blocks and gap.applies(case.spec, params):
+            request.node.add_marker(
+                pytest.mark.xfail(strict=True, reason=gap.reason)
+            )
 
 
-def plato_case(transfer, mixture="air5", reaction_set="air5"):
-    key = (mixture, reaction_set, transfer)
-    if key not in _open_cases:
-        close_cases()
-        _open_cases[key] = open_case(*key)
-    return _open_cases[key]
-
-
-def close_cases():
-    for case in _open_cases.values():
-        case.mech.finalize()
-    _open_cases.clear()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _close_plato_after_module():
-    yield
-    close_cases()
-
-
-@pytest.fixture
-def ttv():
-    return plato_case("TTv")
+def require(case, multi_temperature=None, vt=False, plato_thermo=False):
+    # Plato's NASA-9 species properties take at most two temperatures;
+    # asking with more kills the process with exit status 0
+    # (nasa_thermo%get_h_unit_mass), so the check must come first.
+    if plato_thermo and case.num_temp > 2:
+        pytest.skip("Plato's NASA-9 species properties take <= 2 temperatures")
+    if multi_temperature is True and case.num_temp == 1:
+        pytest.skip("needs a vibrational temperature")
+    if multi_temperature is False and case.num_temp > 1:
+        pytest.skip("single-temperature API")
+    if vt and not case.oracle.vt_active:
+        pytest.skip("no VT transfer in this case")
 
 
 def plato_source_terms(oracle, partial_densities, temperature):
@@ -153,59 +253,143 @@ def plato_source_terms(oracle, partial_densities, temperature):
 # }}}
 
 
+# {{{ states
+
+# (Th, Tv, Te): thermal equilibrium, vibrationally frozen (Tv < Th,
+# post-shock) and vibrationally hot (Tv > Th, expansion). Every value
+# sits above Plato's rate-evaluation floor of 350 K.
+equilibrium_states = [
+    (1500.0,) * 3, (6500.0,) * 3, (12000.0,) * 3,
+]
+nonequilibrium_states = [
+    (9000.0, 3000.0, 12000.0),
+    (15000.0, 7000.0, 9000.0),
+    (4000.0, 8000.0, 5000.0),
+]
+states = equilibrium_states + nonequilibrium_states
+
+# Crosses both NASA-9 interval breaks (1000 K, 6000 K) from either side.
+nasa_temperatures = [300.0, 999.0, 1001.0, 3000.0, 5999.0, 6001.0, 18000.0]
+densities = [1e-3, 5e-2]
+composition_names = ["molecular", "dissociated", "atomic", "ionized"]
+
+
+def mole_shares(case, composition):
+    """Split mole fractions between species classes; zero shares keep a
+    1e-12 floor so every species participates.
+    """
+    shares = {
+        "molecular": {"molecule": 0.95, "atom": 0.05},
+        "dissociated": {"molecule": 0.4, "atom": 0.6},
+        "atomic": {"molecule": 0.05, "atom": 0.95},
+        "ionized": {"molecule": 0.3, "atom": 0.68, "ion": 0.01},
+    }[composition]
+    mole_fractions = np.full(case.mech.num_species, 1e-12)
+    for kind, share in shares.items():
+        members = case.species_of_class(kind)
+        mole_fractions[members] += share / len(members)
+    electrons = case.species_of_class("electron")
+    if electrons:
+        # Quasi-neutral: one electron per singly charged ion.
+        ions = case.species_of_class("ion")
+        mole_fractions[electrons] = mole_fractions[ions].sum()
+    return mole_fractions / mole_fractions.sum()
+
+
+def mass_fractions_for(case, composition):
+    if composition == "ionized" and not case.spec.is_ionized:
+        pytest.skip("no ions in this mixture")
+    weighted = mole_shares(case, composition) * case.gas.molecular_weights
+    return weighted / weighted.sum()
+
+# }}}
+
+
 # {{{ species metadata and constants
 
-def test_molecular_weights_match_plato(ttv):
+@block("constants")
+def test_molecular_weights_match_plato(case):
     np.testing.assert_allclose(
-        ttv.gas.molecular_weights, 1e3 * ttv.oracle.molar_masses, rtol=1e-15
+        case.gas.molecular_weights, 1e3 * case.oracle.molar_masses,
+        rtol=1e-15
     )
 
 
-def test_specific_gas_constants_match_plato(ttv):
+@block("constants")
+def test_specific_gas_constants_match_plato(case):
     np.testing.assert_allclose(
-        ttv.gas.gas_constant / ttv.gas.molecular_weights,
-        ttv.oracle.gas_constants, rtol=1e-14
+        case.gas.gas_constant / case.gas.molecular_weights,
+        case.oracle.gas_constants, rtol=1e-14
     )
 
 
-def test_energies_of_formation_match_plato(ttv):
+@block("constants")
+def test_energies_of_formation_match_plato(case):
     # Plato splits energy with its tabulated heat of formation, not the
     # NASA-9 fit evaluated at 298.15 K; the two differ by ~200 J/kg.
     np.testing.assert_allclose(
-        ttv.mech.standard_energy_of_formation,
-        ttv.oracle.formation_energies, rtol=1e-14, atol=1e-8
+        case.mech.standard_energy_of_formation,
+        case.oracle.formation_energies, rtol=1e-14, atol=1e-8
     )
 
 
-def test_species_names_match_plato(ttv):
-    assert ttv.gas.species_names == ttv.oracle.species_names
+@block("constants")
+def test_species_indices_follow_plato_order(case):
+    assert case.gas.species_names == case.oracle.species_names
+    for species_index, species_name in enumerate(case.oracle.species_names):
+        assert case.gas.get_species_index(species_name) == species_index
+
+
+@block("constants")
+def test_equation_of_state_matches_plato_gas_constants(case):
+    mass_fractions = mass_fractions_for(case, "dissociated")
+    density, temperature = 2e-2, 5000.0
+    pressure = density * temperature * (
+        mass_fractions @ case.oracle.gas_constants
+    )
+    assert case.gas.get_pressure(
+        density, temperature, mass_fractions
+    ) == pytest.approx(pressure, rel=1e-14)
+    assert case.gas.get_density(
+        pressure, temperature, mass_fractions
+    ) == pytest.approx(density, rel=1e-14)
 
 # }}}
 
 
 # {{{ NASA-9 thermodynamics
 
-@pytest.mark.parametrize("temperature", nasa_temperatures)
-def test_species_enthalpies_match_plato(ttv, temperature):
-    gas = ttv.gas
+def uniform_temperature(case, temperature):
+    return case.temperature((temperature,) * 3)
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", nasa_temperatures + [1000.0, 6000.0])
+def test_species_enthalpies_match_plato(case, temperature):
+    require(case, plato_thermo=True)
+    # 1000 K and 6000 K sit exactly on the breaks, where the fits jump by
+    # ~4e-8: Plato evaluates the upper interval there.
+    gas = case.gas
     enthalpy = (
-        gas.get_species_enthalpies_rt(ttv.temperature(temperature))
+        gas.get_species_enthalpies_rt(uniform_temperature(case, temperature))
         * gas.gas_constant * temperature / gas.molecular_weights
     )
     np.testing.assert_allclose(
-        enthalpy, ttv.oracle.get_species_enthalpy(temperature), rtol=1e-12
+        enthalpy, case.oracle.get_species_enthalpy(temperature), rtol=1e-12
     )
 
 
+@block("thermo")
 @pytest.mark.parametrize("temperature", nasa_temperatures)
 @pytest.mark.parametrize("pressure", [1e3, 1e5, 1e7])
-def test_species_entropies_match_plato(ttv, temperature, pressure):
-    mech = ttv.mech
+def test_species_entropies_match_plato(case, temperature, pressure):
+    require(case, plato_thermo=True)
+    from pymbolic import evaluate
+    mech = case.mech
     context = {
-        "temperature": ttv.temperature(temperature),
+        "temperature": uniform_temperature(case, temperature),
         "log": np.log, "exp": np.exp,
     }
-    from pymbolic import evaluate
     entropy_r = np.array([
         evaluate(thermo.entropy_poly.expr, context)
         for thermo in mech.species_nasa_thermo_polynomials
@@ -215,75 +399,153 @@ def test_species_entropies_match_plato(ttv, temperature, pressure):
         entropy_r - np.log(pressure / mech.namespace.ref_pressure)
     )
     np.testing.assert_allclose(
-        entropy, ttv.oracle.get_species_entropy(temperature, pressure),
+        entropy, case.oracle.get_species_entropy(temperature, pressure),
         rtol=1e-12
     )
 
 
+@block("thermo")
 @pytest.mark.parametrize("temperature", [300.0, 3000.0, 9000.0, 18000.0])
-def test_species_specific_heats_match_plato_enthalpy_slope(ttv, temperature):
-    gas = ttv.gas
+def test_species_specific_heats_match_plato_enthalpy_slope(case, temperature):
+    require(case, plato_thermo=True)
+    gas = case.gas
     step = 1e-4 * temperature
     slope = (
-        ttv.oracle.get_species_enthalpy(temperature + step)
-        - ttv.oracle.get_species_enthalpy(temperature - step)
+        case.oracle.get_species_enthalpy(temperature + step)
+        - case.oracle.get_species_enthalpy(temperature - step)
     ) / (2 * step)
     np.testing.assert_allclose(
-        gas.get_species_specific_heats_cp_r(ttv.temperature(temperature))
-        * gas.gas_constant / gas.molecular_weights,
+        gas.get_species_specific_heats_cp_r(
+            uniform_temperature(case, temperature)
+        ) * gas.gas_constant / gas.molecular_weights,
         slope, rtol=1e-7
     )
 
 
+@block("thermo")
 @pytest.mark.parametrize("temperature", nasa_temperatures)
-def test_translational_rotational_specific_heats_match_plato(ttv, temperature):
-    # Plato's species cp is the frozen (translational-rotational) part;
-    # the vibronic part belongs to the Tv equation.
+def test_species_specific_heats_match_plato(case, temperature):
+    # With one temperature Plato's species cp is the full NASA-9 cp.
+    require(case, multi_temperature=False)
+    gas = case.gas
     np.testing.assert_allclose(
-        ttv.mech.translational_rotational_specific_heat_cp,
-        ttv.oracle.get_species_cp(temperature), rtol=1e-12
+        gas.get_species_specific_heats_cp_r(temperature)
+        * gas.gas_constant / gas.molecular_weights,
+        case.oracle.get_species_cp(temperature), rtol=1e-12
     )
 
 
-# The NASA-9 fits jump by ~4e-8 at a break, so this pins which side of
-# it Plato evaluates: the upper interval.
-@pytest.mark.parametrize("temperature", [1000.0, 6000.0])
-def test_nasa_interval_breaks_follow_plato(ttv, temperature):
-    gas = ttv.gas
-    enthalpy = (
-        gas.get_species_enthalpies_rt(ttv.temperature(temperature))
-        * gas.gas_constant * temperature / gas.molecular_weights
-    )
+@block("electron_heat_capacity")
+@pytest.mark.parametrize("temperature", nasa_temperatures)
+def test_translational_rotational_specific_heats_match_plato(
+        case, temperature):
+    # With more temperatures Plato's species cp is the frozen part that
+    # the heavy-particle temperature carries.
+    require(case, multi_temperature=True, plato_thermo=True)
     np.testing.assert_allclose(
-        enthalpy, ttv.oracle.get_species_enthalpy(temperature), rtol=1e-12
+        case.mech.translational_rotational_specific_heat_cp,
+        case.oracle.get_species_cp(temperature), rtol=1e-12
     )
 
 
-@pytest.mark.parametrize("heavy, vibrational", two_temperature_states)
-def test_split_species_energies_match_plato(ttv, heavy, vibrational):
-    temperature = ttv.temperature(heavy, vibrational)
+@block("thermo")
+@pytest.mark.parametrize("temperature", nasa_temperatures)
+def test_species_internal_energies_match_plato(case, temperature):
+    require(case, multi_temperature=False)
+    gas = case.gas
+    np.testing.assert_allclose(
+        gas.get_species_internal_energies_rt(temperature)
+        * gas.gas_constant * temperature / gas.molecular_weights,
+        case.oracle.get_species_energy(np.array([temperature])),
+        rtol=1e-12
+    )
+
+
+def plato_mixture_properties(oracle, temperature, mass_fractions):
+    cp = oracle.get_species_cp(temperature)
+    return {
+        "cp": mass_fractions @ cp,
+        "cv": mass_fractions @ (cp - oracle.gas_constants),
+        "enthalpy": mass_fractions @ oracle.get_species_enthalpy(temperature),
+        "energy": mass_fractions @ oracle.get_species_energy(
+            np.array([temperature])
+        ),
+    }
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", [800.0, 3000.0, 6500.0, 12000.0])
+@pytest.mark.parametrize("composition", composition_names)
+def test_mixture_properties_match_plato(case, temperature, composition):
+    require(case, multi_temperature=False)
+    gas = case.gas
+    mass_fractions = mass_fractions_for(case, composition)
+    expected = plato_mixture_properties(
+        case.oracle, temperature, mass_fractions
+    )
+    for method, key in [
+        (gas.get_mixture_specific_heat_cp_mass, "cp"),
+        (gas.get_mixture_specific_heat_cv_mass, "cv"),
+        (gas.get_mixture_enthalpy_mass, "enthalpy"),
+        (gas.get_mixture_internal_energy_mass, "energy"),
+    ]:
+        assert method(temperature, mass_fractions) == pytest.approx(
+            expected[key], rel=1e-12
+        ), key
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", [800.0, 3000.0, 6500.0, 12000.0])
+@pytest.mark.parametrize("do_energy", [False, True])
+def test_temperature_inversion_recovers_plato_state(
+        case, temperature, do_energy):
+    require(case, multi_temperature=False)
+    mass_fractions = mass_fractions_for(case, "dissociated")
+    expected = plato_mixture_properties(
+        case.oracle, temperature, mass_fractions
+    )
+    target = expected["energy" if do_energy else "enthalpy"]
+    assert case.gas.get_temperature(
+        target, 1000.0, mass_fractions, do_energy
+    ) == pytest.approx(temperature, rel=1e-9)
+
+# }}}
+
+
+# {{{ two-temperature energy split
+
+@block("energy_split")
+@pytest.mark.parametrize("state", states)
+def test_split_species_energies_match_plato(case, state):
+    require(case, multi_temperature=True, plato_thermo=True)
+    temperature = case.temperature(state)
     energy = (
-        ttv.gas.get_translational_rotational_energy(temperature)
-        + ttv.gas.get_nasa_polynomial_vibrational_energy(temperature)
+        case.gas.get_translational_rotational_energy(temperature)
+        + case.gas.get_nasa_polynomial_vibrational_energy(temperature)
     )
     np.testing.assert_allclose(
-        energy, ttv.oracle.get_species_energy(temperature), rtol=1e-12
+        energy, case.oracle.get_species_energy(temperature), rtol=1e-12
     )
 
 
+@block("electron_heat_capacity")
 @pytest.mark.parametrize("vibrational", [800.0, 3000.0, 7000.0, 15000.0])
-def test_vibrational_specific_heats_match_plato_energy_slope(ttv, vibrational):
+def test_vibrational_specific_heats_match_plato_energy_slope(
+        case, vibrational):
+    require(case, multi_temperature=True, plato_thermo=True)
     step = 1e-4 * vibrational
 
     def plato_energy(tv):
-        return ttv.oracle.get_species_energy(np.array([5000.0, tv]))
+        return case.oracle.get_species_energy(
+            case.temperature((5000.0, tv, tv))
+        )
 
     slope = (
         plato_energy(vibrational + step) - plato_energy(vibrational - step)
     ) / (2 * step)
     np.testing.assert_allclose(
-        ttv.gas.get_nasa_polynomial_vibrational_specific_heat(
-            ttv.temperature(5000.0, vibrational)
+        case.gas.get_nasa_polynomial_vibrational_specific_heat(
+            case.temperature((5000.0, vibrational, vibrational))
         ),
         slope, rtol=1e-6, atol=1e-9 * np.abs(slope).max()
     )
@@ -292,6 +554,11 @@ def test_vibrational_specific_heats_match_plato_energy_slope(ttv, vibrational):
 
 
 # {{{ rate coefficients recovered from isolated reactions
+
+# Plato's electron-impact reactions carry the electron as a catalyst that
+# its species getters leave out (kinetics_source.F90, De and Ie).
+electron_impact_types = ("de", "ie")
+
 
 @dataclass
 class Isolation:
@@ -322,6 +589,16 @@ def net_stoichiometry(mech):
     return nu
 
 
+def electron_indices(mech):
+    return [mech.species_index("em")] if "em" in mech.species_names else []
+
+
+def catalysts(mech, reaction):
+    if reaction["type"] in electron_impact_types:
+        return set(electron_indices(mech))
+    return set()
+
+
 def active_reactions(mech, present):
     """Return the reactions that proceed forward or backward when only
     *present* species have nonzero concentration.
@@ -330,8 +607,9 @@ def active_reactions(mech, present):
     for reaction_index, reaction in enumerate(mech.reactions):
         partners = set(reaction["partners"])
         has_partner = not partners or bool(partners & present)
+        needs = catalysts(mech, reaction)
         for side in ("reactant_species", "product_species"):
-            if set(reaction[side]) <= present and has_partner:
+            if (set(reaction[side]) | needs) <= present and has_partner:
                 active.add(reaction_index)
     return active
 
@@ -343,7 +621,7 @@ def make_isolation(mech, reaction_index, direction):
     is_recombination = direction == "reverse" and reaction["partners"]
     concentration = 1.0 if is_recombination else 1e-3
     side = "reactant_species" if direction == "forward" else "product_species"
-    present = set(reaction[side])
+    present = set(reaction[side]) | catalysts(mech, reaction)
     opposite = set(reaction[
         "product_species" if direction == "forward" else "reactant_species"
     ])
@@ -382,6 +660,8 @@ def mass_action_factor(mech, isolation):
     )
     concentrations = isolation.concentrations
     factor = np.prod([concentrations[s] for s in reaction[side]])
+    for catalyst in catalysts(mech, reaction):
+        factor *= concentrations[catalyst]
     if reaction["partners"]:
         factor *= sum(concentrations[s] for s in reaction["partners"])
     return factor
@@ -416,8 +696,9 @@ def recover_plato_rate_coefficient(case, isolation, temperature):
     )
     sign = 1 if isolation.direction == "forward" else -1
     rate_coefficient = sign * progress / mass_action_factor(mech, isolation)
+    signal = abs(signature_rate - contamination)
     return rate_coefficient, (
-        abs(contamination) / abs(signature_rate - contamination)
+        abs(contamination) / signal if signal else np.inf
     )
 
 
@@ -442,20 +723,10 @@ def isolations_for(mech):
 max_contamination_ratio = 100.0
 
 # Atom-partner dissociation drowns under the exchange reactions at low
-# temperature (by 1e12 at 1500 K), so a state may leave this many
+# temperature (by 1e12 at 1500 K), so a state may leave this fraction of
 # directions unrecovered; test_every_reaction_direction_is_recoverable
-# still checks all of them at 9000 K.
-max_unrecovered_per_state = 2
-
-
-def test_every_reaction_direction_is_recoverable(ttv):
-    temperature = ttv.temperature(9000.0, 9000.0)
-    recoverable = [
-        isolation.label for isolation in isolations_for(ttv.mech)
-        if recover_plato_rate_coefficient(ttv, isolation, temperature)[1]
-        < max_contamination_ratio
-    ]
-    assert len(recoverable) == 2 * ttv.mech.num_reactions, recoverable
+# still requires nearly all of them at 9000 K.
+max_unrecovered_fraction = 0.25
 
 
 def well_conditioned_recoveries(case, temperature, direction):
@@ -472,43 +743,61 @@ def well_conditioned_recoveries(case, temperature, direction):
             yield isolation, expected
 
 
-@pytest.mark.parametrize("heavy, vibrational", two_temperature_states)
-def test_forward_rate_coefficients_match_plato(ttv, heavy, vibrational):
-    temperature = ttv.temperature(heavy, vibrational)
-    k_fwd = ttv.gas.get_fwd_rate_coefficients(temperature, None)
+@block("isolation")
+def test_every_reaction_direction_is_recoverable(case):
+    temperature = case.temperature((9000.0,) * 3)
+    unrecovered = [
+        isolation.label for isolation in isolations_for(case.mech)
+        if recover_plato_rate_coefficient(case, isolation, temperature)[1]
+        >= max_contamination_ratio
+    ]
+    assert len(unrecovered) <= 0.1 * 2 * case.mech.num_reactions, unrecovered
+
+
+def assert_recovered_rate_coefficients(case, state, direction, generated):
+    temperature = case.temperature(state)
     checked = 0
     for isolation, expected in well_conditioned_recoveries(
-            ttv, temperature, "forward"):
-        assert k_fwd[isolation.reaction_index] == pytest.approx(
+            case, temperature, direction):
+        assert generated(isolation, temperature) == pytest.approx(
             expected, rel=1e-10
         ), isolation.label
         checked += 1
-    assert checked >= ttv.mech.num_reactions - max_unrecovered_per_state
+    assert checked >= (1 - max_unrecovered_fraction) * case.mech.num_reactions
 
 
-@pytest.mark.parametrize("heavy, vibrational", two_temperature_states)
-def test_reverse_rate_coefficients_match_plato(ttv, heavy, vibrational):
-    temperature = ttv.temperature(heavy, vibrational)
-    checked = 0
-    for isolation, expected in well_conditioned_recoveries(
-            ttv, temperature, "reverse"):
-        assert generated_rate_coefficient(
-            ttv, isolation, temperature
-        ) == pytest.approx(expected, rel=1e-10), isolation.label
-        checked += 1
-    assert checked >= ttv.mech.num_reactions - max_unrecovered_per_state
+@block("kinetics")
+@pytest.mark.parametrize("state", states)
+def test_forward_rate_coefficients_match_plato(case, state):
+    def generated(isolation, temperature):
+        return case.gas.get_fwd_rate_coefficients(
+            temperature, isolation.concentrations
+        )[isolation.reaction_index]
+
+    assert_recovered_rate_coefficients(case, state, "forward", generated)
 
 
-def test_dissociation_is_driven_by_geometric_temperature(ttv):
+@block("kinetics")
+@pytest.mark.parametrize("state", states)
+def test_reverse_rate_coefficients_match_plato(case, state):
+    def generated(isolation, temperature):
+        return generated_rate_coefficient(case, isolation, temperature)
+
+    assert_recovered_rate_coefficients(case, state, "reverse", generated)
+
+
+@block("dissociation_temperature")
+def test_dissociation_is_driven_by_geometric_temperature(case):
     # kf(Th, Tv) = kf(sqrt(Th Tv)): swapping Th and Tv leaves it alone.
-    k_fwd = ttv.gas.get_fwd_rate_coefficients
+    require(case, multi_temperature=True)
+    k_fwd = case.gas.get_fwd_rate_coefficients
     dissociation = [
-        r for r, reaction in enumerate(ttv.mech.reactions)
+        r for r, reaction in enumerate(case.mech.reactions)
         if reaction["type"] == "dh_cat_mt"
     ]
     np.testing.assert_allclose(
-        k_fwd(ttv.temperature(9000.0, 4000.0), None)[dissociation],
-        k_fwd(ttv.temperature(4000.0, 9000.0), None)[dissociation],
+        k_fwd(case.temperature((9000.0, 4000.0, 9000.0)), None)[dissociation],
+        k_fwd(case.temperature((4000.0, 9000.0, 9000.0)), None)[dissociation],
         rtol=1e-13
     )
 
@@ -517,35 +806,30 @@ def test_dissociation_is_driven_by_geometric_temperature(ttv):
 
 # {{{ species production rates
 
-production_states = list(itertools.product(
-    two_temperature_states, compositions.items(), densities
-))
-
-
-@pytest.mark.parametrize(
-    "temperatures, composition, density", production_states,
-    ids=[f"{t[0]:g}-{t[1]:g}-{c[0]}-{d:g}" for t, c, d in production_states]
-)
-def test_net_production_rates_match_plato(
-        ttv, temperatures, composition, density):
-    temperature = ttv.temperature(*temperatures)
-    mass_fractions = np.array(composition[1])
+@block("kinetics")
+@pytest.mark.parametrize("density", densities)
+@pytest.mark.parametrize("composition", composition_names)
+@pytest.mark.parametrize("state", states)
+def test_net_production_rates_match_plato(case, state, composition, density):
+    temperature = case.temperature(state)
+    mass_fractions = mass_fractions_for(case, composition)
     expected = plato_source_terms(
-        ttv.oracle, density * mass_fractions, temperature
-    )[:ttv.mech.num_species]
-    actual = ttv.gas.get_net_production_rates(
+        case.oracle, density * mass_fractions, temperature
+    )[:case.mech.num_species]
+    actual = case.gas.get_net_production_rates(
         density, temperature, mass_fractions
-    ) * ttv.gas.molecular_weights
+    ) * case.gas.molecular_weights
     np.testing.assert_allclose(
         actual, expected, rtol=1e-10, atol=1e-10 * np.abs(expected).max()
     )
 
 
-def test_net_production_rates_conserve_mass(ttv):
-    mass_fractions = np.array(compositions["partially_dissociated"])
-    rates = ttv.gas.get_net_production_rates(
-        5e-2, ttv.temperature(9000.0, 3000.0), mass_fractions
-    ) * ttv.gas.molecular_weights
+@block("kinetics")
+def test_net_production_rates_conserve_mass(case):
+    mass_fractions = mass_fractions_for(case, "dissociated")
+    rates = case.gas.get_net_production_rates(
+        5e-2, case.temperature(nonequilibrium_states[0]), mass_fractions
+    ) * case.gas.molecular_weights
     assert abs(rates.sum()) < 1e-12 * np.abs(rates).max()
 
 # }}}
@@ -558,11 +842,15 @@ def test_net_production_rates_conserve_mass(ttv):
 relaxation_time_rtol = 2e-8
 
 
+@block("relaxation_times")
 @pytest.mark.parametrize("heavy", [500.0, 2000.0, 8000.0, 20000.0, 30000.0])
-def test_pressure_relaxation_times_match_plato(ttv, heavy):
+def test_pressure_relaxation_times_match_plato(case, heavy):
+    require(case, multi_temperature=True, vt=True)
     np.testing.assert_allclose(
-        ttv.gas.get_pressure_relaxation_times(ttv.temperature(heavy, 1000.0)),
-        ttv.oracle.get_ptau_vt(heavy), rtol=relaxation_time_rtol
+        case.gas.get_pressure_relaxation_times(
+            case.temperature((heavy, 1000.0, 1000.0))
+        ),
+        case.oracle.get_ptau_vt(heavy), rtol=relaxation_time_rtol
     )
 
 
@@ -581,23 +869,17 @@ def plato_vibrational_source(case, density, temperature, mass_fractions):
     return omega[num_species + 1], chemistry_vibration
 
 
-energy_states = list(itertools.product(
-    [s for s in two_temperature_states if s[0] != s[1]],
-    compositions.items(),
-))
-
-
-@pytest.mark.parametrize(
-    "temperatures, composition", energy_states,
-    ids=[f"{t[0]:g}-{t[1]:g}-{c[0]}" for t, c in energy_states]
-)
-def test_vt_energy_transfer_matches_plato(ttv, temperatures, composition):
-    temperature = ttv.temperature(*temperatures)
-    mass_fractions = np.array(composition[1])
+@block("energy_exchange")
+@pytest.mark.parametrize("composition", composition_names)
+@pytest.mark.parametrize("state", nonequilibrium_states)
+def test_vt_energy_transfer_matches_plato(case, state, composition):
+    require(case, multi_temperature=True, vt=True)
+    temperature = case.temperature(state)
+    mass_fractions = mass_fractions_for(case, composition)
     total, chemistry_vibration = plato_vibrational_source(
-        ttv, 5e-2, temperature, mass_fractions
+        case, 5e-2, temperature, mass_fractions
     )
-    actual = ttv.gas.get_vt_energy_transfer_source(
+    actual = case.gas.get_vt_energy_transfer_source(
         5e-2, temperature, mass_fractions
     )
     assert actual == pytest.approx(
@@ -606,16 +888,15 @@ def test_vt_energy_transfer_matches_plato(ttv, temperatures, composition):
     )
 
 
-@pytest.mark.parametrize(
-    "temperatures, composition", energy_states,
-    ids=[f"{t[0]:g}-{t[1]:g}-{c[0]}" for t, c in energy_states]
-)
-def test_vibrational_energy_source_matches_plato(
-        ttv, temperatures, composition):
-    temperature = ttv.temperature(*temperatures)
-    mass_fractions = np.array(composition[1])
-    gas = ttv.gas
-    total, _ = plato_vibrational_source(ttv, 5e-2, temperature, mass_fractions)
+@block("kinetics", "energy_exchange")
+@pytest.mark.parametrize("composition", composition_names)
+@pytest.mark.parametrize("state", nonequilibrium_states)
+def test_vibrational_energy_source_matches_plato(case, state, composition):
+    require(case, multi_temperature=True, vt=True)
+    temperature = case.temperature(state)
+    mass_fractions = mass_fractions_for(case, composition)
+    gas = case.gas
+    total, _ = plato_vibrational_source(case, 5e-2, temperature, mass_fractions)
     mass_production = gas.get_net_production_rates(
         5e-2, temperature, mass_fractions
     ) * gas.molecular_weights
@@ -628,13 +909,15 @@ def test_vibrational_energy_source_matches_plato(
     assert actual == pytest.approx(total, rel=relaxation_time_rtol)
 
 
-def test_vt_energy_transfer_vanishes_at_thermal_equilibrium(ttv):
-    mass_fractions = np.array(compositions["partially_dissociated"])
-    temperature = ttv.temperature(7000.0, 7000.0)
+@block("relaxation_times")
+def test_vt_energy_transfer_vanishes_at_thermal_equilibrium(case):
+    require(case, multi_temperature=True, vt=True)
+    mass_fractions = mass_fractions_for(case, "dissociated")
+    temperature = case.temperature((7000.0,) * 3)
     total, chemistry_vibration = plato_vibrational_source(
-        ttv, 5e-2, temperature, mass_fractions
+        case, 5e-2, temperature, mass_fractions
     )
-    assert ttv.gas.get_vt_energy_transfer_source(
+    assert case.gas.get_vt_energy_transfer_source(
         5e-2, temperature, mass_fractions
     ) == 0.0
     assert total == pytest.approx(chemistry_vibration, rel=1e-12)
@@ -644,17 +927,21 @@ def test_vt_energy_transfer_vanishes_at_thermal_equilibrium(ttv):
 
 # {{{ array semantics
 
-def batched_states():
+def batched_states(case):
     rng = np.random.default_rng(seed=0)
     num_states = 16
-    heavy = rng.uniform(1000.0, 15000.0, num_states)
-    vibrational = rng.uniform(1000.0, 15000.0, num_states)
-    mass_fractions = rng.dirichlet(np.ones(5), num_states).T
+    temperature = rng.uniform(1000.0, 15000.0, (case.num_temp, num_states))
+    if case.num_temp == 1:
+        temperature = temperature[0]
+    mass_fractions = rng.dirichlet(
+        np.ones(case.mech.num_species), num_states
+    ).T
     density = rng.uniform(1e-3, 1e-1, num_states)
-    return density, np.stack([heavy, vibrational]), mass_fractions
+    return density, temperature, mass_fractions
 
 
 def plato_pointwise(case, density, temperature, mass_fractions):
+    temperature = np.atleast_2d(temperature)
     return np.stack([
         plato_source_terms(
             case.oracle,
@@ -665,17 +952,30 @@ def plato_pointwise(case, density, temperature, mass_fractions):
     ], axis=-1)
 
 
-def test_batched_states_match_plato_pointwise(ttv):
-    density, temperature, mass_fractions = batched_states()
-    expected = plato_pointwise(ttv, density, temperature, mass_fractions)
-    gas = ttv.gas
+@block("kinetics")
+def test_batched_states_match_plato_pointwise(case):
+    density, temperature, mass_fractions = batched_states(case)
+    num_species = case.mech.num_species
+    expected = plato_pointwise(case, density, temperature, mass_fractions)
+    production = case.gas.get_net_production_rates(
+        density, temperature, mass_fractions
+    ) * case.gas.molecular_weights[:, None]
+    np.testing.assert_allclose(
+        production, expected[:num_species],
+        rtol=1e-10, atol=1e-10 * np.abs(expected[:num_species]).max()
+    )
+
+
+@block("kinetics", "energy_exchange")
+def test_batched_vibrational_source_matches_plato_pointwise(case):
+    require(case, multi_temperature=True, vt=True)
+    density, temperature, mass_fractions = batched_states(case)
+    num_species = case.mech.num_species
+    expected = plato_pointwise(case, density, temperature, mass_fractions)
+    gas = case.gas
     production = gas.get_net_production_rates(
         density, temperature, mass_fractions
     ) * gas.molecular_weights[:, None]
-    np.testing.assert_allclose(
-        production, expected[:ttv.mech.num_species],
-        rtol=1e-10, atol=1e-10 * np.abs(expected[:5]).max()
-    )
     vibrational_source = gas.get_vt_energy_transfer_source(
         density, temperature, mass_fractions
     ) + np.sum(
@@ -683,188 +983,25 @@ def test_batched_states_match_plato_pointwise(ttv):
         axis=0
     )
     np.testing.assert_allclose(
-        vibrational_source, expected[-1], rtol=relaxation_time_rtol
+        vibrational_source, expected[num_species + 1],
+        rtol=relaxation_time_rtol
     )
 
 
+@block("kinetics")
 @pytest.mark.skipif(jnp is None, reason="jax is not installed")
-def test_jax_generated_code_matches_plato(ttv):
-    density, temperature, mass_fractions = batched_states()
-    expected = plato_pointwise(ttv, density, temperature, mass_fractions)
-    gas = make_generated_gas(ttv.mech, jnp)
+def test_jax_generated_code_matches_plato(case):
+    density, temperature, mass_fractions = batched_states(case)
+    num_species = case.mech.num_species
+    expected = plato_pointwise(case, density, temperature, mass_fractions)
+    gas = make_generated_gas(case.mech, jnp)
     production = np.asarray(jax.jit(gas.get_net_production_rates)(
         jnp.asarray(density), jnp.asarray(temperature),
         jnp.asarray(mass_fractions)
-    )) * ttv.gas.molecular_weights[:, None]
+    )) * case.gas.molecular_weights[:, None]
     np.testing.assert_allclose(
-        production, expected[:ttv.mech.num_species],
-        rtol=1e-10, atol=1e-10 * np.abs(expected[:5]).max()
-    )
-    vt = np.asarray(jax.jit(gas.get_vt_energy_transfer_source)(
-        jnp.asarray(density), jnp.asarray(temperature),
-        jnp.asarray(mass_fractions)
-    ))
-    assert np.all(np.isfinite(vt))
-
-# }}}
-
-
-# {{{ single-temperature mixtures
-
-@pytest.fixture
-def single_temperature():
-    return plato_case("empty")
-
-
-@pytest.mark.parametrize("temperature", single_temperatures)
-@pytest.mark.parametrize("composition", compositions.values(),
-                         ids=compositions.keys())
-def test_single_temperature_production_rates_match_plato(
-        single_temperature, temperature, composition):
-    case = single_temperature
-    mass_fractions = np.array(composition)
-    expected = plato_source_terms(
-        case.oracle, 5e-2 * mass_fractions, temperature
-    )[:case.mech.num_species]
-    actual = case.gas.get_net_production_rates(
-        5e-2, temperature, mass_fractions
-    ) * case.gas.molecular_weights
-    np.testing.assert_allclose(
-        actual, expected, rtol=1e-10, atol=1e-10 * np.abs(expected).max()
-    )
-
-
-@pytest.mark.parametrize("temperature", nasa_temperatures)
-def test_single_temperature_enthalpies_match_plato(
-        single_temperature, temperature):
-    gas = single_temperature.gas
-    enthalpy = (
-        gas.get_species_enthalpies_rt(temperature)
-        * gas.gas_constant * temperature / gas.molecular_weights
-    )
-    np.testing.assert_allclose(
-        enthalpy,
-        single_temperature.oracle.get_species_enthalpy(temperature),
-        rtol=1e-12
-    )
-
-
-@pytest.mark.parametrize("temperature", nasa_temperatures)
-def test_single_temperature_specific_heats_match_plato(
-        single_temperature, temperature):
-    # With one temperature Plato's species cp is the full NASA-9 cp.
-    gas = single_temperature.gas
-    np.testing.assert_allclose(
-        gas.get_species_specific_heats_cp_r(temperature)
-        * gas.gas_constant / gas.molecular_weights,
-        single_temperature.oracle.get_species_cp(temperature), rtol=1e-12
-    )
-
-
-@pytest.mark.parametrize("temperature", nasa_temperatures)
-def test_single_temperature_internal_energies_match_plato(
-        single_temperature, temperature):
-    gas = single_temperature.gas
-    np.testing.assert_allclose(
-        gas.get_species_internal_energies_rt(temperature)
-        * gas.gas_constant * temperature / gas.molecular_weights,
-        single_temperature.oracle.get_species_energy(np.array([temperature])),
-        rtol=1e-12
-    )
-
-
-def plato_mixture_properties(oracle, temperature, mass_fractions):
-    cp = oracle.get_species_cp(temperature)
-    return {
-        "cp": mass_fractions @ cp,
-        "cv": mass_fractions @ (cp - oracle.gas_constants),
-        "enthalpy": mass_fractions @ oracle.get_species_enthalpy(temperature),
-        "energy": mass_fractions @ oracle.get_species_energy(
-            np.array([temperature])
-        ),
-    }
-
-
-@pytest.mark.parametrize("temperature", single_temperatures)
-@pytest.mark.parametrize("composition", compositions.values(),
-                         ids=compositions.keys())
-def test_single_temperature_mixture_properties_match_plato(
-        single_temperature, temperature, composition):
-    gas = single_temperature.gas
-    mass_fractions = np.array(composition)
-    expected = plato_mixture_properties(
-        single_temperature.oracle, temperature, mass_fractions
-    )
-    for method, key in [
-        (gas.get_mixture_specific_heat_cp_mass, "cp"),
-        (gas.get_mixture_specific_heat_cv_mass, "cv"),
-        (gas.get_mixture_enthalpy_mass, "enthalpy"),
-        (gas.get_mixture_internal_energy_mass, "energy"),
-    ]:
-        assert method(temperature, mass_fractions) == pytest.approx(
-            expected[key], rel=1e-12
-        ), key
-
-
-@pytest.mark.parametrize("temperature", single_temperatures)
-@pytest.mark.parametrize("do_energy", [False, True])
-def test_single_temperature_inversion_recovers_plato_state(
-        single_temperature, temperature, do_energy):
-    mass_fractions = np.array(compositions["partially_dissociated"])
-    expected = plato_mixture_properties(
-        single_temperature.oracle, temperature, mass_fractions
-    )
-    target = expected["energy" if do_energy else "enthalpy"]
-    assert single_temperature.gas.get_temperature(
-        target, 1000.0, mass_fractions, do_energy
-    ) == pytest.approx(temperature, rel=1e-9)
-
-
-def test_single_temperature_equation_of_state_matches_plato(
-        single_temperature):
-    gas = single_temperature.gas
-    mass_fractions = np.array(compositions["atomic"])
-    density, temperature = 2e-2, 5000.0
-    pressure = density * temperature * (
-        mass_fractions @ single_temperature.oracle.gas_constants
-    )
-    assert gas.get_pressure(
-        density, temperature, mass_fractions
-    ) == pytest.approx(pressure, rel=1e-14)
-    assert gas.get_density(
-        pressure, temperature, mass_fractions
-    ) == pytest.approx(density, rel=1e-14)
-
-
-def test_species_indices_follow_plato_order(single_temperature):
-    for species_index, species_name in enumerate(
-            single_temperature.oracle.species_names):
-        assert single_temperature.gas.get_species_index(
-            species_name
-        ) == species_index
-
-# }}}
-
-
-# {{{ ionized mixtures
-
-@pytest.mark.xfail(strict=True, reason=(
-    "bandit drops the electron from electron-impact rates and "
-    "stoichiometry (N + e -> N+ + 2e is built as N -> N+), and from the "
-    "products of associative ionization"))
-@pytest.mark.parametrize("temperature", [9000.0, 12000.0])
-def test_ionized_air_production_rates_match_plato(temperature):
-    case = plato_case("empty", mixture="air11", reaction_set="air11_park93")
-    num_species = case.mech.num_species
-    mass_fractions = np.full(num_species, 1 / num_species)
-    expected = plato_source_terms(
-        case.oracle, 1e-2 * mass_fractions, temperature
-    )[:num_species]
-    actual = case.gas.get_net_production_rates(
-        1e-2, temperature, mass_fractions
-    ) * case.gas.molecular_weights
-    np.testing.assert_allclose(
-        actual, expected, rtol=1e-10, atol=1e-10 * np.abs(expected).max()
+        production, expected[:num_species],
+        rtol=1e-10, atol=1e-10 * np.abs(expected[:num_species]).max()
     )
 
 # }}}
