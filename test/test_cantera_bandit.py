@@ -136,6 +136,23 @@ def test_unsupported_thermo_model_raises():
         mech.make_species_nasa_thermo(0)
 
 
+
+def test_nasa_interval_break_takes_the_lower_polynomial():
+    # Cantera evaluates the low-temperature fit at T equal to T_mid; a
+    # deliberately discontinuous species makes the choice visible.
+    _, mech = make_mechanism("uiuc")
+    species = mech.species(0)
+    low = [3.5, 0, 0, 0, 0, -1000.0, 3.0]
+    high = [4.5, 0, 0, 0, 0, -1000.0, 3.0]
+    species.thermo = ct.NasaPoly2(
+        300.0, 5000.0, ct.one_atm, [1000.0] + high + low
+    )
+    cp_poly = mech.make_species_nasa_thermo(0).cp_poly
+    for temperature in [999.0, 1000.0, 1001.0]:
+        assert evaluate_polynomials([cp_poly], temperature)[0] == (
+            pytest.approx(species.thermo.cp(temperature) / ct.gas_constant)
+        )
+
 @pytest.mark.parametrize("mechname", all_mechanisms)
 def test_thermo_is_built_on_construction(mechname):
     _, mech = make_mechanism(mechname)

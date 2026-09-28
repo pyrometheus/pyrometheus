@@ -43,8 +43,7 @@ pytestmark = pytest.mark.skipif(
 
 # (Th, Tv) pairs: thermal equilibrium, vibrationally frozen (Tv < Th,
 # post-shock) and vibrationally hot (Tv > Th, expansion). Every value
-# sits above Plato's rate-evaluation floor of 350 K and off the NASA-9
-# interval breaks (see test_nasa_interval_breaks_follow_plato).
+# sits above Plato's rate-evaluation floor of 350 K.
 two_temperature_states = [
     (1500.0, 1500.0), (6500.0, 6500.0), (12000.0, 12000.0),
     (9000.0, 3000.0), (15000.0, 7000.0), (4000.0, 8000.0),
@@ -246,10 +245,8 @@ def test_translational_rotational_specific_heats_match_plato(ttv, temperature):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Plato's interval search puts T equal to a break in the upper "
-    "interval; bandit's nasa_conditional uses T > bound and picks the "
-    "lower one. The NASA-9 fits jump by ~4e-8 there."))
+# The NASA-9 fits jump by ~4e-8 at a break, so this pins which side of
+# it Plato evaluates: the upper interval.
 @pytest.mark.parametrize("temperature", [1000.0, 6000.0])
 def test_nasa_interval_breaks_follow_plato(ttv, temperature):
     gas = ttv.gas
