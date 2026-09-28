@@ -176,10 +176,10 @@ def test_exc_temperature(mech):
 
 # --- NASA polynomial thermo extraction ---
 
-def test_make_species_thermo_returns_species_thermo(mech):
-    from pyrometheus.bandit.chem_expr.thermo import SpeciesThermo
-    thermo = mech.make_species_thermo(0)
-    assert isinstance(thermo, SpeciesThermo)
+def test_make_species_nasa_thermo_returns_species_nasa_thermo(mech):
+    from pyrometheus.bandit.chem_expr.thermo import SpeciesNASAThermo
+    thermo = mech.make_species_nasa_thermo(0)
+    assert isinstance(thermo, SpeciesNASAThermo)
 
 
 def test_poly_params_shape(mech):
@@ -198,5 +198,5 @@ def test_poly_params_shape(mech):
 
 def test_poly_params_t_mid_positive(mech):
     for sp_idx in range(mech.num_species):
-        thermo = mech.make_species_thermo(sp_idx)
+        thermo = mech.make_species_nasa_thermo(sp_idx)
         assert thermo is not None
