@@ -481,7 +481,9 @@ class PlatoMechanism(BaseMechanism):
 
         if temperature is not None:
             temp_var = temperature
-        elif self.num_temp > 1 and temp_type == "translational":
+        elif self.num_temp == 1:
+            temp_var = Variable("temperature")
+        elif temp_type == "translational":
             temp_var = _temp_map[temp_type][0]
         else:
             temp_var = _temp_map[temp_type]
