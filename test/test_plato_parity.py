@@ -221,6 +221,21 @@ def test_species_entropies_match_plato(ttv, temperature, pressure):
     )
 
 
+@pytest.mark.parametrize("temperature", [300.0, 3000.0, 9000.0, 18000.0])
+def test_species_specific_heats_match_plato_enthalpy_slope(ttv, temperature):
+    gas = ttv.gas
+    step = 1e-4 * temperature
+    slope = (
+        ttv.oracle.get_species_enthalpy(temperature + step)
+        - ttv.oracle.get_species_enthalpy(temperature - step)
+    ) / (2 * step)
+    np.testing.assert_allclose(
+        gas.get_species_specific_heats_cp_r(ttv.temperature(temperature))
+        * gas.gas_constant / gas.molecular_weights,
+        slope, rtol=1e-7
+    )
+
+
 @pytest.mark.parametrize("temperature", nasa_temperatures)
 def test_translational_rotational_specific_heats_match_plato(ttv, temperature):
     # Plato's species cp is the frozen (translational-rotational) part;
@@ -735,6 +750,101 @@ def test_single_temperature_enthalpies_match_plato(
         single_temperature.oracle.get_species_enthalpy(temperature),
         rtol=1e-12
     )
+
+
+@pytest.mark.parametrize("temperature", nasa_temperatures)
+def test_single_temperature_specific_heats_match_plato(
+        single_temperature, temperature):
+    # With one temperature Plato's species cp is the full NASA-9 cp.
+    gas = single_temperature.gas
+    np.testing.assert_allclose(
+        gas.get_species_specific_heats_cp_r(temperature)
+        * gas.gas_constant / gas.molecular_weights,
+        single_temperature.oracle.get_species_cp(temperature), rtol=1e-12
+    )
+
+
+@pytest.mark.parametrize("temperature", nasa_temperatures)
+def test_single_temperature_internal_energies_match_plato(
+        single_temperature, temperature):
+    gas = single_temperature.gas
+    np.testing.assert_allclose(
+        gas.get_species_internal_energies_rt(temperature)
+        * gas.gas_constant * temperature / gas.molecular_weights,
+        single_temperature.oracle.get_species_energy(np.array([temperature])),
+        rtol=1e-12
+    )
+
+
+def plato_mixture_properties(oracle, temperature, mass_fractions):
+    cp = oracle.get_species_cp(temperature)
+    return {
+        "cp": mass_fractions @ cp,
+        "cv": mass_fractions @ (cp - oracle.gas_constants),
+        "enthalpy": mass_fractions @ oracle.get_species_enthalpy(temperature),
+        "energy": mass_fractions @ oracle.get_species_energy(
+            np.array([temperature])
+        ),
+    }
+
+
+@pytest.mark.parametrize("temperature", single_temperatures)
+@pytest.mark.parametrize("composition", compositions.values(),
+                         ids=compositions.keys())
+def test_single_temperature_mixture_properties_match_plato(
+        single_temperature, temperature, composition):
+    gas = single_temperature.gas
+    mass_fractions = np.array(composition)
+    expected = plato_mixture_properties(
+        single_temperature.oracle, temperature, mass_fractions
+    )
+    for method, key in [
+        (gas.get_mixture_specific_heat_cp_mass, "cp"),
+        (gas.get_mixture_specific_heat_cv_mass, "cv"),
+        (gas.get_mixture_enthalpy_mass, "enthalpy"),
+        (gas.get_mixture_internal_energy_mass, "energy"),
+    ]:
+        assert method(temperature, mass_fractions) == pytest.approx(
+            expected[key], rel=1e-12
+        ), key
+
+
+@pytest.mark.parametrize("temperature", single_temperatures)
+@pytest.mark.parametrize("do_energy", [False, True])
+def test_single_temperature_inversion_recovers_plato_state(
+        single_temperature, temperature, do_energy):
+    mass_fractions = np.array(compositions["partially_dissociated"])
+    expected = plato_mixture_properties(
+        single_temperature.oracle, temperature, mass_fractions
+    )
+    target = expected["energy" if do_energy else "enthalpy"]
+    assert single_temperature.gas.get_temperature(
+        target, 1000.0, mass_fractions, do_energy
+    ) == pytest.approx(temperature, rel=1e-9)
+
+
+def test_single_temperature_equation_of_state_matches_plato(
+        single_temperature):
+    gas = single_temperature.gas
+    mass_fractions = np.array(compositions["atomic"])
+    density, temperature = 2e-2, 5000.0
+    pressure = density * temperature * (
+        mass_fractions @ single_temperature.oracle.gas_constants
+    )
+    assert gas.get_pressure(
+        density, temperature, mass_fractions
+    ) == pytest.approx(pressure, rel=1e-14)
+    assert gas.get_density(
+        pressure, temperature, mass_fractions
+    ) == pytest.approx(density, rel=1e-14)
+
+
+def test_species_indices_follow_plato_order(single_temperature):
+    for species_index, species_name in enumerate(
+            single_temperature.oracle.species_names):
+        assert single_temperature.gas.get_species_index(
+            species_name
+        ) == species_index
 
 # }}}
 
