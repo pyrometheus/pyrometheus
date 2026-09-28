@@ -97,21 +97,24 @@ class PlatoCase:
         return np.array([heavy, heavy if vibrational is None else vibrational])
 
 
-def open_case(transfer):
-    mech = PlatoMechanism("air5", "air5", transfer, os.environ["PLATO_DB"])
+def open_case(mixture, reaction_set, transfer):
+    mech = PlatoMechanism(
+        mixture, reaction_set, transfer, os.environ["PLATO_DB"]
+    )
     return PlatoCase(mech=mech, gas=make_generated_gas(mech))
 
 
 # Plato holds one live instance per process, so switching mixtures
 # closes the open one first.
-_open_cases: Dict[str, PlatoCase] = {}
+_open_cases: Dict[tuple, PlatoCase] = {}
 
 
-def plato_case(transfer):
-    if transfer not in _open_cases:
+def plato_case(transfer, mixture="air5", reaction_set="air5"):
+    key = (mixture, reaction_set, transfer)
+    if key not in _open_cases:
         close_cases()
-        _open_cases[transfer] = open_case(transfer)
-    return _open_cases[transfer]
+        _open_cases[key] = open_case(*key)
+    return _open_cases[key]
 
 
 def close_cases():
@@ -731,6 +734,30 @@ def test_single_temperature_enthalpies_match_plato(
         enthalpy,
         single_temperature.oracle.get_species_enthalpy(temperature),
         rtol=1e-12
+    )
+
+# }}}
+
+
+# {{{ ionized mixtures
+
+@pytest.mark.xfail(strict=True, reason=(
+    "bandit drops the electron from electron-impact rates and "
+    "stoichiometry (N + e -> N+ + 2e is built as N -> N+), and from the "
+    "products of associative ionization"))
+@pytest.mark.parametrize("temperature", [9000.0, 12000.0])
+def test_ionized_air_production_rates_match_plato(temperature):
+    case = plato_case("empty", mixture="air11", reaction_set="air11_park93")
+    num_species = case.mech.num_species
+    mass_fractions = np.full(num_species, 1 / num_species)
+    expected = plato_source_terms(
+        case.oracle, 1e-2 * mass_fractions, temperature
+    )[:num_species]
+    actual = case.gas.get_net_production_rates(
+        1e-2, temperature, mass_fractions
+    ) * case.gas.molecular_weights
+    np.testing.assert_allclose(
+        actual, expected, rtol=1e-10, atol=1e-10 * np.abs(expected).max()
     )
 
 # }}}
