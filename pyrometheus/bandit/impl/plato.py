@@ -470,11 +470,18 @@ class PlatoMechanism(BaseMechanism):
 
     def make_rate_coefficient(self,
                               reaction_index,
-                              hardcode_params) -> RateCoefficient:
+                              hardcode_params,
+                              temperature=None) -> RateCoefficient:
+        """:returns: the forward Arrhenius coefficient and its parameters,
+            evaluated at the reaction type's controlling temperature
+            unless *temperature* overrides it.
+        """
         a, b, c = self.reaction(reaction_index)["arrhenius"]
         temp_type = self.reaction(reaction_index)["temperature"]
 
-        if self.num_temp > 1 and temp_type == "translational":
+        if temperature is not None:
+            temp_var = temperature
+        elif self.num_temp > 1 and temp_type == "translational":
             temp_var = _temp_map[temp_type][0]
         else:
             temp_var = _temp_map[temp_type]
@@ -515,7 +522,7 @@ class PlatoMechanism(BaseMechanism):
             r_fwd = k_fwd[reaction_index] * conc[reac[0]]
             r_rev = (
                 exp(log_k_eq[reaction_index])
-                * k_fwd[reaction_index]
+                * self._backward_dissociation_base_rate(reaction_index)
                 * conc[prod[0]] * conc[prod[1]]
             )
             return m_sum * (r_fwd - r_rev)
@@ -526,6 +533,20 @@ class PlatoMechanism(BaseMechanism):
                 (reac, prod),
                 (stoich_reac, stoich_prod),
             )
+
+    def _backward_dissociation_base_rate(self, reaction_index):
+        """:returns: the rate coefficient that the equilibrium constant
+            divides to give the recombination rate.
+        """
+        if self.num_temp == 1:
+            return k_fwd[reaction_index]
+        # Park's model drives only dissociation by sqrt(Th Tv);
+        # recombination stays at Th (kinetics_rate.F90, Dh_cat_mt).
+        k_translational, _ = self.make_rate_coefficient(
+            reaction_index, self.hardcode_params,
+            temperature=_temp_map["translational"][0]
+        )
+        return k_translational.expr
 
     def make_species_production_rate(self, species_index):
         part_sets, stoich_coeffs = self.production_balance(species_index)
