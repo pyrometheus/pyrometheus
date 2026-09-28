@@ -43,9 +43,10 @@ pytestmark = pytest.mark.skipif(
 
 # (Th, Tv) pairs: thermal equilibrium, vibrationally frozen (Tv < Th,
 # post-shock) and vibrationally hot (Tv > Th, expansion). Every value
-# sits above Plato's rate-evaluation floor of 350 K.
+# sits above Plato's rate-evaluation floor of 350 K and off the NASA-9
+# interval breaks (see test_nasa_interval_breaks_follow_plato).
 two_temperature_states = [
-    (1500.0, 1500.0), (6000.0, 6000.0), (12000.0, 12000.0),
+    (1500.0, 1500.0), (6500.0, 6500.0), (12000.0, 12000.0),
     (9000.0, 3000.0), (15000.0, 7000.0), (4000.0, 8000.0),
 ]
 single_temperatures = [800.0, 3000.0, 6000.0, 12000.0]
@@ -227,6 +228,22 @@ def test_translational_rotational_specific_heats_match_plato(ttv, temperature):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "Plato's interval search puts T equal to a break in the upper "
+    "interval; bandit's nasa_conditional uses T > bound and picks the "
+    "lower one. The NASA-9 fits jump by ~4e-8 there."))
+@pytest.mark.parametrize("temperature", [1000.0, 6000.0])
+def test_nasa_interval_breaks_follow_plato(ttv, temperature):
+    gas = ttv.gas
+    enthalpy = (
+        gas.get_species_enthalpies_rt(ttv.temperature(temperature))
+        * gas.gas_constant * temperature / gas.molecular_weights
+    )
+    np.testing.assert_allclose(
+        enthalpy, ttv.oracle.get_species_enthalpy(temperature), rtol=1e-12
+    )
+
+
 @pytest.mark.parametrize("heavy, vibrational", two_temperature_states)
 def test_split_species_energies_match_plato(ttv, heavy, vibrational):
     temperature = ttv.temperature(heavy, vibrational)
@@ -241,7 +258,7 @@ def test_split_species_energies_match_plato(ttv, heavy, vibrational):
 
 @pytest.mark.parametrize("vibrational", [800.0, 3000.0, 7000.0, 15000.0])
 def test_vibrational_specific_heats_match_plato_energy_slope(ttv, vibrational):
-    step = 1e-3 * vibrational
+    step = 1e-4 * vibrational
 
     def plato_energy(tv):
         return ttv.oracle.get_species_energy(np.array([5000.0, tv]))
@@ -409,6 +426,12 @@ def isolations_for(mech):
 # by this factor at most, which keeps recovery well inside rtol=1e-10.
 max_contamination_ratio = 100.0
 
+# Atom-partner dissociation drowns under the exchange reactions at low
+# temperature (by 1e12 at 1500 K), so a state may leave this many
+# directions unrecovered; test_every_reaction_direction_is_recoverable
+# still checks all of them at 9000 K.
+max_unrecovered_per_state = 2
+
 
 def test_every_reaction_direction_is_recoverable(ttv):
     temperature = ttv.temperature(9000.0, 9000.0)
@@ -445,7 +468,7 @@ def test_forward_rate_coefficients_match_plato(ttv, heavy, vibrational):
             expected, rel=1e-10
         ), isolation.label
         checked += 1
-    assert checked >= ttv.mech.num_reactions - 1
+    assert checked >= ttv.mech.num_reactions - max_unrecovered_per_state
 
 
 @pytest.mark.parametrize("heavy, vibrational", two_temperature_states)
@@ -458,7 +481,7 @@ def test_reverse_rate_coefficients_match_plato(ttv, heavy, vibrational):
             ttv, isolation, temperature
         ) == pytest.approx(expected, rel=1e-10), isolation.label
         checked += 1
-    assert checked >= ttv.mech.num_reactions - 1
+    assert checked >= ttv.mech.num_reactions - max_unrecovered_per_state
 
 
 def test_dissociation_is_driven_by_geometric_temperature(ttv):
@@ -515,11 +538,16 @@ def test_net_production_rates_conserve_mass(ttv):
 
 # {{{ energy exchange
 
-@pytest.mark.parametrize("heavy", [500.0, 2000.0, 8000.0, 20000.0])
+# Plato raises Th to -0.3333333333 rather than -1/3 in Millikan-White,
+# which moves p tau by up to ~1e-8 at low temperature.
+relaxation_time_rtol = 2e-8
+
+
+@pytest.mark.parametrize("heavy", [500.0, 2000.0, 8000.0, 20000.0, 30000.0])
 def test_pressure_relaxation_times_match_plato(ttv, heavy):
     np.testing.assert_allclose(
         ttv.gas.get_pressure_relaxation_times(ttv.temperature(heavy, 1000.0)),
-        ttv.oracle.get_ptau_vt(heavy), rtol=1e-12
+        ttv.oracle.get_ptau_vt(heavy), rtol=relaxation_time_rtol
     )
 
 
@@ -559,7 +587,7 @@ def test_vt_energy_transfer_matches_plato(ttv, temperatures, composition):
     )
     assert actual == pytest.approx(
         total - chemistry_vibration,
-        rel=1e-10, abs=1e-10 * abs(chemistry_vibration)
+        rel=relaxation_time_rtol, abs=1e-10 * abs(chemistry_vibration)
     )
 
 
@@ -582,7 +610,7 @@ def test_vibrational_energy_source_matches_plato(
         mass_production
         * gas.get_nasa_polynomial_vibrational_energy(temperature)
     )
-    assert actual == pytest.approx(total, rel=1e-9)
+    assert actual == pytest.approx(total, rel=relaxation_time_rtol)
 
 
 def test_vt_energy_transfer_vanishes_at_thermal_equilibrium(ttv):
@@ -639,7 +667,9 @@ def test_batched_states_match_plato_pointwise(ttv):
         production * gas.get_nasa_polynomial_vibrational_energy(temperature),
         axis=0
     )
-    np.testing.assert_allclose(vibrational_source, expected[-1], rtol=1e-9)
+    np.testing.assert_allclose(
+        vibrational_source, expected[-1], rtol=relaxation_time_rtol
+    )
 
 
 @pytest.mark.skipif(jnp is None, reason="jax is not installed")
