@@ -99,6 +99,8 @@ def nasa_conditional(poly_params: PolynomialParameters,
     num_int = poly_params.num_intervals
     bounds = poly_params.t_bounds
     # Build from inside out: start with lowest-T interval, wrap upward
+    # TODO: Plato (and Mutation++?) assign T equal to a break to the upper
+    # interval; decide whether ">" should become ">=" for every library.
     result = part_gen(poly_params.coeffs[:, 0], t)
     for i in range(1, num_int):
         result = p.If(
