@@ -69,10 +69,12 @@ _rxn_type_temp = {
 
 class Plato(BaseNamespace):
 
-    gas_constant = 8314.462
     one_atm = 101325.0
     ref_pressure = 1.0e5
     avogadro = 6.02214076e23
+    boltzmann = 1.380649e-23
+    # Plato defines R = k_B N_A (utils_constants.F90); in J/(kmol K).
+    gas_constant = 1e3 * boltzmann * avogadro
 
     def __init__(self, mixture, reaction_set, transfer, plato_db_path):
         from plato import Thermochemistry
