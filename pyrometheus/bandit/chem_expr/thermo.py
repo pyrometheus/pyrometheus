@@ -19,6 +19,9 @@ class PolynomialParameters:
     num_coeff: int
     t_bounds: np.ndarray   # shape (num_intv + 1,)
     coeffs: np.ndarray     # shape (num_coeff, num_intv)
+    # ">" evaluates the lower interval at a break (Cantera), ">=" the
+    # upper one (Plato); the fits need not be continuous there.
+    break_comparison: str = ">"
 
 
 @dataclass
@@ -99,12 +102,10 @@ def nasa_conditional(poly_params: PolynomialParameters,
     num_int = poly_params.num_intervals
     bounds = poly_params.t_bounds
     # Build from inside out: start with lowest-T interval, wrap upward
-    # TODO: Plato (and Mutation++?) assign T equal to a break to the upper
-    # interval; decide whether ">" should become ">=" for every library.
     result = part_gen(poly_params.coeffs[:, 0], t)
     for i in range(1, num_int):
         result = p.If(
-            p.Comparison(t, ">", bounds[i]),
+            p.Comparison(t, poly_params.break_comparison, bounds[i]),
             part_gen(poly_params.coeffs[:, i], t),
             result,
         )

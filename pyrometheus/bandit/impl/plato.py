@@ -402,11 +402,14 @@ class PlatoMechanism(BaseMechanism):
             species_index + 1
         )
         num_coeff, num_intervals = coeffs.shape
+        # Plato's interval search (nasa_thermo_utils.F90) assigns T equal
+        # to a break to the upper interval.
         return PolynomialParameters(
             num_intervals=num_intervals,
             num_coeff=num_coeff,
             t_bounds=t_bounds,
-            coeffs=coeffs
+            coeffs=coeffs,
+            break_comparison=">=",
         )
 
     def reaction(self, reaction_index: int) -> Dict:
