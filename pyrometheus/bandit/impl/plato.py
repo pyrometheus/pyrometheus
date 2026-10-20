@@ -13,6 +13,10 @@ from pyrometheus.bandit.chem_expr.kinetics import (
     vt_energy_transfer_expr,
     conc, k_fwd, log_k_eq, exp,
 )
+from pyrometheus.bandit.chem_expr.transport import (
+    LaricchiutaParameters,
+    PairCollisionIntegrals,
+)
 from pyrometheus.bandit.chem_expr.thermo import (
     PolynomialParameters,
     SpeciesNASAThermo,
@@ -115,6 +119,11 @@ class PlatoMechanism(BaseMechanism):
         self._build_reaction_list()
         self.make_rates(hardcode_params)
         self.make_thermo()
+        if self.has_transport():
+            self.mole_fraction_tolerance = self.namespace.__getattr__(
+                "mole_fraction_tolerance"
+            )()
+            self.make_transport()
 
     def finalize(self):
         self.namespace.finalize()
@@ -696,6 +705,64 @@ class PlatoMechanism(BaseMechanism):
             specific_gas_constant,
             self.translational_rotational_specific_heat_cp[species_index],
         )
+
+    def has_transport(self) -> bool:
+        """:returns: Whether every species pair uses a collision-integral
+        fit bandit can generate, and Plato can evaluate transport for the
+        number of temperatures (its NASA-9 heat capacities take at most
+        two).
+        """
+        if self.num_temp > 2:
+            return False
+        return all(
+            self.namespace.__getattr__(
+                "collision_integral_fit", species_index + 1, partner_index + 1
+            ) == "laricchiuta"
+            for species_index in range(self.num_species)
+            for partner_index in range(species_index, self.num_species)
+        )
+
+    def make_pair_collision_integrals(
+            self, species_index, partner_index) -> PairCollisionIntegrals:
+        well_depth, sigma_squared, coefficients = self.namespace.__getattr__(
+            "laricchiuta_parameters", species_index + 1, partner_index + 1
+        )
+        return PairCollisionIntegrals(
+            parameters=LaricchiutaParameters(
+                well_depth=well_depth,
+                sigma_squared=sigma_squared,
+                coefficients=coefficients,
+            ),
+            temperature=self.heavy_temperature,
+        )
+
+    def make_internal_specific_heat_exprs(self):
+        """:returns: The rotational heat capacity in the heavy-particle
+        equation and the NASA-9 vibronic heat capacity in the vibrational
+        one, as Plato's internal-conductivity model books them; with a
+        single temperature both share one equation.
+        """
+        specific_gas_constants = (
+            self.namespace.gas_constant / self.molecular_weights
+        )
+        rotational = (
+            self.translational_rotational_specific_heat_cv
+            - 1.5 * specific_gas_constants
+        )
+        if self.num_temp == 1:
+            vibronic = [
+                self.species_nasa_thermo_polynomials[i].cp_poly.expr
+                * specific_gas_constants[i]
+                - self.translational_rotational_specific_heat_cp[i]
+                for i in range(self.num_species)
+            ]
+            return [[rotational[i] + vibronic[i]
+                     for i in range(self.num_species)]]
+        return [
+            list(rotational),
+            [self.make_nasa_polynomial_vibrational_specific_heat_expr(i)
+             for i in range(self.num_species)],
+        ]
 
     def make_equilibrium_constant(self, reaction_index):
         rxn = self.reaction(reaction_index)
