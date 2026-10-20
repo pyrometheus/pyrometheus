@@ -24,7 +24,10 @@ import shutil
 import numpy as np
 import pytest
 
-from fortran_build import compile_fortran_module
+from fortran_build import (
+    compile_fortran_module,
+    stub_out_broken_vt_subroutine,
+)
 
 plato_available = (
     os.environ.get("PLATO_DB") is not None
@@ -57,37 +60,6 @@ REACTION = "air5"
 TRANSFER = "TTv"
 MODULE_NAME = "libpyro_fortran_jacobian_test"
 
-# get_vt_energy_transfer_source is broken in the generated Fortran today
-# (references an undeclared local `pressure`) -- a pre-existing,
-# separately-flagged issue unrelated to the Jacobian capability this
-# test targets (the Python template gained a pressure computation
-# earlier; the Fortran template's copy of that subroutine was never
-# updated to match). Stub its body out so the rest of the module --
-# including get_net_production_rates_jacobian -- can actually be built
-# and run.
-_VT_SOURCE_MARKER = "subroutine get_vt_energy_transfer_source(&"
-
-
-def _stub_out_broken_vt_subroutine(source, num_species, num_temp):
-    lines = source.splitlines(keepends=True)
-    start = next(i for i, ln in enumerate(lines) if _VT_SOURCE_MARKER in ln)
-    end = next(
-        i for i, ln in enumerate(lines)
-        if i > start and "end subroutine get_vt_energy_transfer_source" in ln
-    )
-    stub = [
-        "    subroutine get_vt_energy_transfer_source(&\n",
-        "        & density, mass_fractions, temperature, omega_vt)\n",
-        "        real(dp), intent(in) :: density\n",
-        f"        real(dp), intent(in), dimension({num_species}) :: "
-        "mass_fractions\n",
-        f"        real(dp), intent(in), dimension({num_temp}) :: temperature\n",
-        "        real(dp), intent(out) :: omega_vt\n",
-        "        omega_vt = 0.d0\n",
-        "    end subroutine get_vt_energy_transfer_source\n",
-    ]
-    return "".join(lines[:start] + stub + lines[end + 1:])
-
 
 @pytest.fixture(scope="module")
 def jac_fort(tmp_path_factory):
@@ -100,7 +72,7 @@ def jac_fort(tmp_path_factory):
         opts = CodeGenerationOptions(compute_jacobian=True)
         fortran_module_name = "air5_ttv_jacobian_test"
         source = fortran.generate(fortran_module_name, mech, opts)
-        source = _stub_out_broken_vt_subroutine(
+        source = stub_out_broken_vt_subroutine(
             source, mech.num_species, mech.num_temp
         )
         tmp_path = tmp_path_factory.mktemp("fortran_jacobian")

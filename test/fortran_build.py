@@ -52,3 +52,35 @@ def compile_fortran_module(tmp_path, source, module_name):
         return importlib.import_module(module_name)
     finally:
         sys.path.remove(str(tmp_path))
+
+
+# get_vt_energy_transfer_source is broken in the generated Fortran today
+# (references an undeclared local `pressure`) -- a pre-existing,
+# separately-flagged issue unrelated to the Jacobian capability this
+# test targets (the Python template gained a pressure computation
+# earlier; the Fortran template's copy of that subroutine was never
+# updated to match). Stub its body out so the rest of the module --
+# including get_net_production_rates_jacobian -- can actually be built
+# and run.
+_VT_SOURCE_MARKER = "subroutine get_vt_energy_transfer_source(&"
+
+
+def stub_out_broken_vt_subroutine(source, num_species, num_temp):
+    lines = source.splitlines(keepends=True)
+    start = next(i for i, ln in enumerate(lines) if _VT_SOURCE_MARKER in ln)
+    end = next(
+        i for i, ln in enumerate(lines)
+        if i > start and "end subroutine get_vt_energy_transfer_source" in ln
+    )
+    stub = [
+        "    subroutine get_vt_energy_transfer_source(&\n",
+        "        & density, mass_fractions, temperature, omega_vt)\n",
+        "        real(dp), intent(in) :: density\n",
+        f"        real(dp), intent(in), dimension({num_species}) :: "
+        "mass_fractions\n",
+        f"        real(dp), intent(in), dimension({num_temp}) :: temperature\n",
+        "        real(dp), intent(out) :: omega_vt\n",
+        "        omega_vt = 0.d0\n",
+        "    end subroutine get_vt_energy_transfer_source\n",
+    ]
+    return "".join(lines[:start] + stub + lines[end + 1:])
