@@ -137,6 +137,11 @@ class MixtureTransport:
 
         Internal (Eucken) conductivity, one entry per heat capacity row of
         *internal_specific_heats*.
+
+    .. attribute:: number_density_effective_diffusivities
+
+        n D_i of each species in the mixture, from
+        D_i = (1 - X_i) / (sum_j X_j / D_ij - X_i / D_ii).
     """
     molar_masses: InitVar[np.ndarray]
     pair_collision_integrals: InitVar[List[List[PairCollisionIntegrals]]]
@@ -147,6 +152,7 @@ class MixtureTransport:
     viscosity_matrix: list = field(init=False)
     conductivity_matrix: list = field(init=False)
     internal_conductivities: list = field(init=False)
+    number_density_effective_diffusivities: list = field(init=False)
 
     def __post_init__(self, molar_masses, pair_collision_integrals,
                       temperature, internal_specific_heats):
@@ -235,6 +241,18 @@ class MixtureTransport:
                 mole_fractions[j]
                 * self.inverse_number_density_diffusivities[i][j]
                 for j in species
+            )
+            for i in species
+        ]
+        self.number_density_effective_diffusivities = [
+            (1 - mole_fractions[i]) / (
+                sum(
+                    mole_fractions[j]
+                    * self.inverse_number_density_diffusivities[i][j]
+                    for j in species
+                )
+                - mole_fractions[i]
+                * self.inverse_number_density_diffusivities[i][i]
             )
             for i in species
         ]

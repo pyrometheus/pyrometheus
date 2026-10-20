@@ -402,6 +402,17 @@ class Thermochemistry:
             %endfor
         ])
 
+    def get_species_effective_diffusivities(
+            self, pressure, temperature, mass_fractions):
+        mole_fractions = self._get_transport_mole_fractions(mass_fractions)
+        number_density = pressure / (
+            ${repr(boltzmann)} * ${cgm(bandit_mech.heavy_temperature)})
+        return self._pyro_make_array([
+            %for expr in transport.number_density_effective_diffusivities:
+            ${cgm(expr)} / number_density,
+            %endfor
+        ])
+
     def get_species_viscosities(self, temperature):
         return self._pyro_make_array([
             %for expr in transport.species_viscosities:
