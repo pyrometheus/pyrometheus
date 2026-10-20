@@ -7,6 +7,8 @@ from pyrometheus.bandit.chem_expr.kinetics import (FalloffReaction,
                                                    RateCoefficient)
 from pyrometheus.bandit.chem_expr.thermo import (SpeciesNASAThermo,
                                                  SpeciesVibrationalThermo)
+from pyrometheus.bandit.chem_expr.transport import (MixtureTransport,
+                                                    PairCollisionIntegrals)
 
 
 class BaseNamespace:
@@ -67,6 +69,9 @@ class BaseMechanism:
         shape=(0,), dtype=object
     )
     param_vals: np.ndarray = np.empty(shape=(0,), dtype=np.float64)
+    pair_collision_integrals: List[List[PairCollisionIntegrals]] = None
+    mixture_transport: MixtureTransport = None
+    mole_fraction_tolerance: float = 0.0
 
     # Composing the full chemistry graph and differentiating it (see
     # make_species_production_rate_jacobian) gets slower than the staged
@@ -265,6 +270,32 @@ class BaseMechanism:
         """
         raise NotImplementedError
 
+    def has_transport(self) -> bool:
+        """:returns: Whether the mechanism builds transport properties."""
+        return False
+
+    @property
+    def heavy_temperature(self) -> p.ExpressionNode:
+        """:returns: The heavy-particle translational temperature."""
+        if self.num_temp == 1:
+            return p.Variable("temperature")
+        return p.Variable("temperature")[0]
+
+    def make_pair_collision_integrals(
+            self, species_index, partner_index) -> PairCollisionIntegrals:
+        """:returns: The collision integrals between the species with
+        indices *species_index* and *partner_index*, in the heavy-particle
+        temperature.
+        """
+        raise NotImplementedError
+
+    def make_internal_specific_heat_exprs(self) -> List[List[p.ExpressionNode]]:
+        """:returns: The internal (non-translational) specific heats
+        [J/(kg K)] that carry energy in each energy equation, one list of
+        per-species expressions for each temperature.
+        """
+        raise NotImplementedError
+
 
     def make_mass_action_rate(self, reaction_index, hardcode_params=True):
         """
@@ -385,6 +416,29 @@ class BaseMechanism:
                 self.nasa_polynomial_vibrational_specific_heat_exprs,
                 self.make_nasa_polynomial_vibrational_specific_heat_expr(species_index)
             )
+
+    def make_transport(self):
+        """Build the collision integrals of every species pair, then the
+        mixture transport expressions, by invoking
+        :class:`BaseMechanism.make_pair_collision_integrals` and
+        :class:`BaseMechanism.make_internal_specific_heat_exprs`.
+        """
+        assert self.mixture_transport is None
+        species = range(self.num_species)
+        upper = {
+            (i, j): self.make_pair_collision_integrals(i, j)
+            for i in species for j in species if i <= j
+        }
+        self.pair_collision_integrals = [
+            [upper[min(i, j), max(i, j)] for j in species] for i in species
+        ]
+        self.mixture_transport = MixtureTransport(
+            # kg/kmol -> kg/mol, the unit the Chapman-Enskog factors use
+            molar_masses=self.molecular_weights / 1e3,
+            pair_collision_integrals=self.pair_collision_integrals,
+            temperature=self.heavy_temperature,
+            internal_specific_heats=self.make_internal_specific_heat_exprs(),
+        )
 
     def make_vt_transfer(self):
         """Loop over VT-active molecules to build their pairwise
