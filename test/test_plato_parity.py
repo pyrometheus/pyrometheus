@@ -1181,6 +1181,26 @@ def test_mixture_transport_between_table_nodes(case, heavy):
     )
 
 
+@block("transport")
+@pytest.mark.parametrize("composition", transport_compositions)
+@pytest.mark.parametrize("state", transport_states)
+def test_effective_diffusivities_match_plato(case, state, composition):
+    require(case, plato_thermo=True)
+    temperature = case.temperature(state)
+    mass_fractions = mass_fractions_for(case, composition)
+    mole_fractions = mole_fractions_of(case, mass_fractions)
+    pressure = 1e5
+    expected = case.oracle.effective_diffusion_coefficients(
+        plato_number_density(case, temperature, mole_fractions, pressure),
+        np.atleast_1d(temperature), mole_fractions
+    )
+    np.testing.assert_allclose(
+        case.gas.get_species_effective_diffusivities(
+            pressure, temperature, mass_fractions),
+        expected, rtol=1e-11, atol=0
+    )
+
+
 def batched_transport_states(case):
     rng = np.random.default_rng(seed=1)
     num_states = 8
