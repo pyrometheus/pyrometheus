@@ -6,6 +6,9 @@ import numpy as np  # noqa: F401
 
 from mako.template import Template
 from pyrometheus.bandit.general_thermochem import BaseMechanism
+from pyrometheus.bandit.chem_expr.transport import (
+    _boltzmann as transport_boltzmann
+)
 
 from . import CodeGenerator, CodeGenerationOptions
 
@@ -122,6 +125,15 @@ class Thermochemistry:
             + self.inv_molecular_weights[${i}] * mass_fractions[${i}]
             %endfor
         )
+
+    def get_mole_fractions(self, mass_fractions):
+        mix_mol_weight = self.get_mixture_molecular_weight(mass_fractions)
+        return self._pyro_make_array([
+            %for i in range(bandit_mech.num_species):
+            self.inv_molecular_weights[${i}] * mass_fractions[${i}]
+            * mix_mol_weight,
+            %endfor
+        ])
 
     def get_density(self, pressure, temperature, mass_fractions):
         w_mix = self.get_mixture_molecular_weight(mass_fractions)
@@ -361,6 +373,81 @@ class Thermochemistry:
             %endfor
         ])
     %endif
+    %if bandit_mech.has_transport():
+<% transport = bandit_mech.mixture_transport %>
+    def _pyro_linear_solve(self, matrix, rhs):
+        lhs = self._pyro_make_array([
+            self._pyro_make_array(row) for row in matrix
+        ])
+        lhs = self.pyro_np.moveaxis(lhs, (0, 1), (-2, -1))
+        rhs = self.pyro_np.moveaxis(self._pyro_make_array(rhs), 0, -1)
+        solution = self.pyro_np.linalg.solve(lhs, rhs[..., None])[..., 0]
+        return self.pyro_np.moveaxis(solution, -1, 0)
+
+    def _get_transport_mole_fractions(self, mass_fractions):
+        shifted = (
+            self.get_mole_fractions(mass_fractions)
+            + ${repr(bandit_mech.mole_fraction_tolerance)}
+        )
+        return shifted / self.pyro_np.sum(shifted, axis=0)
+
+    def get_species_binary_mass_diffusivities(self, temperature):
+        return self._pyro_make_array([
+            %for row in transport.inverse_number_density_diffusivities:
+            self._pyro_make_array([
+                %for expr in row:
+                ${cgm(boltzmann * bandit_mech.heavy_temperature / expr)},
+                %endfor
+            ]),
+            %endfor
+        ])
+
+    def get_species_viscosities(self, temperature):
+        return self._pyro_make_array([
+            %for expr in transport.species_viscosities:
+            ${cgm(expr)},
+            %endfor
+        ])
+
+    def get_mixture_viscosity(self, temperature, mass_fractions):
+        mole_fractions = self._get_transport_mole_fractions(mass_fractions)
+        solution = self._pyro_linear_solve([
+            %for row in transport.viscosity_matrix:
+            [
+                %for expr in row:
+                ${cgm(expr)},
+                %endfor
+            ],
+            %endfor
+        ], mole_fractions)
+        return (
+            %for i in range(bandit_mech.num_species):
+            + mole_fractions[${i}] * solution[${i}]
+            %endfor
+        )
+
+    def get_mixture_thermal_conductivities(self, temperature, mass_fractions):
+        mole_fractions = self._get_transport_mole_fractions(mass_fractions)
+        solution = self._pyro_linear_solve([
+            %for row in transport.conductivity_matrix:
+            [
+                %for expr in row:
+                ${cgm(expr)},
+                %endfor
+            ],
+            %endfor
+        ], mole_fractions)
+        translational = (
+            %for i in range(bandit_mech.num_species):
+            + mole_fractions[${i}] * solution[${i}]
+            %endfor
+        )
+        return self._pyro_make_array([
+            %for k, expr in enumerate(transport.internal_conductivities):
+            ${cgm(expr)}${" + translational" if k == 0 else ""},
+            %endfor
+        ])
+    %endif
 """, strict_undefined=True)
 
 # }}}
@@ -399,6 +486,7 @@ class PythonBanditCodeGenerator(CodeGenerator):
             bandit_mech=bandit_mech,
             str_np=str_np,
             temperature_leading_term=temperature_leading_term,
+            boltzmann=transport_boltzmann,
             cgm=CodeGenerationMapper(),
             Variable=p.Variable,
         ).strip() + "\n"
