@@ -109,6 +109,10 @@ def _electron_energy_exchange(spec, params):
 
 
 known_gaps = [
+    KnownGap(_ionized, "transport", (
+        "transport is ported for neutral mixtures only: ion-neutral charge "
+        "exchange, electron-neutral fits and screened Coulomb pairs are "
+        "not generated")),
     KnownGap(_ionized, "kinetics", (
         "bandit drops the electron from electron-impact rates and "
         "stoichiometry (N + e -> N+ + 2e is built as N -> N+), from the "
@@ -1003,5 +1007,231 @@ def test_jax_generated_code_matches_plato(case):
         production, expected[:num_species],
         rtol=1e-10, atol=1e-10 * np.abs(expected[:num_species]).max()
     )
+
+# }}}
+
+
+# {{{ transport
+
+# Th sits on PLATO's collision-integral table nodes (200 K + k 50 K),
+# where its linear interpolation equals the fits bandit generates.
+transport_states = [
+    (300.0, 300.0, 300.0),
+    (1000.0, 1000.0, 1000.0),
+    (5050.0, 3000.0, 3000.0),
+    (15000.0, 8000.0, 8000.0),
+    (40000.0, 20000.0, 20000.0),
+]
+off_node_heavy_temperatures = [325.0, 1025.0, 5025.0, 15025.0]
+transport_compositions = ["molecular", "dissociated", "atomic"]
+
+
+def heavy_pairs(case):
+    num_species = case.mech.num_species
+    return [(i, j) for i in range(num_species) for j in range(i, num_species)]
+
+
+def interpolation_bound(case, heavy_temperature):
+    """:returns: the largest relative difference PLATO's linear table
+    interpolation makes from the fits midway between nodes."""
+    _, _, step = case.oracle.collision_integral_table_range()
+    return 0.12 * (step / heavy_temperature) ** 2
+
+
+def plato_number_density(case, temperature, mole_fractions, pressure=1e5):
+    return case.oracle.number_density(
+        pressure, np.atleast_1d(temperature), mole_fractions
+    )
+
+
+def mole_fractions_of(case, mass_fractions):
+    weighted = mass_fractions / case.gas.molecular_weights
+    return weighted / weighted.sum()
+
+
+def evaluate_pair_integrals(case, i, j, heavy_temperature):
+    from pymbolic import evaluate
+    integrals = case.mech.pair_collision_integrals[i][j]
+    context = {
+        "temperature": case.temperature((heavy_temperature,) * 3),
+        "exp": np.exp, "log": np.log, "sqrt": np.sqrt,
+    }
+    return {
+        name: evaluate(getattr(integrals, name), context)
+        for name in ("q_11", "q_22", "b_star", "c_star")
+    }
+
+
+@block("transport")
+@pytest.mark.parametrize("heavy", [state[0] for state in transport_states])
+def test_collision_integrals_match_plato_at_table_nodes(case, heavy):
+    require(case, plato_thermo=True)
+    for i, j in heavy_pairs(case):
+        expected = case.oracle.collision_integrals(i + 1, j + 1, heavy)
+        actual = evaluate_pair_integrals(case, i, j, heavy)
+        for name, value in expected.items():
+            assert actual[name] == pytest.approx(value, rel=1e-12, abs=0), (
+                i, j, name)
+
+
+@block("transport")
+@pytest.mark.parametrize("heavy", off_node_heavy_temperatures)
+def test_collision_integrals_between_table_nodes(case, heavy):
+    require(case, plato_thermo=True)
+    bound = interpolation_bound(case, heavy)
+    for i, j in heavy_pairs(case):
+        expected = case.oracle.collision_integrals(i + 1, j + 1, heavy)
+        actual = evaluate_pair_integrals(case, i, j, heavy)
+        assert actual["q_11"] == pytest.approx(
+            expected["q_11"], rel=bound, abs=0)
+
+
+@block("transport")
+@pytest.mark.parametrize("state", transport_states)
+def test_binary_diffusivities_match_plato(case, state):
+    require(case, plato_thermo=True)
+    temperature = case.temperature(state)
+    mole_fractions = mole_shares(case, "dissociated")
+    pressure = 1e5
+    expected = case.oracle.binary_diffusion_coefficients(
+        plato_number_density(case, temperature, mole_fractions, pressure),
+        np.atleast_1d(temperature), mole_fractions
+    )
+    # The release convention: generated code returns D_ij times pressure.
+    actual = np.array(
+        case.gas.get_species_binary_mass_diffusivities(temperature)
+    ) / pressure
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0)
+
+
+@block("transport")
+@pytest.mark.parametrize("state", transport_states)
+def test_species_viscosities_match_pure_gases_in_plato(case, state):
+    require(case, plato_thermo=True)
+    temperature = case.temperature(state)
+    viscosities = case.gas.get_species_viscosities(temperature)
+    for species_index in range(case.mech.num_species):
+        pure = np.zeros(case.mech.num_species)
+        pure[species_index] = 1.0
+        expected = case.oracle.viscosity(
+            plato_number_density(case, temperature, pure),
+            np.atleast_1d(temperature), pure
+        )
+        # PLATO's 1e-14 mole-fraction floor leaves traces of every other
+        # species in a "pure" gas.
+        assert viscosities[species_index] == pytest.approx(
+            expected, rel=1e-10, abs=0)
+
+
+@block("transport")
+@pytest.mark.parametrize("composition", transport_compositions)
+@pytest.mark.parametrize("state", transport_states)
+def test_mixture_viscosity_matches_plato(case, state, composition):
+    require(case, plato_thermo=True)
+    temperature = case.temperature(state)
+    mass_fractions = mass_fractions_for(case, composition)
+    mole_fractions = mole_fractions_of(case, mass_fractions)
+    expected = case.oracle.viscosity(
+        plato_number_density(case, temperature, mole_fractions),
+        np.atleast_1d(temperature), mole_fractions
+    )
+    assert case.gas.get_mixture_viscosity(
+        temperature, mass_fractions
+    ) == pytest.approx(expected, rel=1e-11, abs=0)
+
+
+@block("transport")
+@pytest.mark.parametrize("composition", transport_compositions)
+@pytest.mark.parametrize("state", transport_states)
+def test_mixture_thermal_conductivities_match_plato(case, state, composition):
+    require(case, plato_thermo=True)
+    temperature = case.temperature(state)
+    mass_fractions = mass_fractions_for(case, composition)
+    mole_fractions = mole_fractions_of(case, mass_fractions)
+    expected = case.oracle.thermal_conductivities(
+        plato_number_density(case, temperature, mole_fractions),
+        np.atleast_1d(temperature), mole_fractions
+    )
+    actual = np.atleast_1d(case.gas.get_mixture_thermal_conductivities(
+        temperature, mass_fractions
+    ))
+    np.testing.assert_allclose(actual, expected, rtol=1e-11, atol=0)
+
+
+@block("transport")
+@pytest.mark.parametrize("heavy", off_node_heavy_temperatures)
+def test_mixture_transport_between_table_nodes(case, heavy):
+    require(case, plato_thermo=True)
+    temperature = case.temperature((heavy, 0.8 * heavy, 0.8 * heavy))
+    mass_fractions = mass_fractions_for(case, "dissociated")
+    mole_fractions = mole_fractions_of(case, mass_fractions)
+    number_density = plato_number_density(case, temperature, mole_fractions)
+    bound = interpolation_bound(case, heavy)
+    assert case.gas.get_mixture_viscosity(
+        temperature, mass_fractions
+    ) == pytest.approx(case.oracle.viscosity(
+        number_density, np.atleast_1d(temperature), mole_fractions
+    ), rel=bound, abs=0)
+    np.testing.assert_allclose(
+        np.atleast_1d(case.gas.get_mixture_thermal_conductivities(
+            temperature, mass_fractions)),
+        case.oracle.thermal_conductivities(
+            number_density, np.atleast_1d(temperature), mole_fractions),
+        rtol=bound, atol=0
+    )
+
+
+def batched_transport_states(case):
+    rng = np.random.default_rng(seed=1)
+    num_states = 8
+    _, _, step = case.oracle.collision_integral_table_range()
+    heavy = 200.0 + step * rng.integers(10, 600, num_states)
+    temperature = np.stack([heavy, rng.uniform(0.5, 1.0, num_states) * heavy])
+    temperature = temperature[:case.num_temp]
+    if case.num_temp == 1:
+        temperature = temperature[0]
+    mass_fractions = rng.dirichlet(np.ones(case.mech.num_species), num_states).T
+    return temperature, mass_fractions
+
+
+def plato_transport_pointwise(case, temperature, mass_fractions):
+    temperature = np.atleast_2d(temperature)
+    viscosity, conductivities = [], []
+    for k in range(mass_fractions.shape[1]):
+        mole_fractions = mole_fractions_of(case, mass_fractions[:, k])
+        number_density = plato_number_density(
+            case, temperature[:, k], mole_fractions)
+        viscosity.append(case.oracle.viscosity(
+            number_density, temperature[:, k], mole_fractions))
+        conductivities.append(case.oracle.thermal_conductivities(
+            number_density, temperature[:, k], mole_fractions))
+    return np.array(viscosity), np.stack(conductivities, axis=-1)
+
+
+@block("transport")
+def test_batched_transport_matches_plato_pointwise(case):
+    require(case, plato_thermo=True)
+    temperature, mass_fractions = batched_transport_states(case)
+    viscosity, conductivities = plato_transport_pointwise(
+        case, temperature, mass_fractions)
+    np.testing.assert_allclose(
+        case.gas.get_mixture_viscosity(temperature, mass_fractions),
+        viscosity, rtol=1e-11, atol=0)
+    np.testing.assert_allclose(
+        np.reshape(case.gas.get_mixture_thermal_conductivities(
+            temperature, mass_fractions), conductivities.shape),
+        conductivities, rtol=1e-11, atol=0)
+
+
+@block("transport")
+@pytest.mark.skipif(jnp is None, reason="jax is not installed")
+def test_jax_transport_matches_plato(case):
+    require(case, plato_thermo=True)
+    temperature, mass_fractions = batched_transport_states(case)
+    viscosity, _ = plato_transport_pointwise(case, temperature, mass_fractions)
+    gas = make_generated_gas(case.mech, jnp)
+    actual = jax.jit(gas.get_mixture_viscosity)(
+        jnp.asarray(temperature), jnp.asarray(mass_fractions))
+    np.testing.assert_allclose(np.asarray(actual), viscosity, rtol=1e-11, atol=0)
 
 # }}}
