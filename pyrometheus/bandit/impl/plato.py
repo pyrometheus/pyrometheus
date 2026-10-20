@@ -69,7 +69,7 @@ _rxn_type_temp = {
 
 class Plato(BaseNamespace):
 
-    gas_constant = 8314.462
+    gas_constant = 8314.46261815324
     one_atm = 101325.0
     ref_pressure = 1.0e5
     avogadro = 6.02214076e23

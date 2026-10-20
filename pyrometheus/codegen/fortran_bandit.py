@@ -817,6 +817,10 @@ contains
         ${temperature_decl(real_type, bandit_mech)}
         ${real_type}, intent(out) :: omega_vt
 
+        ${real_type} :: pressure
+
+        call get_pressure(density, temperature(1), mass_fractions, pressure)
+
         omega_vt = 0.d0
         %for expr in bandit_mech.vt_energy_transfer_exprs:
         omega_vt = omega_vt + ${cgm(expr)}
