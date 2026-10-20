@@ -11,6 +11,9 @@ from functools import partial
 import pymbolic.primitives as p
 from mako.template import Template
 from pyrometheus.bandit.general_thermochem import BaseMechanism
+from pyrometheus.bandit.chem_expr.transport import (
+    _boltzmann as transport_boltzmann
+)
 from pymbolic.mapper.stringifier import (
         StringifyMapper, PREC_NONE, PREC_CALL, PREC_PRODUCT)
 
@@ -868,6 +871,177 @@ contains
     end subroutine get_nasa_polynomial_vibrational_specific_heat
 
     %endif
+    %if bandit_mech.has_transport():
+<%
+    transport = bandit_mech.mixture_transport
+    heavy = bandit_mech.heavy_temperature
+%>
+    subroutine get_transport_mole_fractions(mass_fractions, mole_fractions)
+
+        GPU_ROUTINE(get_transport_mole_fractions)
+
+        ${real_type}, intent(in),  dimension(${bandit_mech.num_species}) :: &
+            mass_fractions
+        ${real_type}, intent(out), dimension(${bandit_mech.num_species}) :: &
+            mole_fractions
+
+        ${real_type} :: mix_mol_weight
+
+        call get_mixture_molecular_weight(mass_fractions, mix_mol_weight)
+        call get_mole_fractions(mix_mol_weight, mass_fractions, mole_fractions)
+        mole_fractions = mole_fractions + &
+            ${float_to_fortran(bandit_mech.mole_fraction_tolerance)}
+        mole_fractions = mole_fractions / sum(mole_fractions)
+
+    end subroutine get_transport_mole_fractions
+
+    subroutine solve_transport_system(matrix, rhs, solution)
+
+        GPU_ROUTINE(solve_transport_system)
+
+        ${real_type}, intent(in), dimension(${bandit_mech.num_species}, &
+            ${bandit_mech.num_species}) :: matrix
+        ${real_type}, intent(in),  dimension(${bandit_mech.num_species}) :: rhs
+        ${real_type}, intent(out), dimension(${bandit_mech.num_species}) :: &
+            solution
+
+        ${real_type}, dimension(${bandit_mech.num_species}, &
+            ${bandit_mech.num_species}) :: factors
+        ${real_type} :: multiplier
+        integer :: i, j, k
+
+        ! Transport matrices are symmetric positive definite, so Gaussian
+        ! elimination needs no pivoting.
+        factors = matrix
+        solution = rhs
+        do k = 1, ${bandit_mech.num_species} - 1
+            do i = k + 1, ${bandit_mech.num_species}
+                multiplier = factors(i, k) / factors(k, k)
+                do j = k + 1, ${bandit_mech.num_species}
+                    factors(i, j) = factors(i, j) - multiplier * factors(k, j)
+                end do
+                solution(i) = solution(i) - multiplier * solution(k)
+            end do
+        end do
+        do i = ${bandit_mech.num_species}, 1, -1
+            do j = i + 1, ${bandit_mech.num_species}
+                solution(i) = solution(i) - factors(i, j) * solution(j)
+            end do
+            solution(i) = solution(i) / factors(i, i)
+        end do
+
+    end subroutine solve_transport_system
+
+    subroutine get_species_binary_mass_diffusivities(temperature, &
+        & binary_diffusivities)
+
+        GPU_ROUTINE(get_species_binary_mass_diffusivities)
+
+        ${temperature_decl(real_type, bandit_mech)}
+        ${real_type}, intent(out), dimension(${bandit_mech.num_species}, &
+            ${bandit_mech.num_species}) :: binary_diffusivities
+
+        %for i, row in enumerate(transport.inverse_number_density_diffusivities):
+        %for j, expr in enumerate(row):
+        binary_diffusivities(${i+1}, ${j+1}) = ${cgm(boltzmann * heavy / expr)}
+        %endfor
+        %endfor
+
+    end subroutine get_species_binary_mass_diffusivities
+
+    subroutine get_species_effective_diffusivities(pressure, temperature, &
+        & mass_fractions, diffusivities)
+
+        GPU_ROUTINE(get_species_effective_diffusivities)
+
+        ${real_type}, intent(in) :: pressure
+        ${temperature_decl(real_type, bandit_mech)}
+        ${real_type}, intent(in),  dimension(${bandit_mech.num_species}) :: &
+            mass_fractions
+        ${real_type}, intent(out), dimension(${bandit_mech.num_species}) :: &
+            diffusivities
+
+        ${real_type}, dimension(${bandit_mech.num_species}) :: mole_fractions
+        ${real_type} :: number_density
+
+        call get_transport_mole_fractions(mass_fractions, mole_fractions)
+        number_density = pressure / (${float_to_fortran(boltzmann)} * &
+            ${cgm(heavy)})
+        %for i, expr in enumerate(transport.number_density_effective_diffusivities):
+        diffusivities(${i+1}) = (${cgm(expr)}) / number_density
+        %endfor
+
+    end subroutine get_species_effective_diffusivities
+
+    subroutine get_species_viscosities(temperature, viscosities)
+
+        GPU_ROUTINE(get_species_viscosities)
+
+        ${temperature_decl(real_type, bandit_mech)}
+        ${real_type}, intent(out), dimension(${bandit_mech.num_species}) :: &
+            viscosities
+
+        %for i, expr in enumerate(transport.species_viscosities):
+        viscosities(${i+1}) = ${cgm(expr)}
+        %endfor
+
+    end subroutine get_species_viscosities
+
+    subroutine get_mixture_viscosity(temperature, mass_fractions, viscosity)
+
+        GPU_ROUTINE(get_mixture_viscosity)
+
+        ${temperature_decl(real_type, bandit_mech)}
+        ${real_type}, intent(in), dimension(${bandit_mech.num_species}) :: &
+            mass_fractions
+        ${real_type}, intent(out) :: viscosity
+
+        ${real_type}, dimension(${bandit_mech.num_species}) :: mole_fractions
+        ${real_type}, dimension(${bandit_mech.num_species}) :: solution
+        ${real_type}, dimension(${bandit_mech.num_species}, &
+            ${bandit_mech.num_species}) :: matrix
+
+        call get_transport_mole_fractions(mass_fractions, mole_fractions)
+        %for i, row in enumerate(transport.viscosity_matrix):
+        %for j, expr in enumerate(row):
+        matrix(${i+1}, ${j+1}) = ${cgm(expr)}
+        %endfor
+        %endfor
+        call solve_transport_system(matrix, mole_fractions, solution)
+        viscosity = sum(mole_fractions * solution)
+
+    end subroutine get_mixture_viscosity
+
+    subroutine get_mixture_thermal_conductivities(temperature, &
+        & mass_fractions, conductivities)
+
+        GPU_ROUTINE(get_mixture_thermal_conductivities)
+
+        ${temperature_decl(real_type, bandit_mech)}
+        ${real_type}, intent(in), dimension(${bandit_mech.num_species}) :: &
+            mass_fractions
+        ${real_type}, intent(out), dimension(${bandit_mech.num_temp}) :: &
+            conductivities
+
+        ${real_type}, dimension(${bandit_mech.num_species}) :: mole_fractions
+        ${real_type}, dimension(${bandit_mech.num_species}) :: solution
+        ${real_type}, dimension(${bandit_mech.num_species}, &
+            ${bandit_mech.num_species}) :: matrix
+
+        call get_transport_mole_fractions(mass_fractions, mole_fractions)
+        %for i, row in enumerate(transport.conductivity_matrix):
+        %for j, expr in enumerate(row):
+        matrix(${i+1}, ${j+1}) = ${cgm(expr)}
+        %endfor
+        %endfor
+        call solve_transport_system(matrix, mole_fractions, solution)
+        %for k, expr in enumerate(transport.internal_conductivities):
+        conductivities(${k+1}) = ${cgm(expr)}
+        %endfor
+        conductivities(1) = conductivities(1) + sum(mole_fractions * solution)
+
+    end subroutine get_mixture_thermal_conductivities
+    %endif
 end module ${module_name}
 """)
 
@@ -923,6 +1097,7 @@ class FortranBanditCodeGenerator(CodeGenerator):
             cgm=FortranExpressionMapper(),
             Variable=p.Variable,
             float_to_fortran=float_to_fortran,
+            boltzmann=transport_boltzmann,
             temperature_decl=temperature_decl,
             temperature_leading_term=temperature_leading_term,
 
