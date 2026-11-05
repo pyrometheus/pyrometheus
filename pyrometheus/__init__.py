@@ -2,6 +2,7 @@
 .. automodule:: pyrometheus.chem_expr
 .. automodule:: pyrometheus.codegen.python
 .. automodule:: pyrometheus.codegen.cpp
+.. automodule:: pyrometheus.codegen.cpp_bandit
 .. automodule:: pyrometheus.codegen.fortran
 """
 
@@ -37,6 +38,7 @@ from .codegen import CodeGenerator, CodeGenerationOptions  # noqa: F401
 from .codegen.python import PythonCodeGenerator
 from .codegen.python_bandit import PythonBanditCodeGenerator
 from .codegen.cpp import CppCodeGenerator
+from .codegen.cpp_bandit import CppBanditCodeGenerator
 from .codegen.fortran import FortranCodeGenerator
 from .codegen.fortran_bandit import FortranBanditCodeGenerator
 
@@ -48,6 +50,7 @@ def get_code_generators() -> typing.Dict[str, CodeGenerator]:
         FortranCodeGenerator.get_name(): FortranCodeGenerator,
         PythonBanditCodeGenerator.get_name(): PythonBanditCodeGenerator,
         FortranBanditCodeGenerator.get_name(): FortranBanditCodeGenerator,
+        CppBanditCodeGenerator.get_name(): CppBanditCodeGenerator,
     }
 
 
