@@ -17,7 +17,16 @@ friendly) arrays.  In particular it provides:
 import numpy as np
 import jax
 import jax.numpy as jnp
+import ufl
 
+## Since ufl log is ln, not log
+if not hasattr(ufl, "log"):
+    ufl.log = ufl.ln
+## Similarly, ufl has no "where"
+if not hasattr(ufl, "where"):
+    ufl.where = ufl.conditional
+if not hasattr(ufl, "greater"):
+    ufl.greater = ufl.gt
 
 jax.config.update("jax_enable_x64", True)
 
@@ -299,6 +308,20 @@ def make_pyro_object(pyro_cls,
                 return jax.lax.while_loop(cond_fun, body_fun, temp_init)
 
         return PyroJAX(pyro_np)
+
+    elif pyro_np == ufl:
+
+        class PyroUFL(pyro_cls):
+            
+            #def __init__(self, pyro_np):
+            #    super().__init__(pyro_np)
+
+            def _pyro_make_array(self, res_list):
+                """Stack a list of UFL arrays along a new leading axis."""
+                #return ufl.as_matrix(res_list)
+                return res_list
+
+        return PyroUFL(pyro_np)
 
     else:
         raise ValueError(

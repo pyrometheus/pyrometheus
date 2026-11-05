@@ -645,14 +645,17 @@ class Thermochemistry:
 
     def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
             mass_fractions):
-        #print("CONFIRMING I AM ON THE BRANCH pass-ufl")
+        print("CONFIRMING I AM ON THE BRANCH pass-ufl")
         ## Need these secondary methods to also accept, and return, UFL
         mmw = self.get_mixture_molecular_weight(mass_fractions)
+        #print("I am here")
         ## The below line errors when UFL is passed in, because only arrays of numeric types are supported by JAX.
         mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+        #print("now here")
 
         ## Leave this one (depending on the non-UFL temperature) alone for now
         bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
+        #print("and now here")
         zeros = self._pyro_zeros_like(temperature)
 
         x_sum = self._pyro_make_array([
@@ -661,11 +664,13 @@ class Thermochemistry:
                 sol, sp, Variable("mole_fractions"), Variable("bdiff_ij")))},
             %endfor
             ])
+        print("Now, here")
         denom = self._pyro_make_array([
             %for s in range(sol.n_species):
             x_sum[${s}] - mole_fractions[${s}]/bdiff_ij[${s}][${s}],
             %endfor
             ])
+        print("And now here")
 
         return self._pyro_make_array([
             %for sp in range(sol.n_species):
@@ -679,9 +684,13 @@ class Thermochemistry:
     def get_a_species_mass_diffusivity(self, pressure_as_UFL, mass_fractions_as_UFL):
         ## Omitting temperature as a parameter for now
         #return as_vector([mass_fraction/pressure_as_UFL for mass_fraction in mass_fractions_as_UFL]) ## 'as_vector' is not defined
-        return mass_fractions_as_UFL[0]/pressure_as_UFL
-        #return sel._pyro_make_array([
-        #    
+        return [mass_fraction/pressure_as_UFL for mass_fraction in mass_fractions_as_UFL]
+        #return mass_fractions_as_UFL[0]/pressure_as_UFL
+        #return Constant(1.45e-4) ## Would need Firedrake if want a Constant
+        #return self._pyro_make_array([
+        #    %for sp in range(sol.n_species):
+        #
+        #    %endfor
         #])
 """, strict_undefined=True)
 
