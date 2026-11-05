@@ -645,7 +645,7 @@ class Thermochemistry:
 
     def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
             mass_fractions):
-        print("CONFIRMING I AM ON THE BRANCH pass-ufl")
+        #print("CONFIRMING I AM ON THE BRANCH pass-ufl")
         ## Need these secondary methods to also accept, and return, UFL
         mmw = self.get_mixture_molecular_weight(mass_fractions)
         #print("I am here")
@@ -664,13 +664,13 @@ class Thermochemistry:
                 sol, sp, Variable("mole_fractions"), Variable("bdiff_ij")))},
             %endfor
             ])
-        print("Now, here")
+        #print("Now, here")
         denom = self._pyro_make_array([
             %for s in range(sol.n_species):
             x_sum[${s}] - mole_fractions[${s}]/bdiff_ij[${s}][${s}],
             %endfor
             ])
-        print("And now here")
+        #print("And now here")
 
         return self._pyro_make_array([
             %for sp in range(sol.n_species):
