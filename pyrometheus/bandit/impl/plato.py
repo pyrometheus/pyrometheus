@@ -51,7 +51,6 @@ _reaction_dict = {
 
 _temp_map = {
     "translational": Variable("temperature"),
-    "electron": Variable("temperature")[-1],
     "geometric_ttv": Variable("sqrt")(
         Variable("temperature")[0] *
         Variable("temperature")[1]
@@ -480,6 +479,14 @@ class PlatoMechanism(BaseMechanism):
 
     # {{{ Make methods
 
+    @property
+    def electron_temperature(self):
+        """:returns: The last temperature, which Plato's transfer models
+            assign to the electrons. Indexed from the front so that
+            array-indexed backends can render it.
+        """
+        return Variable("temperature")[self.num_temp - 1]
+
     def make_rate_coefficient(self,
                               reaction_index,
                               hardcode_params,
@@ -497,6 +504,8 @@ class PlatoMechanism(BaseMechanism):
             temp_var = Variable("temperature")
         elif temp_type == "translational":
             temp_var = _temp_map[temp_type][0]
+        elif temp_type == "electron":
+            temp_var = self.electron_temperature
         else:
             temp_var = _temp_map[temp_type]
 
@@ -578,7 +587,7 @@ class PlatoMechanism(BaseMechanism):
         t_var = (
             Variable("temperature") if self.num_temp == 1 else
             (
-                Variable("temperature")[-1] if sp_name == 'em' else
+                self.electron_temperature if sp_name == 'em' else
                 Variable("temperature")[0]
             )
         )
