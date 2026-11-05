@@ -645,8 +645,13 @@ class Thermochemistry:
 
     def get_species_mass_diffusivities_mixavg(self, pressure, temperature,
             mass_fractions):
+        #print("CONFIRMING I AM ON THE BRANCH pass-ufl")
+        ## Need these secondary methods to also accept, and return, UFL
         mmw = self.get_mixture_molecular_weight(mass_fractions)
+        ## The below line errors when UFL is passed in, because only arrays of numeric types are supported by JAX.
         mole_fractions = self.get_mole_fractions(mmw, mass_fractions)
+
+        ## Leave this one (depending on the non-UFL temperature) alone for now
         bdiff_ij = self.get_species_binary_mass_diffusivities(temperature)
         zeros = self._pyro_zeros_like(temperature)
 
@@ -670,6 +675,14 @@ class Thermochemistry:
                 %>bdiff_ij[${sp}][${sp}] / pressure),
             %endfor
             ])
+
+    def get_a_species_mass_diffusivity(self, pressure_as_UFL, mass_fractions_as_UFL):
+        ## Omitting temperature as a parameter for now
+        #return as_vector([mass_fraction/pressure_as_UFL for mass_fraction in mass_fractions_as_UFL]) ## 'as_vector' is not defined
+        return mass_fractions_as_UFL[0]/pressure_as_UFL
+        #return sel._pyro_make_array([
+        #    
+        #])
 """, strict_undefined=True)
 
 # }}}
