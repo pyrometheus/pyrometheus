@@ -260,6 +260,27 @@ def test_forward_rate_coefficients_match_mutation(mech, temperatures):
     np.testing.assert_allclose(actual, expected, rtol=1e-12)
 
 
+def test_single_temperature_rates_take_a_scalar_temperature():
+    from pymbolic import evaluate
+
+    single = MutationMechanism(MIXTURE, state_model="ChemNonEq1T")
+    temperature = 9000.0
+    densities = [1e-3, 2e-3, 1.5e-3, 3e-3, 2.5e-3]
+    concentrations = mixture_state(single, [temperature], densities)
+    context = evaluation_context(single, temperature, concentrations)
+    expected = [
+        single.namespace.mix.forwardRateCoefficients()[reaction_index]
+        * 1.0e3 ** (single.reaction(reaction_index).order - 1)
+        * third_body_concentration(single, reaction_index, concentrations)
+        for reaction_index in range(single.num_reactions)
+    ]
+    actual = [
+        evaluate(single.rate_coeffs[reaction_index].expr, context)
+        for reaction_index in range(single.num_reactions)
+    ]
+    np.testing.assert_allclose(actual, expected, rtol=1e-12)
+
+
 def test_dissociation_rates_depend_on_both_temperatures(mech):
     # Forward dissociation runs on sqrt(T*Tv): holding T fixed and
     # changing Tv alone must move the coefficient.
