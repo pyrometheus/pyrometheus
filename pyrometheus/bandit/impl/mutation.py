@@ -163,6 +163,12 @@ class MutationMechanism(BaseMechanism):
         two directions are asked for separately.
         """
         reaction = self.reaction(reaction_index)
+        if direction not in ("fwd", "rev"):
+            raise ValueError(f"unknown rate direction '{direction}'")
+        # Every role collapses onto the one temperature, which generated
+        # code takes as a scalar.
+        if self.num_temp == 1:
+            return Variable("temperature")
         if direction == "fwd":
             return _temp_map[reaction.fwd_rate_coeff_temperature]
         elif direction == "rev":
