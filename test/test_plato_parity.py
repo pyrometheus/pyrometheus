@@ -358,6 +358,42 @@ def test_equation_of_state_matches_plato_gas_constants(case):
         pressure, temperature, mass_fractions
     ) == pytest.approx(density, rel=1e-14)
 
+
+def temperature_subscripts(expressions):
+    """:returns: Every index that *expressions* subscript ``temperature``
+    with.
+    """
+    from pymbolic.mapper import WalkMapper
+    import pymbolic.primitives as prim
+
+    class Collector(WalkMapper):
+        def __init__(self):
+            self.indices = set()
+
+        def visit(self, expr, *args, **kwargs):
+            if (isinstance(expr, prim.Subscript)
+                    and expr.aggregate == prim.Variable("temperature")):
+                self.indices.add(expr.index)
+            return True
+
+    collector = Collector()
+    for expr in expressions:
+        collector(expr)
+    return collector.indices
+
+
+@block("constants")
+def test_temperature_subscripts_are_valid_array_indices(case):
+    # C++ and Fortran index temperature as an array: Python's
+    # temperature[-1] reads out of bounds there.
+    mech = case.mech
+    expressions = [rate.expr for rate in mech.rate_coeffs] + [
+        poly.expr
+        for thermo in mech.species_nasa_thermo_polynomials
+        for poly in (thermo.cp_poly, thermo.enthalpy_poly, thermo.gibbs_poly)
+    ] + list(mech.mass_action_rates)
+    assert temperature_subscripts(expressions) <= set(range(case.num_temp))
+
 # }}}
 
 
