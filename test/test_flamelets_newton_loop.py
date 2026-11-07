@@ -16,7 +16,7 @@ import cantera as ct
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from pyrometheus.codegen.python import PythonCodeGenerator as pyro
+from pyrometheus.codegen.python import PythonCodeGenerator
 from pyrometheus.flamelets.domain import Domain, DomainConfig
 from pyrometheus.flamelets.make_pyro import make_pyro_object
 from pyrometheus.flamelets.solver import FlameletSolver
@@ -36,7 +36,7 @@ def rig():
     """Minimal FlameletSolver setup, self-contained (no dependency on the
     sibling flamelet-adjoints repo's synthetic_data.py)."""
     sol = ct.Solution(MECH)
-    pyro_gas = make_pyro_object(pyro.get_thermochem_class(sol), jnp)
+    pyro_gas = make_pyro_object(PythonCodeGenerator.get_thermochem_class(sol), jnp)
 
     sol.TPX = TEMP_OX, PRESSURE, "O2:0.21, N2:0.79"
     y_ox = jnp.array(sol.Y)
@@ -119,7 +119,8 @@ def test_matches_python_loop_across_chi(rig, chi):
     (s_py, it_py, d_py, ok_py), (s_lax, it_lax, d_lax, ok_lax) = _run_both(rig, chi)
 
     assert ok_py == ok_lax, f"chi={chi}: success mismatch py={ok_py} lax={ok_lax}"
-    assert it_py == it_lax, f"chi={chi}: iteration count mismatch {it_py} vs {it_lax}"
+    assert it_py == it_lax, (
+        f"chi={chi}: iteration count mismatch {it_py} vs {it_lax}")
     np.testing.assert_allclose(
         np.asarray(s_py.enthalpy), np.asarray(s_lax.enthalpy),
         rtol=1e-10, atol=1e-8,

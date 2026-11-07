@@ -17,7 +17,7 @@ import cantera as ct
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from pyrometheus.codegen.python import PythonCodeGenerator as pyro
+from pyrometheus.codegen.python import PythonCodeGenerator
 from pyrometheus.flamelets.domain import Domain, DomainConfig
 from pyrometheus.flamelets.make_pyro import make_pyro_object
 from pyrometheus.flamelets.solver import FlameletSolver
@@ -50,7 +50,7 @@ def _config():
 @pytest.fixture(scope="module")
 def rig():
     sol = ct.Solution(MECH)
-    pyro_gas = make_pyro_object(pyro.get_thermochem_class(sol), jnp)
+    pyro_gas = make_pyro_object(PythonCodeGenerator.get_thermochem_class(sol), jnp)
 
     sol.TPX = TEMP_OX, PRESSURE, "O2:0.21, N2:0.79"
     y_ox = jnp.array(sol.Y)

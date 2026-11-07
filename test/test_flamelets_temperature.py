@@ -20,7 +20,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from pyrometheus.codegen.python import PythonCodeGenerator as pyro
+from pyrometheus.codegen.python import PythonCodeGenerator
 from pyrometheus.flamelets.make_pyro import (
     _TEMPERATURE_MAX_K,
     _TEMPERATURE_MIN_K,
@@ -30,7 +30,7 @@ from pyrometheus.flamelets.make_pyro import (
 MECH = "/u/csnrsgr2/packages/pyrometheus/test/mechs/sandiego.yaml"
 
 
-class HardTimeout(Exception):
+class HardTimeoutError(Exception):
     pass
 
 
@@ -41,7 +41,7 @@ def hard_timeout(seconds):
     so don't rely solely on it to bound runtime."""
 
     def _handler(signum, frame):
-        raise HardTimeout(f"exceeded {seconds}s hard timeout")
+        raise HardTimeoutError(f"exceeded {seconds}s hard timeout")
 
     old = signal.signal(signal.SIGALRM, _handler)
     signal.alarm(seconds)
@@ -55,7 +55,7 @@ def hard_timeout(seconds):
 @pytest.fixture(scope="module")
 def pyro_gas():
     sol = ct.Solution(MECH)
-    return make_pyro_object(pyro.get_thermochem_class(sol), jnp)
+    return make_pyro_object(PythonCodeGenerator.get_thermochem_class(sol), jnp)
 
 
 @pytest.fixture(scope="module")
