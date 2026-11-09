@@ -31,10 +31,13 @@ def _integral_if_whole(coefficient: float) -> Union[int, float]:
 
 class Cantera(BaseNamespace):
 
-    def __init__(self, file_name):
+    def __init__(self, source, phase=None):
         self.one_atm = ct.one_atm
         self.gas_constant = ct.gas_constant
-        self.sol = ct.Solution(file_name)
+        if isinstance(source, ct.Solution):
+            self.sol = source
+        else:
+            self.sol = ct.Solution(source, phase)
 
     def __getattr__(self, name, *args):
         if args:
@@ -47,9 +50,13 @@ class CanteraMechanism(BaseMechanism):
 
     num_temp = 1
 
-    def __init__(self, file_name, pyro_np=np, hardcode_params=True):
+    def __init__(self, file_name, pyro_np=np, hardcode_params=True,
+                 phase=None):
+        """:arg file_name: A Cantera mechanism file, read for *phase*, or a
+            :class:`cantera.Solution`.
+        """
         self.hardcode_params = hardcode_params
-        self.namespace = Cantera(file_name)
+        self.namespace = Cantera(file_name, phase)
         self.make_rates(hardcode_params)
         self.make_thermo()
 
