@@ -7,11 +7,10 @@ heavy temperatures on Plato's collision-integral table nodes, where its
 interpolated tables equal the fits bandit generates. The VT source is
 compared with the Landau-Teller part of Plato's Tv-equation source.
 
-Requires PLATO_DB, an importable ``plato`` package, gfortran, meson and
-ninja.
+Requires Plato or its recorded answers (see :mod:`plato_cassette`),
+gfortran, meson and ninja.
 """
 
-import os
 
 import numpy as np
 import pytest
@@ -22,8 +21,11 @@ from fortran_build import (
     toolchain_reason,
 )
 
+from plato_cassette import plato_available, plato_db_path, plato_source_terms
+
 try:
-    import plato  # noqa: F401
+    if not plato_available():
+        raise ImportError("Plato unavailable")
     from pyrometheus.bandit.impl.plato import PlatoMechanism
     from pyrometheus.codegen.fortran_bandit import FortranBanditCodeGenerator
 except ImportError:
@@ -31,8 +33,8 @@ except ImportError:
 
 pytestmark = [
     pytest.mark.skipif(
-        PlatoMechanism is None or os.environ.get("PLATO_DB") is None,
-        reason="PLATO_DB not set or plato package not importable",
+        PlatoMechanism is None,
+        reason="neither Plato nor its recorded answers are available",
     ),
     pytest.mark.skipif(not toolchain_available, reason=toolchain_reason),
 ]
@@ -78,7 +80,7 @@ class CompiledCase:
 
 @pytest.fixture(scope="module", params=["empty", "TTv"])
 def case(request, tmp_path_factory):
-    mech = PlatoMechanism("air5", "air5", request.param, os.environ["PLATO_DB"])
+    mech = PlatoMechanism("air5", "air5", request.param, plato_db_path())
     fortran_module_name = f"air5_{request.param.lower()}_transport"
     source = FortranBanditCodeGenerator.generate(fortran_module_name, mech)
     module = compile_fortran_module(
@@ -170,7 +172,6 @@ vt_states = [(9000.0, 3000.0), (15000.0, 7000.0), (4000.0, 8000.0)]
 def test_fortran_vt_energy_transfer_matches_plato(case, state, composition):
     if case.mech.num_temp == 1:
         pytest.skip("needs a vibrational temperature")
-    from test_plato_parity import plato_source_terms
     temperature = case.temperature(state)
     mass_fractions = case.mass_fractions(composition)
     density = 5e-2

@@ -18,7 +18,6 @@ dependencies (``pip install meson ninja``). Skipped automatically when
 any of these is unavailable.
 """
 
-import os
 import shutil
 
 import numpy as np
@@ -28,10 +27,9 @@ from fortran_build import (
     compile_fortran_module,
 )
 
-plato_available = (
-    os.environ.get("PLATO_DB") is not None
-    and os.environ.get("PLATO_LIB") is not None
-)
+from plato_cassette import plato_available as _plato_available, plato_db_path
+
+plato_available = _plato_available()
 
 try:
     from pyrometheus.bandit.impl.plato import PlatoMechanism
@@ -53,7 +51,7 @@ requires_fortran_toolchain = pytest.mark.skipif(
            "not all available",
 )
 
-DB = os.environ.get("PLATO_DB", "")
+DB = plato_db_path()
 MIXTURE = "air5"
 REACTION = "air5"
 TRANSFER = "TTv"

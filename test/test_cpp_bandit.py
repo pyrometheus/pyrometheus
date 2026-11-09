@@ -9,13 +9,12 @@ Each case's header is compiled with pybind11 and checked two ways:
   (and their known gaps) over to C++;
 * against the library itself, where the Python is known to agree.
 
-Cases whose library is missing (Plato needs PLATO_DB, Mutation++ its
-data) are skipped, as is everything without a C++
+Cases whose library is missing (Plato, live or recorded; Mutation++ and
+its data) are skipped, as is everything without a C++
 compiler and pybind11.
 """
 
 import inspect
-import os
 import pathlib
 from dataclasses import dataclass, field
 from typing import Optional
@@ -24,18 +23,14 @@ import cantera as ct
 import numpy as np
 import pytest
 
+import plato_cassette
 from bandit_parity import mutation_loads
 from cpp_build import compile_cpp_module, toolchain_available, toolchain_reason
 from pyrometheus.codegen import CodeGenerationOptions
 from pyrometheus.codegen.cpp_bandit import CppBanditCodeGenerator
 from pyrometheus.codegen.python_bandit import PythonBanditCodeGenerator
 
-try:
-    import plato  # noqa: F401
-except ImportError:
-    plato_available = False
-else:
-    plato_available = os.environ.get("PLATO_DB") is not None
+plato_available = plato_cassette.plato_available()
 
 mutation_available = mutation_loads()
 
@@ -67,7 +62,8 @@ class CppSpec:
             return CanteraMechanism(str(mech_dir / f"{self.arguments[0]}.yaml"))
         if self.library == "plato":
             from pyrometheus.bandit.impl.plato import PlatoMechanism
-            return PlatoMechanism(*self.arguments, os.environ["PLATO_DB"])
+            return PlatoMechanism(*self.arguments,
+                                  plato_cassette.plato_db_path())
         from pyrometheus.bandit.impl.mutation import MutationMechanism
         mixture, state_model = self.arguments
         return MutationMechanism(

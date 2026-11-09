@@ -1,19 +1,17 @@
 """Tests for PlatoMechanism: reaction list assembly, stoichiometry, and
 symbolic rate construction.
 
-Requires PLATO_DB and PLATO_LIB environment variables to be set.
+Requires Plato or its recorded answers (see :mod:`plato_cassette`).
 Skipped automatically when either is absent or the plato package is not
 importable.
 """
 
-import os
 import pytest
 import numpy as np
 
-plato_available = (
-    os.environ.get("PLATO_DB") is not None
-    and os.environ.get("PLATO_LIB") is not None
-)
+from plato_cassette import plato_available as _plato_available, plato_db_path
+
+plato_available = _plato_available()
 
 try:
     from pyrometheus.bandit.impl.plato import PlatoMechanism
@@ -22,10 +20,10 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(
     not plato_available,
-    reason="PLATO_DB / PLATO_LIB not set or plato package not importable",
+    reason="neither Plato nor its recorded answers are available",
 )
 
-DB = os.environ.get("PLATO_DB", "")
+DB = plato_db_path()
 MIXTURE = "air5"
 REACTION = "air5"
 TRANSFER = "empty"

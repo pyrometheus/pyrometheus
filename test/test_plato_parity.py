@@ -11,11 +11,10 @@ the release suite does for Cantera mechanisms. What a case lacks (a
 vibrational temperature, VT transfer) skips; what bandit gets wrong for
 it is listed in :data:`known_gaps` and runs as a strict xfail.
 
-Requires PLATO_DB and an importable ``plato`` package.
+Requires Plato (PLATO_DB and an importable ``plato``) or its recorded
+answers under ``test/data/plato`` (see :mod:`plato_cassette`).
 """
 
-import ctypes
-import os
 from dataclasses import dataclass
 from typing import Callable, List
 
@@ -26,10 +25,11 @@ from bandit_parity import (
     make_generated_gas, mechanism_expressions, temperature_subscripts,
 )
 
-try:
-    import plato  # noqa: F401
+from plato_cassette import plato_available, plato_db_path, plato_source_terms
+
+if plato_available():
     from pyrometheus.bandit.impl.plato import PlatoMechanism
-except ImportError:
+else:
     PlatoMechanism = None
 
 try:
@@ -41,8 +41,8 @@ else:
     jax.config.update("jax_enable_x64", True)
 
 pytestmark = pytest.mark.skipif(
-    PlatoMechanism is None or os.environ.get("PLATO_DB") is None,
-    reason="PLATO_DB not set or plato package not importable",
+    PlatoMechanism is None,
+    reason="neither Plato nor its recorded answers are available",
 )
 
 
@@ -195,7 +195,7 @@ def case(request):
     spec = request.param
     mech = PlatoMechanism(
         spec.mixture, spec.reaction_set, spec.transfer,
-        os.environ["PLATO_DB"]
+        plato_db_path()
     )
     yield PlatoCase(spec=spec, mech=mech, gas=make_generated_gas(mech))
     mech.finalize()
@@ -224,24 +224,6 @@ def require(case, multi_temperature=None, vt=False, plato_thermo=False):
         pytest.skip("single-temperature API")
     if vt and not case.oracle.vt_active:
         pytest.skip("no VT transfer in this case")
-
-
-def plato_source_terms(oracle, partial_densities, temperature):
-    """Return Plato's full source vector: species mass production rates
-    [kg/(m^3 s)] followed by one energy source per temperature [W/m^3].
-    ``Thermochemistry.get_production_rates`` discards the energy part.
-    """
-    from plato import _lib
-    partial_densities = np.ascontiguousarray(partial_densities, dtype=float)
-    temperature = np.ascontiguousarray(np.atleast_1d(temperature), dtype=float)
-    omega = np.zeros(oracle.n_species + oracle.n_temp)
-    _lib._lib.plato_get_source(
-        ctypes.byref(ctypes.c_uint(0)),
-        partial_densities.ctypes.data_as(_lib._P_double),
-        temperature.ctypes.data_as(_lib._P_double),
-        omega.ctypes.data_as(_lib._P_double),
-    )
-    return omega
 
 # }}}
 

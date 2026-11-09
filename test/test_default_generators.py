@@ -4,7 +4,6 @@ while the 1.x generators stay reachable, deprecated, under ``-legacy``
 names and for callers that pass a Cantera ``Solution``.
 """
 
-import os
 import pathlib
 import warnings
 
@@ -13,6 +12,7 @@ import pytest
 
 import pyrometheus
 from bandit_parity import mutation_loads
+from plato_cassette import plato_available
 from pyrometheus.bandit import load_mechanism
 from pyrometheus.bandit.impl.cantera import CanteraMechanism
 from pyrometheus.cli import main
@@ -164,10 +164,8 @@ def test_cli_reads_mutation(tmp_path):
     )
 
 
-@pytest.mark.skipif(os.environ.get("PLATO_DB") is None,
-                    reason="PLATO_DB not set")
+@pytest.mark.skipif(not plato_available(), reason="Plato unavailable")
 def test_cli_reads_plato(tmp_path):
-    pytest.importorskip("plato")
     source = run_cli(tmp_path, "--language", "python", "--library", "plato",
                      "--mechanism", "air5", "--reaction-set", "air5",
                      "--transfer", "TTv")
