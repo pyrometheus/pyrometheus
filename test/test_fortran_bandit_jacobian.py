@@ -26,7 +26,6 @@ import pytest
 
 from fortran_build import (
     compile_fortran_module,
-    stub_out_broken_vt_subroutine,
 )
 
 plato_available = (
@@ -72,9 +71,6 @@ def jac_fort(tmp_path_factory):
         opts = CodeGenerationOptions(compute_jacobian=True)
         fortran_module_name = "air5_ttv_jacobian_test"
         source = fortran.generate(fortran_module_name, mech, opts)
-        source = stub_out_broken_vt_subroutine(
-            source, mech.num_species, mech.num_temp
-        )
         tmp_path = tmp_path_factory.mktemp("fortran_jacobian")
         module = compile_fortran_module(tmp_path, source, MODULE_NAME)
     finally:

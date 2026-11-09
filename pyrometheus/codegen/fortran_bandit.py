@@ -804,16 +804,19 @@ contains
     end subroutine get_pressure_relaxation_times
 
     subroutine get_vt_energy_transfer_source(&
-        & density, mass_fractions, temperature, omega_vt)
+        & density, temperature, mass_fractions, omega_vt)
 
         GPU_ROUTINE(get_vt_energy_transfer_source)
 
         ${real_type}, intent(in) :: density
+        ${temperature_decl(real_type, bandit_mech)}
         ${real_type}, intent(in), dimension(${bandit_mech.num_species}) :: &
             mass_fractions
-        ${temperature_decl(real_type, bandit_mech)}
         ${real_type}, intent(out) :: omega_vt
 
+        ${real_type} :: pressure
+
+        call get_pressure(density, temperature, mass_fractions, pressure)
         omega_vt = 0.d0
         %for expr in bandit_mech.vt_energy_transfer_exprs:
         omega_vt = omega_vt + ${cgm(expr)}

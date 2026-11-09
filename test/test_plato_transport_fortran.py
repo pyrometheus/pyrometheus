@@ -1,9 +1,11 @@
-"""Parity of the generated Fortran transport subroutines against Plato.
+"""Parity of the generated Fortran transport and VT energy transfer
+subroutines against Plato.
 
 The generated module is compiled with numpy.f2py and its transport
 subroutines are compared with Plato's own transport evaluations at
 heavy temperatures on Plato's collision-integral table nodes, where its
-interpolated tables equal the fits bandit generates.
+interpolated tables equal the fits bandit generates. The VT source is
+compared with the Landau-Teller part of Plato's Tv-equation source.
 
 Requires PLATO_DB, an importable ``plato`` package, gfortran, meson and
 ninja.
@@ -16,7 +18,6 @@ import pytest
 
 from fortran_build import (
     compile_fortran_module,
-    stub_out_broken_vt_subroutine,
     toolchain_available,
     toolchain_reason,
 )
@@ -80,10 +81,6 @@ def case(request, tmp_path_factory):
     mech = PlatoMechanism("air5", "air5", request.param, os.environ["PLATO_DB"])
     fortran_module_name = f"air5_{request.param.lower()}_transport"
     source = FortranBanditCodeGenerator.generate(fortran_module_name, mech)
-    if mech.num_temp > 1:
-        source = stub_out_broken_vt_subroutine(
-            source, mech.num_species, mech.num_temp
-        )
     module = compile_fortran_module(
         tmp_path_factory.mktemp(fortran_module_name), source,
         f"libpyro_{fortran_module_name}",
@@ -162,3 +159,36 @@ def test_fortran_effective_diffusivities_match_plato(case, state, composition):
     actual = case.module.get_species_effective_diffusivities(
         pressure, temperature, case.mass_fractions(composition))
     np.testing.assert_allclose(actual, expected, rtol=1e-11, atol=0)
+
+
+# (Th, Tv) out of vibrational equilibrium, frozen and hot.
+vt_states = [(9000.0, 3000.0), (15000.0, 7000.0), (4000.0, 8000.0)]
+
+
+@pytest.mark.parametrize("composition", mole_fraction_sets)
+@pytest.mark.parametrize("state", vt_states)
+def test_fortran_vt_energy_transfer_matches_plato(case, state, composition):
+    if case.mech.num_temp == 1:
+        pytest.skip("needs a vibrational temperature")
+    from test_plato_parity import plato_source_terms
+    temperature = case.temperature(state)
+    mass_fractions = case.mass_fractions(composition)
+    density = 5e-2
+    num_species = case.mech.num_species
+    # Plato's Tv source is the Landau-Teller (VT) term plus the energy
+    # species carry as they react, sum_s omega_s e_vib,s(Tv).
+    omega = plato_source_terms(
+        case.oracle, density * mass_fractions, temperature
+    )
+    chemistry_vibration = np.sum(
+        omega[:num_species]
+        * case.module.get_nasa_polynomial_vibrational_energy(temperature)
+    )
+    actual = case.module.get_vt_energy_transfer_source(
+        density, temperature, mass_fractions
+    )
+    # Plato raises Th to -0.3333333333 rather than -1/3 in Millikan-White.
+    assert actual == pytest.approx(
+        omega[num_species + 1] - chemistry_vibration,
+        rel=2e-8, abs=1e-10 * abs(chemistry_vibration)
+    )
