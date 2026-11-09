@@ -12,6 +12,7 @@ correctly-set "hit cap" diagnostic flag.
 Run with: pytest test_flamelets_temperature.py --backend python
 (--backend is required by this directory's conftest.py, but unused here.)
 """
+from pathlib import Path
 import signal
 from contextlib import contextmanager
 
@@ -27,7 +28,7 @@ from pyrometheus.flamelets.make_pyro import (
     make_pyro_object,
 )
 
-MECH = "/u/csnrsgr2/packages/pyrometheus/test/mechs/sandiego.yaml"
+MECH = str(Path(__file__).parent / "mechs" / "sandiego.yaml")
 
 
 class HardTimeoutError(Exception):
