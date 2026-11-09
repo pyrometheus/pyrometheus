@@ -207,7 +207,7 @@ def states_for(case):
 
 def test_cpp_bandit_generator_is_registered(tmp_path):
     from pyrometheus import get_code_generators
-    generator = get_code_generators()["cpp-bandit"]
+    generator = get_code_generators()["cpp"]
     assert generator is CppBanditCodeGenerator
     header = generator.generate(
         "uiuc", generator.load_mechanism(str(mech_dir / "uiuc.yaml")))

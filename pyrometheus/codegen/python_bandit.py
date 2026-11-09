@@ -466,12 +466,12 @@ class Thermochemistry:
 class PythonBanditCodeGenerator(CodeGenerator):
     @staticmethod
     def get_name() -> str:
-        return "python-bandit"
+        return "python"
 
     @staticmethod
     def load_mechanism(mech_path: str, phase: str = None) -> BaseMechanism:
         from pyrometheus.bandit.impl.cantera import CanteraMechanism
-        return CanteraMechanism(mech_path)
+        return CanteraMechanism(mech_path, phase=phase)
 
     @staticmethod
     def supports_overloading() -> bool:

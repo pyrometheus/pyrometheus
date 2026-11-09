@@ -1018,7 +1018,7 @@ end module ${module_name}
 class FortranCodeGenerator(CodeGenerator):
     @staticmethod
     def get_name() -> str:
-        return "fortran"
+        return "fortran-legacy"
 
     @staticmethod
     def supports_overloading() -> bool:

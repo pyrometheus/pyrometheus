@@ -678,7 +678,7 @@ class Thermochemistry:
 class PythonCodeGenerator(CodeGenerator):
     @staticmethod
     def get_name() -> str:
-        return "python"
+        return "python-legacy"
 
     @staticmethod
     def supports_overloading() -> bool:

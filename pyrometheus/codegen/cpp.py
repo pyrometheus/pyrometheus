@@ -665,7 +665,7 @@ struct ${name}
 class CppCodeGenerator(CodeGenerator):
     @staticmethod
     def get_name() -> str:
-        return "cpp"
+        return "cpp-legacy"
 
     @staticmethod
     def supports_overloading() -> bool:

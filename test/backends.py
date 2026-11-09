@@ -73,6 +73,12 @@ class Backend(CodeGenerator):
 
 
 class PythonBackend(Backend, PythonCodeGenerator):
+    # The 1.x generator under test, by the short name its compiled
+    # modules and CMake targets use.
+    @staticmethod
+    def get_name() -> str:
+        return "python"
+
     @staticmethod
     def _gen_jax_wrapper(base_cls):
         class JaxPyroWrapper(base_cls):
@@ -143,10 +149,22 @@ class PythonBackend(Backend, PythonCodeGenerator):
 
 
 class CppBackend(Backend, CppCodeGenerator):
+    # The 1.x generator under test, by the short name its compiled
+    # modules and CMake targets use.
+    @staticmethod
+    def get_name() -> str:
+        return "cpp"
+
     pass
 
 
 class FortranBackend(Backend, FortranCodeGenerator):
+    # The 1.x generator under test, by the short name its compiled
+    # modules and CMake targets use.
+    @staticmethod
+    def get_name() -> str:
+        return "fortran"
+
     @staticmethod
     def extract_interface(module, mechname: str, user_np):
         return getattr(module, f"libpyro_fortran_{mechname}")

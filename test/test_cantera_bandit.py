@@ -455,7 +455,7 @@ def test_generated_species_lookup():
         assert gas.get_species_index(species_name) == species_index
 
 
-@pytest.mark.parametrize("slug", ["python-bandit", "fortran-bandit"])
+@pytest.mark.parametrize("slug", ["python", "fortran"])
 def test_bandit_generators_are_registered(slug):
     from pyrometheus import get_code_generators
     from pyrometheus.bandit.general_thermochem import BaseMechanism
@@ -467,7 +467,7 @@ def test_bandit_generators_are_registered(slug):
 
 def test_release_generators_still_load_cantera_solutions():
     from pyrometheus import get_code_generators
-    generator = get_code_generators()["python"]
+    generator = get_code_generators()["python-legacy"]
     assert isinstance(
         generator.load_mechanism(str(mech_dir / "uiuc.yaml"), "gas"),
         ct.Solution
