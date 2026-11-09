@@ -40,6 +40,11 @@ Plato is not publicly available. ``PlatoMechanism`` is experimental
 and needs access to Plato and its database. Its test suites replay
 recorded Plato answers, so they run without it.
 
+With Plato's ionized mixtures (``air11``), the generated kinetics leave
+the electron out of electron-impact reactions and evaluate their reverse
+rates at the heavy temperature; electron energy terms and ionized
+transport are not generated. For ions and electrons, use Mutation++.
+
 Building a mechanism
 --------------------
 
