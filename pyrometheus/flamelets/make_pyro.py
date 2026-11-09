@@ -22,6 +22,20 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 
+# get_temperature/get_temperature_from_enthalpy: bounds for the internal
+# lax.while_loop Newton solves. Without an iteration cap, a divergent input
+# (out-of-range temp_init, an energy/enthalpy target unreachable by any
+# physical composition, a degenerate mass-fraction vector driving cp/cv
+# toward zero) spins jax.lax.while_loop forever -- fatal under a batched
+# vmap, where JAX runs the whole loop until every lane's cond is false, so
+# one bad point can hang an entire GPU job with no way to interrupt it.
+# See /u/csnrsgr2/.claude/plans/splendid-puzzling-sunset.md, Stage 2.
+_TEMPERATURE_NEWTON_MAXITER = 100
+_TEMPERATURE_NEWTON_TOL = 1e-10
+_TEMPERATURE_MIN_K = 100.0
+_TEMPERATURE_MAX_K = 6000.0
+
+
 _array_types = {
     jax.numpy: jax.numpy.ndarray,
     np: np.ndarray,
@@ -75,6 +89,27 @@ def _jax_stack(res_list, pyro_np):
         array = array.at[idx].set(res_list[idx])
 
     return array
+
+
+def _clamp_temperature(temperature, temp_init, with_diagnostics):
+    """Fail-safe for the bounded Newton temperature solves.
+
+    Replaces a non-finite or outside-physical-band result with
+    ``temp_init`` (itself clamped into the physical band, in case the
+    caller's initial guess was already out of band) rather than letting it
+    propagate into a downstream source-term/EOS evaluation. See the
+    ``_TEMPERATURE_*`` constants at the top of this module.
+    """
+    ok = (
+        jnp.isfinite(temperature)
+        & (temperature > _TEMPERATURE_MIN_K)
+        & (temperature < _TEMPERATURE_MAX_K)
+    )
+    safe_init = jnp.clip(temp_init, _TEMPERATURE_MIN_K, _TEMPERATURE_MAX_K)
+    safe_temperature = jnp.where(ok, temperature, safe_init)
+    if not with_diagnostics:
+        return safe_temperature
+    return safe_temperature, jnp.logical_not(jnp.all(ok))
 
 
 def make_pyro_object(pyro_cls,
@@ -209,9 +244,17 @@ def make_pyro_object(pyro_cls,
                 return self.pyro_np.linalg.norm(argument, normord)
 
             def get_temperature(
-                self, energy, temp_init, mass_fractions, do_energy=True
+                self, energy, temp_init, mass_fractions, do_energy=True,
+                _with_diagnostics=False,
             ):
                 """Newton-solve ``e(T, Y) = energy`` using ``jax.lax.while_loop``.
+
+                Bounded by ``_TEMPERATURE_NEWTON_MAXITER`` iterations and a
+                physical temperature band ``[_TEMPERATURE_MIN_K,
+                _TEMPERATURE_MAX_K]``: the loop always terminates, and a
+                result that is non-finite or outside the physical band is
+                replaced by ``temp_init`` rather than propagated into the
+                caller (e.g. a source-term/EOS evaluation).
 
                 Parameters
                 ----------
@@ -225,35 +268,58 @@ def make_pyro_object(pyro_cls,
                     Retained for API compatibility; the solve is
                     always performed against the internal-energy
                     equation.
+                _with_diagnostics : bool, optional
+                    If ``True``, return ``(temperature, hit_cap)`` instead
+                    of just ``temperature``, where ``hit_cap`` is ``True``
+                    if the loop ran to ``_TEMPERATURE_NEWTON_MAXITER``
+                    without meeting ``_TEMPERATURE_NEWTON_TOL``, or the raw
+                    result was non-finite/outside the physical band (i.e.
+                    whenever the fail-safe clamp fired). For tests only --
+                    every production call site uses the default.
 
                 Returns
                 -------
-                ndarray
-                    Converged temperature field.
+                ndarray, or (ndarray, ndarray) if ``_with_diagnostics``
+                    Converged (or safely clamped) temperature field, and
+                    optionally the cap-hit/fail-safe diagnostic flag.
                 """
 
-                def cond_fun(temperature):
+                def cond_fun(carry):
+                    temperature, it = carry
                     f = energy - self.get_mixture_internal_energy_mass(
                         temperature, mass_fractions
                     )
                     j = -self.get_mixture_specific_heat_cv_mass(
                         temperature, mass_fractions
                     )
-                    return self.pyro_np.linalg.norm(f / j) > 1e-10
+                    not_converged = (
+                        self.pyro_np.linalg.norm(f / j) > _TEMPERATURE_NEWTON_TOL
+                    )
+                    return self.pyro_np.logical_and(
+                        not_converged, it < _TEMPERATURE_NEWTON_MAXITER
+                    )
 
-                def body_fun(temperature):
+                def body_fun(carry):
+                    temperature, it = carry
                     f = energy - self.get_mixture_internal_energy_mass(
                         temperature, mass_fractions
                     )
                     j = -self.get_mixture_specific_heat_cv_mass(
                         temperature, mass_fractions
                     )
-                    return temperature - f / j
+                    return (temperature - f / j, it + 1)
 
-                return jax.lax.while_loop(cond_fun, body_fun, temp_init)
+                temperature, _ = jax.lax.while_loop(
+                    cond_fun, body_fun,
+                    (temp_init, self.pyro_np.array(0, dtype=self.pyro_np.int32))
+                )
+                return _clamp_temperature(
+                    temperature, temp_init, _with_diagnostics
+                )
 
             def get_temperature_from_enthalpy(
                     self, enthalpy, mass_fractions, temp_init,
+                    _with_diagnostics=False,
             ):
                 """Newton-solve ``h(T, Y) = enthalpy`` for temperature.
 
@@ -261,6 +327,10 @@ def make_pyro_object(pyro_cls,
                 enthalpy-formulated flamelet equations.  Uses a
                 ``jax.lax.while_loop`` and the analytical mixture
                 ``cp`` to drive the Newton iteration.
+
+                Bounded the same way as :meth:`get_temperature` -- see
+                that docstring for the iteration-cap/fail-safe/
+                ``_with_diagnostics`` behavior.
 
                 Parameters
                 ----------
@@ -274,29 +344,43 @@ def make_pyro_object(pyro_cls,
 
                 Returns
                 -------
-                ndarray
-                    Converged temperature field.
+                ndarray, or (ndarray, ndarray) if ``_with_diagnostics``
+                    Converged (or safely clamped) temperature field, and
+                    optionally the cap-hit/fail-safe diagnostic flag.
                 """
 
-                def cond_fun(temperature):
+                def cond_fun(carry):
+                    temperature, it = carry
                     f = enthalpy - self.get_mixture_enthalpy_mass(
                         temperature, mass_fractions
                     )
                     j = -self.get_mixture_specific_heat_cp_mass(
                         temperature, mass_fractions
                     )
-                    return self.pyro_np.linalg.norm(f / j) > 1e-10
+                    not_converged = (
+                        self.pyro_np.linalg.norm(f / j) > _TEMPERATURE_NEWTON_TOL
+                    )
+                    return self.pyro_np.logical_and(
+                        not_converged, it < _TEMPERATURE_NEWTON_MAXITER
+                    )
 
-                def body_fun(temperature):
+                def body_fun(carry):
+                    temperature, it = carry
                     f = enthalpy - self.get_mixture_enthalpy_mass(
                         temperature, mass_fractions
                     )
                     j = -self.get_mixture_specific_heat_cp_mass(
                         temperature, mass_fractions
                     )
-                    return temperature - f / j
+                    return (temperature - f / j, it + 1)
 
-                return jax.lax.while_loop(cond_fun, body_fun, temp_init)
+                temperature, _ = jax.lax.while_loop(
+                    cond_fun, body_fun,
+                    (temp_init, self.pyro_np.array(0, dtype=self.pyro_np.int32))
+                )
+                return _clamp_temperature(
+                    temperature, temp_init, _with_diagnostics
+                )
 
         return PyroJAX(pyro_np)
 

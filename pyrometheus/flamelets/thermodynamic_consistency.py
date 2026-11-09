@@ -307,6 +307,43 @@ class CompressibleEOS:
             (adjoint_state_d, adjoint_state_e)
         )
 
+    @partial(jax.jit, static_argnums=0)
+    def eos_gradient_batch(self,
+                           state: FlameletState,
+                           mixture_fraction_pdf: jnp.ndarray,
+                           diss_rate: jnp.ndarray,
+                           viscous_diss: jnp.ndarray,
+                           temp_guess: jnp.ndarray,
+                           pressure: jnp.ndarray):
+        """Batched twin of :meth:`eos_gradient` via ``jax.vmap``. Used as
+        the post-hoc gradient evaluation at each point's final converged
+        ``(state, pressure)`` from :meth:`ensure_consistency_batch` --
+        that method itself does not return a final-state gradient (only
+        the per-iteration gradients used internally to drive the
+        Gauss-Newton search, at each iteration's pre-update params).
+
+        Every argument is batched along its leading axis (matching
+        ``ensure_consistency_batch``'s per-point outputs), including
+        ``pressure`` (unlike the other batched entry points in this
+        module, where boundary conditions are shared/closed-over --
+        here each point has its own *recovered* pressure from the EOS
+        search, so it must be batched too).
+
+        Returns
+        -------
+        tuple
+            ``((density_gradient, energy_gradient), (adjoint_state_d,
+            adjoint_state_e))``, each batched along its leading axis --
+            same shape as :meth:`eos_gradient`'s single-point return.
+        """
+        return jax.vmap(
+            self.eos_gradient,
+            in_axes=(0, 0, 0, 0, 0, 0),
+        )(
+            state, mixture_fraction_pdf, diss_rate, viscous_diss,
+            temp_guess, pressure,
+        )
+
     def evaluate_flamelet(self,
                           params: jnp.ndarray,
                           mixture_fraction_pdf,
@@ -446,6 +483,143 @@ class CompressibleEOS:
         )
         update = jnp.array([v[0], v[1], v[1]])
         return state, temp, update, residual
+
+    def _steady_newton_fn(self, state, diss_rate, viscous_diss, temp_guess,
+                          pressure, h_ox, h_fu):
+        return _state_to_array(
+            self.fwd_solver.gov_eqns.rhs(
+                state, diss_rate, viscous_diss, temp_guess,
+                pressure, h_ox, h_fu
+            )
+        )
+
+    def _steady_newton_jac(self, state, diss_rate, viscous_diss, temp_guess,
+                           pressure, h_ox, h_fu):
+        return self.fwd_solver.gov_eqns.jac(
+            state, diss_rate, viscous_diss, temp_guess, pressure
+        )
+
+    def evaluate_flamelet_traceable(self,
+                                    params: jnp.ndarray,
+                                    mixture_fraction_pdf,
+                                    diss_rate: jnp.ndarray,
+                                    viscous_diss: jnp.ndarray,
+                                    temp_guess: jnp.ndarray,
+                                    state_guess: FlameletState):
+        """Traceable (bounded, no BDF fallback) twin of
+        :meth:`evaluate_flamelet`, for use inside a ``jax.lax.scan``/
+        ``jax.vmap`` batch.
+
+        :meth:`evaluate_flamelet` calls :meth:`FlameletSolver.solve`,
+        whose Python-level Newton-then-BDF-fallback orchestration can't
+        be traced (data-dependent early return on a JAX array's runtime
+        value). This uses :meth:`FlameletSolver._newton_loop_lax_steady`
+        (the bounded, divergence-aware lax loop) instead -- the "vmap the
+        pure-Newton (fast) path" strategy from the plan's Stage 4
+        contingency tier 2. Points whose Newton attempt fails (returned
+        ``success=False``) are NOT retried via BDF here; the caller is
+        responsible for gathering those and re-solving via the existing
+        :meth:`evaluate_flamelet`/:meth:`FlameletSolver.solve` path.
+
+        Returns
+        -------
+        tuple
+            ``(state, temperature, density, energy, density_gradient,
+            energy_gradient, newton_success)`` -- same as
+            :meth:`evaluate_flamelet` plus the Newton success flag.
+        """
+        pressure, h_ox, h_fu = params
+        state, it, delta, newton_success = self.fwd_solver._newton_loop_lax_steady(
+            self._steady_newton_fn,
+            self._steady_newton_jac,
+            state_guess,
+            self.config["newton"]["maxiter"],
+            self.config["newton"]["tol"],
+            diss_rate,
+            viscous_diss,
+            temp_guess,
+            pressure,
+            h_ox,
+            h_fu,
+        )
+        temp = self.fwd_solver.gov_eqns.pyro_gas.get_temperature_from_enthalpy(
+            state.enthalpy, state.mass_fractions, temp_guess
+        )
+
+        (density_gradient, energy_gradient), (adj_d, adj_e) = (
+            self.eos_gradient(
+                state,
+                mixture_fraction_pdf,
+                diss_rate,
+                viscous_diss,
+                temp_guess,
+                pressure,
+            )
+        )
+
+        rt = self.fwd_solver.gov_eqns.compressible_eos_rt(
+            _state_to_array(state),
+            temp,
+            pressure
+        )
+        density = jnp.sum(
+            (pressure / rt) * mixture_fraction_pdf
+        )
+        energy = jnp.sum(
+            (state.enthalpy - rt) * mixture_fraction_pdf
+        )
+        return (
+            state,
+            temp,
+            density,
+            energy,
+            density_gradient,
+            energy_gradient,
+            newton_success,
+        )
+
+    def _gauss_newton_update_traceable(self,
+                                       density_sim: jnp.float64,
+                                       energy_sim: jnp.float64,
+                                       params: jnp.ndarray,
+                                       mixture_fraction_pdf: jnp.ndarray,
+                                       diss_rate: jnp.ndarray,
+                                       viscous_diss: jnp.ndarray,
+                                       temp_guess: jnp.ndarray,
+                                       state_guess: FlameletState):
+        """Traceable twin of :meth:`_gauss_newton_update`, built on
+        :meth:`evaluate_flamelet_traceable`. See that method's docstring
+        for what's different (no BDF fallback).
+
+        Returns
+        -------
+        tuple
+            ``(state, temperature, update, residual, newton_success)``.
+        """
+        (state, temp, density, energy, d_grad, e_grad,
+         newton_success) = self.evaluate_flamelet_traceable(
+            params,
+            mixture_fraction_pdf,
+            diss_rate,
+            viscous_diss,
+            temp_guess,
+            state_guess
+        )
+        grad_matrix = jnp.stack((
+            d_grad,
+            e_grad
+        ))
+        residual = jnp.stack((
+            density - density_sim,
+            energy - energy_sim
+        ))
+
+        v = jnp.linalg.solve(
+            grad_matrix.T @ grad_matrix,
+            -grad_matrix.T @ residual
+        )
+        update = jnp.array([v[0], v[1], v[1]])
+        return state, temp, update, residual, newton_success
 
     def _picard_update(self,
                        density_sim: jnp.float64,
@@ -704,3 +878,143 @@ class CompressibleEOS:
                 break
 
         return state, temp, params, it, delta, residual, history, False
+
+    def ensure_consistency_traceable(self,
+                                     density_sim: jnp.float64,
+                                     energy_sim: jnp.float64,
+                                     params: jnp.ndarray,
+                                     mixture_fraction_pdf: jnp.ndarray,
+                                     diss_rate: jnp.ndarray,
+                                     viscous_diss: jnp.ndarray,
+                                     temp_guess: jnp.ndarray,
+                                     state_guess: FlameletState):
+        """Bounded, traceable/batchable twin of :meth:`ensure_consistency`.
+
+        Runs a ``jax.lax.while_loop`` that stops as soon as ``|v| < tol``
+        (or ``config["eos"]["maxiter"]`` iterations have been performed,
+        whichever comes first) -- rather than a Python ``for`` loop with
+        an early ``break`` (which can't be traced), and rather than an
+        earlier version of this method that used a fixed-``maxiter``
+        ``jax.lax.scan`` with converged-lane masking: that scan always
+        paid for the full ``maxiter`` forward+adjoint passes even when
+        every point converged on iteration 0 (confirmed empirically --
+        see the plan's Stage 5 GPU-scaling notes -- a ~10x waste on a
+        batch that happened to all converge immediately). Under
+        ``jax.vmap``, JAX's own batching rule for ``lax.while_loop``
+        already freezes a lane's carry once *that lane's* predicate goes
+        false, while the whole batch keeps running until the *slowest*
+        lane's predicate does -- so a mixed batch still pays for its
+        hardest point's iteration count, but no longer pays ``maxiter``
+        for every point regardless of difficulty. No manual masking is
+        needed here (unlike the scan version): since the loop only calls
+        ``body_fn`` while not yet converged, every call's update is
+        unconditionally the right one to apply.
+
+        Only ``update_method == "gauss_newton"`` is supported (uses
+        :meth:`_gauss_newton_update_traceable`, built on
+        :meth:`evaluate_flamelet_traceable` -- no BDF fallback, see that
+        method's docstring). ``picard`` is not yet ported to this
+        traceable path.
+
+        Returns
+        -------
+        tuple
+            ``(state, temp, params, it, delta, residual_hist,
+            newton_success_hist, converged)`` -- ``it`` is the iteration
+            index at which ``converged`` first became ``True`` (or
+            ``maxiter - 1`` if it never did), matching
+            :meth:`ensure_consistency`'s convention.
+            ``residual_hist``/``newton_success_hist`` are length-
+            ``maxiter`` per-iteration histories, ``nan``/``False``-filled
+            past the iteration where the loop actually stopped (a
+            correctness improvement over the old scan version, which
+            filled those slots with repeated recomputations at the
+            frozen, already-converged params instead of leaving them
+            empty -- no caller currently reads these histories, but the
+            new values are the more honest ones).
+        """
+        if self.config["eos"]["update_method"] != "gauss_newton":
+            raise ValueError(
+                "ensure_consistency_traceable only supports "
+                "update_method='gauss_newton'"
+            )
+
+        a = self.config["eos"]["update_size"]
+        tol = self.config["eos"]["tol"]
+        maxiter = self.config["eos"]["maxiter"]
+
+        def cond_fn(carry):
+            _, _, _, it, _, converged, _, _ = carry
+            return jnp.logical_and(jnp.logical_not(converged), it < maxiter)
+
+        def body_fn(carry):
+            state, temp, params, it, _, _, residual_hist, newton_success_hist = carry
+            (state_new, temp_new, update, residual,
+             newton_success) = self._gauss_newton_update_traceable(
+                density_sim, energy_sim, params, mixture_fraction_pdf,
+                diss_rate, viscous_diss, temp, state
+            )
+            new_delta = jnp.linalg.norm(update)
+            new_converged = new_delta < tol
+            new_params = params + a * update
+            cost_val = jnp.linalg.norm(residual) ** 2
+
+            return (
+                state_new, temp_new, new_params, it + 1, new_delta,
+                new_converged,
+                residual_hist.at[it].set(cost_val),
+                newton_success_hist.at[it].set(newton_success),
+            )
+
+        carry_init = (
+            state_guess, temp_guess, params,
+            jnp.array(0, dtype=jnp.int32), jnp.array(jnp.inf),
+            jnp.array(False),
+            jnp.full(maxiter, jnp.nan),
+            jnp.zeros(maxiter, dtype=bool),
+        )
+        (state, temp, params, it, delta, converged, residual_hist,
+         newton_success_hist) = jax.lax.while_loop(
+            cond_fn, body_fn, carry_init
+        )
+
+        return (
+            state, temp, params, it - 1, delta,
+            residual_hist, newton_success_hist, converged,
+        )
+
+    @partial(jax.jit, static_argnums=0)
+    def ensure_consistency_batch(self,
+                                 density_sim: jnp.ndarray,
+                                 energy_sim: jnp.ndarray,
+                                 params: jnp.ndarray,
+                                 mixture_fraction_pdf: jnp.ndarray,
+                                 diss_rate: jnp.ndarray,
+                                 viscous_diss: jnp.ndarray,
+                                 temp_guess: jnp.ndarray,
+                                 state_guess: FlameletState):
+        """Batched twin of :meth:`ensure_consistency_traceable` via
+        ``jax.vmap``, for many points at once sharing the same initial
+        ``params`` guess -- the fixed physical baseline boundary
+        conditions, the same for every point (see the plan's Stage 1
+        correction / ``FlameletModel.baseline_params`` in
+        ``synthetic_data.py``). Only what varies per point
+        (``density_sim``/``energy_sim``/``mixture_fraction_pdf``/
+        ``diss_rate``/``viscous_diss``/``temp_guess``/``state_guess``) is
+        batched; ``self`` and ``params`` stay closed-over/shared, the
+        same sharing pattern already used by
+        :meth:`FlameletSolver.flamelet_newton_step`'s ``static_argnums``.
+
+        Returns
+        -------
+        tuple
+            Same fields as :meth:`ensure_consistency_traceable`, each
+            batched along its leading axis.
+        """
+        return jax.vmap(
+            self.ensure_consistency_traceable,
+            in_axes=(0, 0, None, 0, 0, 0, 0, 0),
+        )(
+            density_sim, energy_sim, params, mixture_fraction_pdf,
+            diss_rate, viscous_diss, temp_guess, state_guess,
+        )
