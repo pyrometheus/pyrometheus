@@ -348,6 +348,9 @@ def species_production_rate_expr(sp_index: int,
     """Return the production rate for species with index *sp_index* as
     a pymbolic ExpressionNode
     """
+    if not (fwd_part_set or rev_part_set):
+        # Leaves r_net unread, which a mechanism without reactions lacks.
+        return 0
     ones = _ones_like(r_net[0])
     sum_fwd = sum(nu * r_net[i] for nu, i in zip(stoich_fwd, fwd_part_set))
     sum_rev = sum(nu * r_net[i] for nu, i in zip(stoich_rev, rev_part_set))

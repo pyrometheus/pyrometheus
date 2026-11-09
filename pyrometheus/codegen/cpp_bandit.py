@@ -357,9 +357,12 @@ struct ${name}
     }
 
     %endif
-    static ReactionsT get_equilibrium_constants(TemperatureT const &temperature)
+    static ReactionsT get_equilibrium_constants(
+        [[maybe_unused]] TemperatureT const &temperature)
     {
+        %if bandit_mech.num_reactions:
         const SpeciesT gibbs_rt = get_species_gibbs_rt(temperature);
+        %endif
         ReactionsT log_k_eq;
         %for i, expr in enumerate(bandit_mech.equil_constants):
         %if bandit_mech.is_reversible(i):
@@ -417,11 +420,14 @@ struct ${name}
     }
 
     static ReactionsT get_net_rates_of_progress(
-        TemperatureT const &temperature, SpeciesT const &concentrations)
+        [[maybe_unused]] TemperatureT const &temperature,
+        [[maybe_unused]] SpeciesT const &concentrations)
     {
+        %if bandit_mech.num_reactions:
         const ReactionsT k_fwd =
             get_fwd_rate_coefficients(temperature, concentrations);
         const ReactionsT log_k_eq = get_equilibrium_constants(temperature);
+        %endif
         ReactionsT r_net;
         %for i, expr in enumerate(bandit_mech.mass_action_rates):
         r_net[${i}] = ${cgm(expr)};
@@ -430,12 +436,15 @@ struct ${name}
     }
 
     static SpeciesT get_net_production_rates(
-        ScalarT density, TemperatureT const &temperature,
-        SpeciesT const &mass_fractions)
+        [[maybe_unused]] ScalarT density,
+        [[maybe_unused]] TemperatureT const &temperature,
+        [[maybe_unused]] SpeciesT const &mass_fractions)
     {
+        %if bandit_mech.num_reactions:
         const SpeciesT concentrations = get_concentrations(density, mass_fractions);
         const ReactionsT r_net =
             get_net_rates_of_progress(temperature, concentrations);
+        %endif
         SpeciesT omega;
         %for i, expr in enumerate(bandit_mech.species_prod_rates):
         omega[${i}] = ${cgm(expr)};

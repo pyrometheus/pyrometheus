@@ -723,11 +723,13 @@ contains
             mass_fractions
         ${real_type}, intent(out), dimension(${bandit_mech.num_species}) :: omega
 
+        %if bandit_mech.num_reactions:
         ${real_type}, dimension(${bandit_mech.num_species})   :: concentrations
         ${real_type}, dimension(${bandit_mech.num_reactions}) :: r_net
 
         call get_concentrations(density, mass_fractions, concentrations)
         call get_net_rates_of_progress(temperature, concentrations, r_net)
+        %endif
 
         %for i, expr in enumerate(bandit_mech.species_prod_rates):
         omega(${i+1}) = ${cgm(expr)}

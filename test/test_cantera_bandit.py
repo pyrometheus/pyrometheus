@@ -13,6 +13,7 @@ import pytest
 from pymbolic import evaluate, substitute
 
 from pyrometheus.bandit.chem_expr.kinetics import third_body_concentration_expr
+from bandit_parity import language_available, languages, make_language_gas
 from pyrometheus.bandit.impl.cantera import CanteraMechanism
 
 try:
@@ -568,3 +569,25 @@ def test_net_rates_of_progress_match_cantera(mechname):
         rates, sol.net_rates_of_progress, rtol=1e-10
     )
 
+
+# {{{ mechanisms without reactions
+
+@pytest.mark.parametrize("language", languages)
+def test_reaction_free_mechanisms_generate_working_code(language, tmp_path):
+    reason = language_available(language)
+    if reason is not None:
+        pytest.skip(reason)
+    path = str(mech_dir / "inert.yaml")
+    sol = ct.Solution(path)
+    gas = make_language_gas(
+        CanteraMechanism(path), language, tmp_path, "inert")
+    mass_fractions = np.full(sol.n_species, 1 / sol.n_species)
+    sol.TPY = 1500.0, ct.one_atm, mass_fractions
+    np.testing.assert_array_equal(
+        gas.get_net_production_rates(sol.density, 1500.0, mass_fractions),
+        np.zeros(sol.n_species)
+    )
+    assert gas.get_mixture_enthalpy_mass(1500.0, mass_fractions) == \
+        pytest.approx(sol.enthalpy_mass, rel=1e-12)
+
+# }}}

@@ -231,7 +231,9 @@ class Thermochemistry:
         ])
 
     def get_equilibrium_constants(self, temperature):
+        %if bandit_mech.num_reactions:
         gibbs_rt = self.get_species_gibbs_rt(temperature)
+        %endif
         return self._pyro_make_array([
             %for i, expr in enumerate(bandit_mech.equil_constants):
             %if bandit_mech.is_reversible(i):
@@ -294,8 +296,10 @@ class Thermochemistry:
         ])
 
     def get_net_rates_of_progress(self, temperature, concentrations):
+        %if bandit_mech.num_reactions:
         k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
         log_k_eq = self.get_equilibrium_constants(temperature)
+        %endif
         return self._pyro_make_array([
             %for expr in bandit_mech.mass_action_rates:
             ${cgm(expr)},
@@ -303,9 +307,13 @@ class Thermochemistry:
         ])
 
     def get_net_production_rates(self, density, temperature, mass_fractions):
+        %if bandit_mech.num_reactions:
         concentrations = self.get_concentrations(density, mass_fractions)
         r_net = self.get_net_rates_of_progress(temperature, concentrations)
         ones = self._pyro_ones_like(r_net[0])
+        %else:
+        ones = self._pyro_ones_like(density * mass_fractions[0])
+        %endif
         return self._pyro_make_array([
             %for expr in bandit_mech.species_prod_rates:
             ${cgm(expr)} * ones,
