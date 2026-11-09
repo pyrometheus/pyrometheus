@@ -307,9 +307,10 @@ def test_rate_coefficients_are_built_for_every_reaction(mech):
     assert len(mech.species_prod_rates) == mech.num_species
 
 
-def test_ionized_mixtures_are_rejected():
-    with pytest.raises(NotImplementedError, match="electron"):
-        MutationMechanism("air_11", state_model=STATE_MODEL)
+def test_ionized_mixtures_are_built():
+    mech = MutationMechanism("air_11", state_model=STATE_MODEL)
+    assert mech.species_names[0] == "e-"
+    assert len(mech.rate_coeffs) == mech.num_reactions
 
 
 # --- RRHO thermodynamics ---

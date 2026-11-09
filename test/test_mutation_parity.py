@@ -69,10 +69,11 @@ class MutationSpec:
         return f"{self.mixture}-{self.state_model}-{self.thermo_database}"
 
 
-# air_5 is the only mixture Mutation++ ships without electrons, which
-# MutationMechanism does not support yet.
+# air_11 adds ions and electrons: associative and electron-impact
+# ionization, charge exchange and electron-impact dissociation.
 cases = [
-    MutationSpec("air_5", state_model, thermo_database)
+    MutationSpec(mixture, state_model, thermo_database)
+    for mixture in ["air_5", "air_11"]
     for state_model in ["ChemNonEq1T", "ChemNonEqTTv"]
     for thermo_database in ["NASA-9", "NASA-7"]
 ]
@@ -87,7 +88,17 @@ class KnownGap:
     reason: str
 
 
-known_gaps = []
+def _electrons_out_of_equilibrium(case, params):
+    state = params.get("state")
+    return (case.is_ionized and case.num_temp > 1
+            and state is not None and state[0] != state[1])
+
+
+known_gaps = [
+    KnownGap(_electrons_out_of_equilibrium, "electron_pressure", (
+        "get_pressure takes the heavy temperature alone; Mutation++ puts "
+        "the electrons' partial pressure at the electron temperature")),
+]
 
 
 def block(*names):
@@ -135,6 +146,10 @@ class MutationCase:
             list(density * np.asarray(mass_fractions)),
             list(state[:self.num_temp]), 1
         )
+
+    @property
+    def is_ionized(self):
+        return "e-" in self.mech.species_names
 
     @property
     def specific_gas_constants(self):
@@ -206,24 +221,37 @@ states = equilibrium_states + nonequilibrium_states
 thermo_temperatures = [300.0, 999.0, 1001.0, 3000.0, 5999.0, 6001.0, 15000.0]
 densities = [1e-3, 5e-2]
 
-# Mole fractions of the molecules (N2, O2, NO) and atoms (N, O); the
-# 1e-12 floor keeps every species in every reaction.
+# Mole-fraction shares of each species class; the 1e-12 floor keeps
+# every species in every reaction.
 compositions = {
-    "molecular": 0.95,
-    "dissociated": 0.4,
-    "atomic": 0.05,
+    "molecular": {"molecule": 0.95, "atom": 0.05},
+    "dissociated": {"molecule": 0.4, "atom": 0.6},
+    "atomic": {"molecule": 0.05, "atom": 0.95},
+    "ionized": {"molecule": 0.3, "atom": 0.6, "ion": 0.05},
 }
 composition_names = list(compositions)
 
 
+def species_class(name):
+    if name == "e-":
+        return "electron"
+    if name.endswith("+"):
+        return "ion"
+    return "molecule" if len(name) > 1 else "atom"
+
+
 def mass_fractions_for(case, composition):
-    molecular_share = compositions[composition]
-    molecules = ["N2", "O2", "NO"]
+    if composition == "ionized" and not case.is_ionized:
+        pytest.skip("no ions in this mixture")
+    classes = [species_class(name) for name in case.mech.species_names]
     mole_fractions = np.full(case.num_species, 1e-12)
-    for species_index, name in enumerate(case.mech.species_names):
-        share = molecular_share if name in molecules else 1 - molecular_share
-        count = 3 if name in molecules else 2
-        mole_fractions[species_index] += share / count
+    for kind, share in compositions[composition].items():
+        members = [k for k, c in enumerate(classes) if c == kind]
+        mole_fractions[members] += share / len(members)
+    if case.is_ionized:
+        # Quasi-neutral: one electron per singly charged ion.
+        ions = [k for k, c in enumerate(classes) if c == "ion"]
+        mole_fractions[classes.index("electron")] = mole_fractions[ions].sum()
     weighted = mole_fractions * case.mech.molecular_weights
     return weighted / weighted.sum()
 
@@ -280,6 +308,18 @@ def test_equation_of_state_matches_mutation(case, composition):
     ) == pytest.approx(density, rel=1e-14)
 
 
+@block("electron_pressure")
+@pytest.mark.parametrize("state", nonequilibrium_states)
+def test_pressure_out_of_equilibrium_matches_mutation(case, state):
+    require(case, multi_temperature=True)
+    composition = "ionized" if case.is_ionized else "dissociated"
+    mass_fractions = mass_fractions_for(case, composition)
+    case.set_state(2e-2, state, mass_fractions)
+    assert case.gas.get_pressure(
+        2e-2, state[0], mass_fractions
+    ) == pytest.approx(case.oracle.P(), rel=1e-14)
+
+
 @block("constants")
 def test_temperature_subscripts_are_valid_array_indices(case):
     # C++ and Fortran index temperature as an array: Python's
@@ -294,6 +334,10 @@ def test_temperature_subscripts_are_valid_array_indices(case):
 
 
 # {{{ thermodynamics
+
+def uniform_mass_fractions(case):
+    return np.full(case.num_species, 1 / case.num_species)
+
 
 def uniform_temperature(case, temperature):
     return case.temperature((temperature,) * 2)
@@ -314,7 +358,7 @@ def test_species_specific_heats_match_mutation(case, temperature):
 @block("thermo")
 @pytest.mark.parametrize("temperature", thermo_temperatures)
 def test_species_enthalpies_match_mutation(case, temperature):
-    case.set_state(1e-2, (temperature,) * 2, np.full(5, 0.2))
+    case.set_state(1e-2, (temperature,) * 2, uniform_mass_fractions(case))
     np.testing.assert_allclose(
         case.gas.get_species_enthalpies_rt(
             uniform_temperature(case, temperature)
@@ -326,7 +370,7 @@ def test_species_enthalpies_match_mutation(case, temperature):
 @block("thermo")
 @pytest.mark.parametrize("temperature", thermo_temperatures)
 def test_species_internal_energies_match_mutation(case, temperature):
-    case.set_state(1e-2, (temperature,) * 2, np.full(5, 0.2))
+    case.set_state(1e-2, (temperature,) * 2, uniform_mass_fractions(case))
     # Mutation++ lists one block of species per energy equation, the
     # totals first.
     np.testing.assert_allclose(
@@ -473,13 +517,17 @@ def generated_reverse_rate_coefficients(case, temperature, concentrations):
     """:returns: The reverse rate coefficient of every reaction, without
     its third body, read off the generated rates of progress. With a
     reaction's reactants removed only its reverse term remains, so
-    nothing cancels.
+    nothing cancels. A reactant that is also a product, like the
+    electron in electron-impact reactions, has to stay.
     """
     mech = case.mech
     coefficients = []
     for reaction_index in range(mech.num_reactions):
         isolated = concentrations.copy()
-        isolated[mech.reactants(reaction_index)] = 0.0
+        isolated[[
+            species_index for species_index in mech.reactants(reaction_index)
+            if species_index not in mech.products(reaction_index)
+        ]] = 0.0
         _, product_coeffs = mech.stoichiometric_coefficients(reaction_index)
         product_term = np.prod([
             isolated[species_index] ** coefficient
@@ -503,25 +551,35 @@ def test_reverse_rate_coefficients_match_mutation(case, state, composition):
         np.array(case.oracle.backwardRateCoefficients())
         * molar_unit_factors(case, "products")
     )
+    # exp(ln Keq) turns the absolute rounding of ln Keq into relative
+    # error, which charge exchange, with |dG/RT| in the tens, pushes
+    # past 1e-12.
     np.testing.assert_allclose(
         generated_reverse_rate_coefficients(
             case, case.temperature(state), concentrations
         ),
-        expected, rtol=1e-12
+        expected, rtol=1e-11
     )
 
 
 @block("kinetics")
 def test_dissociation_reverses_at_the_heavy_temperature(case):
     # Mutation++'s recombination depends on Th alone, so changing Tv
-    # must leave every reverse rate coefficient where it was.
+    # must leave every reverse rate coefficient it evaluates at Th where
+    # it was. Reactions that reverse on the electron temperature follow
+    # Tv, which stands in for it in the two-temperature model.
     require(case, multi_temperature=True)
     _, concentrations = kinetics_state(case, (9000.0, 9000.0), "dissociated")
+    heavy = [
+        reaction_index for reaction_index in range(case.mech.num_reactions)
+        if case.oracle.reaction(reaction_index).rev_rate_coeff_temperature
+        == "translational"
+    ]
 
     def reverse_coefficients(vibrational):
         return generated_reverse_rate_coefficients(
             case, np.array([9000.0, vibrational]), concentrations
-        )
+        )[heavy]
 
     np.testing.assert_allclose(
         reverse_coefficients(3000.0), reverse_coefficients(9000.0),

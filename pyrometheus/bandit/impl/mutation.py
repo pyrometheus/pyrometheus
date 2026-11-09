@@ -80,11 +80,6 @@ class MutationMechanism(BaseMechanism):
                  hardcode_params=True):
         self.hardcode_params = hardcode_params
         self.namespace = Mutationpp(mixture, state_model, thermo_database)
-        if self.namespace.__getattr__("hasElectrons").__call__():
-            raise NotImplementedError(
-                f"mixture '{mixture}' carries electrons, whose separate "
-                f"temperature and third-body exclusion are not supported"
-            )
         # Two temperatures are carried and the rate coefficients
         # already select between them, but the vibrational energy and
         # VT transfer source terms are not built yet, so the
@@ -149,14 +144,18 @@ class MutationMechanism(BaseMechanism):
     def third_body_efficiencies(
             self, reaction_index: int) -> Dict[int, float]:
         """:returns: Collision efficiencies keyed by species index. Only
-        species that Mutation++ lists explicitly appear; every other
-        heavy species takes the default efficiency of one.
+        species that Mutation++ lists explicitly appear, and the electron,
+        which never acts as a third body (ThirdBodyManager.h); every
+        other heavy species takes the default efficiency of one.
         """
-        return {
+        efficiencies = {
             species_index: float(efficiency)
             for species_index, efficiency
             in self.reaction(reaction_index).efficiencies
         }
+        if self.namespace.__getattr__("hasElectrons").__call__():
+            efficiencies[self.species_index("e-")] = 0.0
+        return efficiencies
 
     def rate_temperature(self, reaction_index: int, direction: str):
         """:returns: The temperature the rate coefficient of the
@@ -342,6 +341,12 @@ class MutationMechanism(BaseMechanism):
         )
 
     def make_equilibrium_constant(self, reaction_index):
+        """:returns: The equilibrium constant that sets the reverse rate.
+        Mutation++ evaluates it, with every species' Gibbs energy, at the
+        reverse rate temperature (RateLawGroup.h), which for reactions
+        that reverse on the electron temperature is not the heavy one.
+        """
+        from pymbolic import substitute
         expr = equilibrium_constant_expr(
             reaction_index,
             (self.reactants(reaction_index), self.products(reaction_index)),
@@ -349,11 +354,19 @@ class MutationMechanism(BaseMechanism):
             self.namespace.one_atm,
             self.namespace.gas_constant,
         )
-        if self.num_temp > 1:
-            from pymbolic import substitute
-            expr = substitute(
-                expr, {Variable("temperature"): self.thermo_temperature}
-            )
+        if self.num_temp == 1:
+            return expr
+        temperature = self.rate_temperature(reaction_index, "rev")
+        expr = substitute(expr, {Variable("temperature"): temperature})
+        if temperature != self.thermo_temperature:
+            # gibbs_rt holds Gibbs energies at the heavy temperature.
+            gibbs_rt = Variable("gibbs_rt")
+            expr = substitute(expr, {
+                gibbs_rt[species_index]: make_species_nasa_thermo(
+                    self.species_thermo_params(species_index), temperature
+                ).gibbs_poly.expr
+                for species_index in range(self.num_species)
+            })
         return expr
 
     def make_mass_action_rate(self, reaction_index):
