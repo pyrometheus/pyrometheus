@@ -486,6 +486,86 @@ def production_rate_expr(sol: ct.Solution, species, r_net):
     sum_rev = sum(nu*r_net[index] for nu, index in zip(nu_rev, indices_rev))
     return (sum_rev - sum_fwd) * ones
 
+
+def fwd_rate_of_progress_expr(sol: ct.Solution, reaction_index, c, k_fwd):
+    """
+    :returns: Forward rate of progress (non-negative) for reaction
+        *reaction_index*, i.e. the forward part of
+        :func:`rate_of_progress_expr`.
+    """
+    indices_reac = [sol.species_index(sp)
+                    for sp in sol.reaction(reaction_index).reactants]
+    if sol.reaction(reaction_index).orders:
+        nu_reac = [sol.reaction(reaction_index).orders[sp]
+                   for sp in sol.reaction(reaction_index).orders]
+    else:
+        nu_reac = [sol.reaction(reaction_index).reactants[sp]
+                   for sp in sol.reaction(reaction_index).reactants]
+    r_fwd = np.prod([c[index]**nu for index, nu in zip(indices_reac, nu_reac)])
+    return k_fwd[reaction_index] * r_fwd
+
+
+def rev_rate_of_progress_expr(sol: ct.Solution, reaction_index, c,
+                              k_fwd, log_k_eq):
+    """
+    :returns: Reverse rate of progress (non-negative) for reaction
+        *reaction_index*; zero for irreversible reactions.
+    """
+    if not sol.reaction(reaction_index).reversible:
+        return _zeros_like(c[0])
+    indices_prod = [sol.species_index(sp)
+                    for sp in sol.reaction(reaction_index).products]
+    nu_prod = [sol.reaction(reaction_index).products[sp]
+               for sp in sol.reaction(reaction_index).products]
+    r_rev = np.prod([c[index]**nu for index, nu in zip(indices_prod, nu_prod)])
+    return k_fwd[reaction_index] \
+        * p.Variable("exp")(log_k_eq[reaction_index]) * r_rev
+
+
+def _species_reaction_stoich(sol: ct.Solution, species):
+    """
+    :returns: ``(idx_reactant, idx_product, nu_reactant, nu_product)`` -- the
+        reaction indices in which *species* appears as a reactant and as a
+        product, with the matching stoichiometric coefficients. Shared by the
+        creation/destruction splits, which differ only in how these are summed.
+    """
+    si = sol.species_index(species)
+    idx_reactant = [i for i, react in enumerate(sol.reactions())
+                    if species in react.reactants]
+    idx_product = [i for i, react in enumerate(sol.reactions())
+                   if species in react.products]
+    nu_reactant = [sol.reactant_stoich_coeff(si, i) for i in idx_reactant]
+    nu_product = [sol.product_stoich_coeff(si, i) for i in idx_product]
+    return idx_reactant, idx_product, nu_reactant, nu_product
+
+
+def creation_rate_expr(sol: ct.Solution, species, r_fwd, r_rev):
+    """
+    :returns: Species creation rate for *species*: created as a product by
+        forward reactions and as a reactant by reverse reactions. Mirrors
+        Cantera's ``creation_rates``.
+    """
+    ones = _zeros_like(r_fwd[0]) + 1.0
+    idx_reactant, idx_product, nu_reactant, nu_product = \
+        _species_reaction_stoich(sol, species)
+    made = sum(nu*r_fwd[i] for nu, i in zip(nu_product, idx_product)) \
+        + sum(nu*r_rev[i] for nu, i in zip(nu_reactant, idx_reactant))
+    return made * ones
+
+
+def destruction_rate_expr(sol: ct.Solution, species, r_fwd, r_rev):
+    """
+    :returns: Species destruction rate for *species*: consumed as a reactant by
+        forward reactions and as a product by reverse reactions. Mirrors
+        Cantera's ``destruction_rates``. creation - destruction == net.
+    """
+    ones = _zeros_like(r_fwd[0]) + 1.0
+    idx_reactant, idx_product, nu_reactant, nu_product = \
+        _species_reaction_stoich(sol, species)
+    lost = sum(nu*r_fwd[i] for nu, i in zip(nu_reactant, idx_reactant)) \
+        + sum(nu*r_rev[i] for nu, i in zip(nu_product, idx_product))
+    return lost * ones
+
 # }}}
 
 # vim

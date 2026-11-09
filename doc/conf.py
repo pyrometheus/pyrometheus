@@ -14,7 +14,7 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
-import pkg_resources
+from importlib.metadata import version as _get_version
 
 
 # -- Project information -----------------------------------------------------
@@ -25,7 +25,7 @@ author = (
     "Esteban Cisneros, Andreas Kloeckner, Henry Le Berre, "
     "Center for Exascale-Enabled Scramjet Design"
 )
-version = pkg_resources.get_distribution("pyrometheus").version
+version = _get_version("pyrometheus")
 # The full version, including alpha/beta/rc tags.
 release = version
 

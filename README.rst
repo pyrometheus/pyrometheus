@@ -21,11 +21,15 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 .. image:: https://img.shields.io/badge/arXiv-2503.24286-b31b1b.svg
    :target: https://arxiv.org/abs/2503.24286
    :alt: arXiv:2503.24286
+.. image:: https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2025.109987-blue.svg
+   :target: https://doi.org/10.1016/j.cpc.2025.109987
+   :alt: DOI:10.1016/j.cpc.2025.109987
 
 .. When you update this description, consider also updating the one in doc/index.rst.
 
 Pyrometheus is a code generator for chemical mechanisms based on `Cantera
-<https://cantera.org>`__::
+<https://cantera.org>`__. Install it from PyPI (``pip install pyrometheus``)
+or via `Spack <https://spack.io>`__ (``spack install py-pyrometheus``)::
 
     $ python3 -m pip install pyrometheus
     $ python3 -m pyrometheus --help
@@ -51,14 +55,14 @@ Cite me:
 
 .. code-block:: bibtex
 
-    @article{cisneros-garibay2025pyrometheus,
-      title={Pyrometheus: {S}ymbolic abstractions for {XPU} and automatically differentiated computation of combustion kinetics and thermodynamics},
-      author={Esteban Cisneros-Garibay and Henry {Le Berre} and Dimitrios Adam and Spencer H. Bryngelson and Jonathan B. Freund},
-      year={2025},
-      eprint={2503.24286},
-      archivePrefix={arXiv},
-      primaryClass={physics.comp-ph},
-      url={https://arxiv.org/abs/2503.24286}
+    @article{Cisneros25,
+      author = {Cisneros-Garibay, Esteban and {Le Berre}, H. and Adam, D. and Bryngelson, Spencer H. and Freund, Jonathan B.},
+      title = {{Pyrometheus: S}ymbolic abstractions for {XPU} and automatically differentiated computation of combustion kinetics and thermodynamics},
+      year = {2026},
+      volume = {320},
+      pages = {109987},
+      doi = {10.1016/j.cpc.2025.109987},
+      journal = {Computer Physics Communications}
     }
 
 

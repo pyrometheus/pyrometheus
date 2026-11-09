@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name    = "pyrometheus"
-version = "1.0.6"
+version = "1.1.1"
 readme  = "README.rst"
 authors = [
   { name="Esteban Cisneros",  email="ecisnerosg88@gmail.com" },
@@ -12,7 +12,7 @@ authors = [
   { name="Henry Le Berre",    email="hberre3@gatech.edu"   },
 ]
 description = "Code generation for combustion thermochemistry, based on Cantera."
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
@@ -27,9 +27,12 @@ classifiers = [
     "Topic :: Software Development :: Code Generators"
 ]
 dependencies = [
-    "cantera == 3.2.0",
+    "cantera >= 3.1.0",
     "pymbolic",
     "mako",
+    "jax",
+    "jaxlib",
+    "scipy"
 ]
 
 [project.urls]
@@ -62,8 +65,6 @@ dev  = [
     "setuptools"
 ]
 test = [
-    "jax",
-    "jaxlib",
     "pytest",
     "pybind11",
     "setuptools",

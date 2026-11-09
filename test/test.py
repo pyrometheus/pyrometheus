@@ -256,6 +256,27 @@ def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         omega_pm = pyro_gas.get_net_production_rates(rho, temp, y)
         err_r = np.linalg.norm(r_ct-r_pm, np.inf)
         err_omega = np.linalg.norm(omega_ct - omega_pm, np.inf)
+        # Forward/reverse rates of progress and creation/destruction rates
+        rf_pm = np.asarray(pyro_gas.get_fwd_rates_of_progress(temp, c))
+        rr_pm = np.asarray(pyro_gas.get_rev_rates_of_progress(temp, c))
+        cdot_pm = np.asarray(pyro_gas.get_creation_rates(rho, temp, y))
+        ddot_pm = np.asarray(pyro_gas.get_destruction_rates(rho, temp, y))
+        cddot_pm = pyro_gas.get_creation_destruction_rates(rho, temp, y)
+        cdot2_pm = np.asarray(cddot_pm[0])
+        ddot2_pm = np.asarray(cddot_pm[1])
+        err_rf = np.linalg.norm(
+            reactor.kinetics.forward_rates_of_progress - rf_pm, np.inf)
+        err_rr = np.linalg.norm(
+            reactor.kinetics.reverse_rates_of_progress - rr_pm, np.inf)
+        err_cdot = np.linalg.norm(
+            reactor.kinetics.creation_rates - cdot_pm, np.inf)
+        err_ddot = np.linalg.norm(
+            reactor.kinetics.destruction_rates - ddot_pm, np.inf)
+        # Internal consistency: net == creation - destruction
+        err_split = np.linalg.norm(omega_pm - (cdot_pm - ddot_pm), np.inf)
+        # The combined single-pass routine matches the separate ones
+        err_combined = max(np.linalg.norm(cdot2_pm - cdot_pm, np.inf),
+                           np.linalg.norm(ddot2_pm - ddot_pm, np.inf))
         # Print
         print("T = ", reactor.T)
         print("y_ct", reactor.Y)
@@ -268,6 +289,12 @@ def test_kinetics(mechname: str, fuel: str, stoich_ratio: float, dt: float,
         # Compare
         assert err_r < 1.0e-10
         assert err_omega < 1.0e-10
+        assert err_rf < 1.0e-10
+        assert err_rr < 1.0e-10
+        assert err_cdot < 1.0e-10
+        assert err_ddot < 1.0e-10
+        assert err_split < 1.0e-10
+        assert err_combined < 1.0e-10
 
 
 @pytest.mark.skipif(jnp is None, reason="JAX not installed")
@@ -684,3 +711,40 @@ def test_transport(mechname: str, fuel: str, stoich_ratio: float, dt: float,
             ct_diff[i] - pyro_diff[i])
 
         assert err < 1e-10
+
+
+def test_a_mechanism_without_reactions_generates_working_code():
+    """Species and thermo with no kinetics, as in a transport-only calculation.
+
+    With no reactions the generated rate bodies are empty, but the prologues
+    still took rates[0] for an array shape. That raised IndexError when called,
+    and the unused fetches failed the generated-code lint.
+    """
+    from pyrometheus.codegen.python import PythonCodeGenerator
+
+    # Resolved from this file, as backends.py does: pytest's working directory
+    # is not the test directory.
+    import pathlib
+    mech = pathlib.Path(__file__).parent / "mechs" / "inert.yaml"
+    sol = ct.Solution(str(mech))
+    assert sol.n_reactions == 0, "this fixture exists to have no reactions"
+
+    thermochem = PythonCodeGenerator.get_thermochem_class(sol)()
+    sol.TPX = 1200.0, ct.one_atm, "O2:0.21, N2:0.78, AR:0.01"
+
+    for computed, reference in [
+        (thermochem.get_net_production_rates(sol.density, sol.T, sol.Y),
+         sol.net_production_rates),
+        (thermochem.get_creation_rates(sol.density, sol.T, sol.Y),
+         sol.creation_rates),
+        (thermochem.get_destruction_rates(sol.density, sol.T, sol.Y),
+         sol.destruction_rates),
+    ]:
+        computed = np.asarray(computed, dtype=np.float64)
+        assert computed.shape == (sol.n_species,)
+        assert np.allclose(computed, np.asarray(reference, dtype=np.float64),
+                           atol=1e-300)
+
+    # Thermo does not depend on the kinetics.
+    assert np.allclose(thermochem.get_species_enthalpies_rt(sol.T),
+                       sol.standard_enthalpies_RT, rtol=1e-12)
