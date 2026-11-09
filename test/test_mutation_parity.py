@@ -24,7 +24,8 @@ import numpy as np
 import pytest
 
 from bandit_parity import (
-    make_generated_gas, mechanism_expressions, temperature_subscripts,
+    language_available, languages, make_generated_gas, make_language_gas,
+    mechanism_expressions, temperature_subscripts,
 )
 
 try:
@@ -104,6 +105,7 @@ def block(*names):
 @dataclass
 class MutationCase:
     spec: MutationSpec
+    language: str
     mech: "MutationMechanism"
     gas: object
 
@@ -139,14 +141,30 @@ class MutationCase:
         return self.mech.namespace.gas_constant / self.mech.molecular_weights
 
 
-@pytest.fixture(scope="module", params=cases, ids=lambda spec: spec.label)
-def case(request):
-    spec = request.param
+# Every test runs on the generated Python, C++ and Fortran, each checked
+# against Mutation++ itself rather than against one another.
+@pytest.fixture(
+    scope="module",
+    params=[(spec, language) for spec in cases for language in languages],
+    ids=lambda param: f"{param[0].label}-{param[1]}",
+)
+def case(request, tmp_path_factory):
+    spec, language = request.param
+    reason = language_available(language)
+    if reason is not None:
+        pytest.skip(reason)
     mech = MutationMechanism(
         spec.mixture, state_model=spec.state_model,
         thermo_database=spec.thermo_database,
     )
-    return MutationCase(spec=spec, mech=mech, gas=make_generated_gas(mech))
+    module_name = "mutation_" + "_".join(
+        part.lower().replace("-", "") for part in
+        (spec.mixture, spec.state_model, spec.thermo_database)
+    )
+    gas = make_language_gas(
+        mech, language, tmp_path_factory.mktemp(module_name), module_name
+    )
+    return MutationCase(spec=spec, language=language, mech=mech, gas=gas)
 
 
 @pytest.fixture(autouse=True)
@@ -161,7 +179,9 @@ def _mark_known_gaps(request, case):
             )
 
 
-def require(case, multi_temperature=None):
+def require(case, multi_temperature=None, language=None):
+    if language is not None and case.language != language:
+        pytest.skip(f"{language} only")
     if multi_temperature is True and case.num_temp == 1:
         pytest.skip("needs a vibrational temperature")
     if multi_temperature is False and case.num_temp > 1:
@@ -225,14 +245,23 @@ def test_gas_constant_matches_mutation(case):
     assert case.gas.gas_constant == _kmol_per_mol * case.oracle.RU()
 
 
-@block("constants")
-def test_species_indices_follow_mutation_order(case):
-    names = [
+def mutation_species_names(case):
+    return [
         case.oracle.speciesName(species_index)
         for species_index in range(case.num_species)
     ]
-    assert case.gas.species_names == names
-    for species_index, name in enumerate(names):
+
+
+@block("constants")
+def test_species_names_follow_mutation_order(case):
+    if case.language == "fortran":
+        pytest.skip("f2py cannot return Fortran's assumed-length names")
+    assert case.gas.species_names == mutation_species_names(case)
+
+
+@block("constants")
+def test_species_indices_follow_mutation_order(case):
+    for species_index, name in enumerate(mutation_species_names(case)):
         assert case.gas.get_species_index(name) == species_index
 
 
@@ -254,7 +283,9 @@ def test_equation_of_state_matches_mutation(case, composition):
 @block("constants")
 def test_temperature_subscripts_are_valid_array_indices(case):
     # C++ and Fortran index temperature as an array: Python's
-    # temperature[-1] reads out of bounds there.
+    # temperature[-1] reads out of bounds there. The expressions are the
+    # same for every language.
+    require(case, language="python")
     assert temperature_subscripts(
         mechanism_expressions(case.mech)
     ) <= set(range(case.num_temp))
@@ -580,12 +611,15 @@ def assert_batched_production_rates(case, production):
 
 @block("kinetics")
 def test_batched_states_match_mutation_pointwise(case):
+    # Generated C++ and Fortran evaluate one state per call.
+    require(case, language="python")
     assert_batched_production_rates(case, case.gas.get_net_production_rates)
 
 
 @block("kinetics")
 @pytest.mark.skipif(jnp is None, reason="jax is not installed")
 def test_jax_generated_code_matches_mutation(case):
+    require(case, language="python")
     gas = make_generated_gas(case.mech, jnp)
     production = jax.jit(gas.get_net_production_rates)
     assert_batched_production_rates(
