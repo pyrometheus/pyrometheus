@@ -93,6 +93,8 @@ cases = [
     CppSpec("plato", "air11-TTvTe", ("air11", "air11_park93", "TTvTe")),
     CppSpec("mutation", "air_5-1T", ("air_5", "ChemNonEq1T")),
     CppSpec("mutation", "air_5-TTv", ("air_5", "ChemNonEqTTv"), jacobian=True),
+    CppSpec("mutation", "air_11-1T", ("air_11", "ChemNonEq1T")),
+    CppSpec("mutation", "air_11-TTv", ("air_11", "ChemNonEqTTv"), jacobian=True),
 ]
 
 
@@ -117,9 +119,23 @@ class CppCase:
         return np.array(state[:self.num_temp])
 
     def mass_fractions(self, seed=0):
-        """:returns: A composition in which every species takes part."""
+        """:returns: A composition in which every species takes part.
+            Electrons, when present, balance the ions' charge: a random
+            share would make the gas mostly electrons by count and drive
+            rates to where finite differences lose every digit.
+        """
         rng = np.random.default_rng(seed)
         mass_fractions = rng.uniform(0.05, 1.0, self.mech.num_species)
+        names = self.mech.species_names
+        electrons = [k for k, name in enumerate(names) if name in ("e-", "em")]
+        if electrons:
+            weights = np.asarray(self.mech.molecular_weights)
+            ions = [k for k, name in enumerate(names)
+                    if name.endswith("+") or (name.endswith("p")
+                                              and name != "em")]
+            mass_fractions[electrons[0]] = weights[electrons[0]] * sum(
+                mass_fractions[k] / weights[k] for k in ions
+            )
         return mass_fractions / mass_fractions.sum()
 
 
