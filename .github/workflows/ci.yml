@@ -58,6 +58,33 @@ jobs:
                 cmake --build build --parallel $(nproc)
                 ctest --test-dir build --output-on-failure -j $(nproc)
 
+    bandit:
+        # Generated Python, C++ and Fortran against Cantera, Mutation++ and
+        # Plato. Plato is not public; its suites replay the answers recorded
+        # under test/data/plato.
+        name: Bandit Py${{ matrix.python-version }}
+        strategy:
+            matrix:
+                python-version: ["3.10", "3.13"]
+        runs-on: ubuntu-latest
+        steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: ${{ matrix.python-version }}
+        -   name: "Fortran compiler"
+            run: sudo apt-get update && sudo apt-get install -y gfortran
+        -   name: "Mutation++"
+            # TODO: install from PyPI once mutationpp/Mutationpp#341, which
+            # adds the bindings Bandit reads, is released.
+            run: |
+                python3 -m pip install --upgrade pip
+                python3 -m pip install "mutationpp @ git+https://github.com/ecisneros8/Mutationpp@nanobind-bindings"
+        -   name: "PyTest"
+            run: |
+                python3 -m pip install -e ".[test]" jax
+                python3 -m pytest test --backend python -q
+
     docs:
         name: Documentation
         runs-on: ubuntu-latest
