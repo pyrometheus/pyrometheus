@@ -97,17 +97,17 @@ class MutationMechanism(BaseMechanism):
     @property
     def num_temp(self):
         """Return number of temperatures."""
-        return self.namespace.__getattr__("num_energy_eqns")
+        return self.namespace.__getattr__("nEnergyEqns").__call__()
 
     @property
     def num_species(self):
         """Return number of species."""
-        return self.namespace.__getattr__("num_species")
+        return self.namespace.__getattr__("nSpecies").__call__()
 
     @property
     def num_reactions(self):
         """Return number of reactions."""
-        return self.namespace.__getattr__("num_reactions")
+        return self.namespace.__getattr__("nReactions").__call__()
 
     @property
     def molecular_weights(self):
