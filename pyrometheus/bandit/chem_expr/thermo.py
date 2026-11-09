@@ -362,8 +362,9 @@ def vibrational_specific_heat_expr(
     ])
 
 
-def vibrational_energy_expr(specific_gas_constant: np.float64,
-                            vibrational_temperatures: np.ndarray) -> p.ExpressionNode:
+def vibrational_energy_expr(
+        specific_gas_constant: np.float64,
+        vibrational_temperatures: np.ndarray) -> p.ExpressionNode:
     return np.sum([
         specific_gas_constant
         * t_vib

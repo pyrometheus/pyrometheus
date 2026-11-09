@@ -62,8 +62,8 @@ class ArrheniusCoefficient(RateCoefficient):
         self.a = p.Variable("a")[self.reaction_index]
         self.b = p.Variable("b")[self.reaction_index]
         self.t_a = p.Variable("t_a")[self.reaction_index]
-        self.expr = exp(self.a + self.b * log(_temp) -
-                        self.t_a / _temp)
+        self.expr = exp(self.a + self.b * log(_temp)
+                        - self.t_a / _temp)
 
         if self.params:
             self.hardcore_parameters(self.params)

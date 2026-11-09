@@ -846,7 +846,8 @@ contains
         ${real_type}, intent(out), &
             dimension(${bandit_mech.num_species}) :: vibe_energy
 
-        %for i, expr in enumerate(bandit_mech.nasa_polynomial_vibrational_energy_exprs):
+        <% vibronic_exprs = bandit_mech.nasa_polynomial_vibrational_energy_exprs %>
+        %for i, expr in enumerate(vibronic_exprs):
         vibe_energy(${i+1}) = ${cgm(expr)}
         %endfor
 
@@ -861,7 +862,11 @@ contains
         ${real_type}, intent(out), &
             dimension(${bandit_mech.num_species}) :: vibe_specific_heat
 
-        %for i, expr in enumerate(bandit_mech.nasa_polynomial_vibrational_specific_heat_exprs):
+        <%
+            vibronic_exprs = (
+                bandit_mech.nasa_polynomial_vibrational_specific_heat_exprs)
+        %>
+        %for i, expr in enumerate(vibronic_exprs):
         vibe_specific_heat(${i+1}) = ${cgm(expr)}
         %endfor
 

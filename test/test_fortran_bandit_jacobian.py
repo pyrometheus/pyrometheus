@@ -35,7 +35,7 @@ try:
     from pyrometheus.bandit.impl.plato import PlatoMechanism
     from pyrometheus.codegen import CodeGenerationOptions
     from pyrometheus.codegen.fortran_bandit import (
-        FortranBanditCodeGenerator as fortran,
+        FortranBanditCodeGenerator,
     )
 except ImportError:
     plato_available = False
@@ -68,7 +68,8 @@ def jac_fort(tmp_path_factory):
     try:
         opts = CodeGenerationOptions(compute_jacobian=True)
         fortran_module_name = "air5_ttv_jacobian_test"
-        source = fortran.generate(fortran_module_name, mech, opts)
+        source = FortranBanditCodeGenerator.generate(
+            fortran_module_name, mech, opts)
         tmp_path = tmp_path_factory.mktemp("fortran_jacobian")
         module = compile_fortran_module(tmp_path, source, MODULE_NAME)
     finally:

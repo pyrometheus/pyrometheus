@@ -1,7 +1,6 @@
 from __future__ import annotations
 import numpy as np
 import pymbolic.primitives as p
-from dataclasses import field
 from typing import List, Union, Tuple, ForwardRef
 from pyrometheus.bandit.chem_expr.kinetics import (FalloffReaction,
                                                    RateCoefficient)
@@ -32,7 +31,7 @@ class BaseMechanism:
     pyro_generated: bool = False
     pyro_compiled: bool = False
     pyro_code: str = None
-    pyro_engine: ForwardRef('Thermochemistry') = None  # noqa: F821
+    pyro_engine: ForwardRef("Thermochemistry") = None  # noqa: F821
     rate_coeffs: np.ndarray = np.empty(shape=(0,), dtype=RateCoefficient)
     falloff_reactions: np.ndarray = np.empty(
         shape=(0,), dtype=FalloffReaction
@@ -229,7 +228,8 @@ class BaseMechanism:
         """
         raise NotImplementedError
 
-    def make_species_vibrational_thermo(self, species_index) -> SpeciesVibrationalThermo:
+    def make_species_vibrational_thermo(
+            self, species_index) -> SpeciesVibrationalThermo:
         """:return: Harmonic-oscillator expressions as a
         "class:`chem_expr.thermo.SpeciesVibrationalThermo`
         """
@@ -281,21 +281,24 @@ class BaseMechanism:
         """
         raise NotImplementedError
 
-    def make_translational_rotational_energy_expr(self, species_index) -> p.ExpressionNode:
+    def make_translational_rotational_energy_expr(
+            self, species_index) -> p.ExpressionNode:
         """:return: The translational-rotational internal energy
         expression for species with index *species_index*, as a
         :class:`pymbolic.primitives.ExpressionNode`.
         """
         raise NotImplementedError
 
-    def make_nasa_polynomial_vibrational_energy_expr(self, species_index) -> p.ExpressionNode:
+    def make_nasa_polynomial_vibrational_energy_expr(
+            self, species_index) -> p.ExpressionNode:
         """:return: The NASA-polynomial-based vibronic energy expression
         for species with index *species_index*, as a
         :class:`pymbolic.primitives.ExpressionNode`.
         """
         raise NotImplementedError
 
-    def make_nasa_polynomial_vibrational_specific_heat_expr(self, species_index) -> p.ExpressionNode:
+    def make_nasa_polynomial_vibrational_specific_heat_expr(
+            self, species_index) -> p.ExpressionNode:
         """:return: The NASA-polynomial-based vibronic specific heat
         expression for species with index *species_index*, as a
         :class:`pymbolic.primitives.ExpressionNode`.
@@ -328,7 +331,6 @@ class BaseMechanism:
         """
         raise NotImplementedError
 
-
     def make_mass_action_rate(self, reaction_index, hardcode_params=True):
         """
         :returns: mass action rate for *reaction_index* as a
@@ -338,7 +340,7 @@ class BaseMechanism:
         :class:`pymbolic.primitives.Product` of reactant
         concentrations.
         """
-        conc = p.Variable('concentrations')
+        conc = p.Variable("concentrations")
         indices = self.reactants(reaction_index)
         stoich = self.stoichiometric_coefficients(reaction_index)
         rate_coeff, param_vals = self.make_rate_coefficient(
@@ -446,7 +448,8 @@ class BaseMechanism:
             )
             self.nasa_polynomial_vibrational_specific_heat_exprs = np.append(
                 self.nasa_polynomial_vibrational_specific_heat_exprs,
-                self.make_nasa_polynomial_vibrational_specific_heat_expr(species_index)
+                self.make_nasa_polynomial_vibrational_specific_heat_expr(
+                    species_index)
             )
 
     def make_transport(self):

@@ -17,7 +17,6 @@ compiler and pybind11.
 import inspect
 import pathlib
 from dataclasses import dataclass, field
-from typing import Optional
 
 import cantera as ct
 import numpy as np
@@ -96,7 +95,8 @@ class CppCase:
     mech: object
     cpp: object
     gas: object
-    rng: np.random.Generator = field(default_factory=lambda: np.random.default_rng(7))
+    rng: np.random.Generator = field(
+        default_factory=lambda: np.random.default_rng(7))
 
     @property
     def num_temp(self):
@@ -190,6 +190,10 @@ states = [
 ]
 
 
+def state_id(state):
+    return "-".join(map(str, map(int, state)))
+
+
 def states_for(case):
     # Cantera's NASA-7 fits stop at a few thousand kelvin.
     if case.spec.library == "cantera":
@@ -255,7 +259,7 @@ def call_arguments(case, function, state, mass_fractions):
     return [values[name] for name in names]
 
 
-@pytest.mark.parametrize("state", states, ids=lambda s: "-".join(map(str, map(int, s))))
+@pytest.mark.parametrize("state", states, ids=state_id)
 @pytest.mark.parametrize("function", shared_functions)
 def test_cpp_matches_generated_python(case, function, state):
     if state not in states_for(case):
@@ -288,7 +292,8 @@ def test_cpp_constants_match_generated_python(case):
     assert case.cpp.num_temperatures == case.gas.num_temperatures
     assert case.cpp.gas_constant == case.gas.gas_constant
     assert case.cpp.one_atm == case.gas.one_atm
-    np.testing.assert_array_equal(case.cpp.molecular_weights, case.gas.molecular_weights)
+    np.testing.assert_array_equal(
+        case.cpp.molecular_weights, case.gas.molecular_weights)
 
 
 def test_cpp_species_names_round_trip(case):
@@ -390,8 +395,9 @@ def test_cpp_mixture_thermo_matches_cantera(case, temperature):
             pytest.approx(expected, rel=1e-11), function
     assert case.cpp.get_density(solution.P, temperature, mass_fractions) == \
         pytest.approx(solution.density_mass, rel=1e-12)
-    assert case.cpp.get_pressure(solution.density_mass, temperature, mass_fractions) == \
-        pytest.approx(solution.P, rel=1e-12)
+    assert case.cpp.get_pressure(
+        solution.density_mass, temperature, mass_fractions
+    ) == pytest.approx(solution.P, rel=1e-12)
 
 
 @pytest.mark.parametrize("temperature", [1400.0, 2500.0])
@@ -407,7 +413,8 @@ def test_cpp_kinetics_matches_cantera(case, temperature):
         np.asarray(case.cpp.get_equilibrium_constants(temperature))[reversible],
         -np.log(solution.equilibrium_constants[reversible]), rtol=1e-11
     )
-    concentrations = case.cpp.get_concentrations(solution.density_mass, mass_fractions)
+    concentrations = case.cpp.get_concentrations(
+        solution.density_mass, mass_fractions)
     expected = solution.net_rates_of_progress
     np.testing.assert_allclose(
         case.cpp.get_net_rates_of_progress(temperature, concentrations), expected,
@@ -453,32 +460,38 @@ def test_cpp_transport_matches_plato(case, state):
     mass_fractions = case.mass_fractions()
     mole_fractions = np.asarray(case.cpp.get_mole_fractions(mass_fractions))
     pressure = 1e5
-    number_density = plato_number_density(case, temperature, mole_fractions, pressure)
+    number_density = plato_number_density(
+        case, temperature, mole_fractions, pressure)
 
     np.testing.assert_allclose(
-        np.asarray(case.cpp.get_species_binary_mass_diffusivities(temperature)) / pressure,
+        np.asarray(case.cpp.get_species_binary_mass_diffusivities(temperature))
+        / pressure,
         oracle.binary_diffusion_coefficients(
             number_density, plato_temperature, mole_fractions),
         rtol=1e-12, atol=0
     )
-    assert case.cpp.get_mixture_viscosity(temperature, mass_fractions) == pytest.approx(
+    assert case.cpp.get_mixture_viscosity(
+        temperature, mass_fractions
+    ) == pytest.approx(
         oracle.viscosity(number_density, plato_temperature, mole_fractions),
         rel=1e-11, abs=0)
     np.testing.assert_allclose(
         np.atleast_1d(case.cpp.get_mixture_thermal_conductivities(
             temperature, mass_fractions)),
-        oracle.thermal_conductivities(number_density, plato_temperature, mole_fractions),
+        oracle.thermal_conductivities(
+            number_density, plato_temperature, mole_fractions),
         rtol=1e-11, atol=0
     )
     np.testing.assert_allclose(
-        case.cpp.get_species_effective_diffusivities(pressure, temperature, mass_fractions),
+        case.cpp.get_species_effective_diffusivities(
+            pressure, temperature, mass_fractions),
         oracle.effective_diffusion_coefficients(
             number_density, plato_temperature, mole_fractions),
         rtol=1e-11, atol=0
     )
 
 
-@pytest.mark.parametrize("state", states, ids=lambda s: "-".join(map(str, map(int, s))))
+@pytest.mark.parametrize("state", states, ids=state_id)
 def test_cpp_production_rates_match_plato(case, state):
     # Ionized kinetics is a known gap of the bandit port itself; see
     # test_plato_parity.known_gaps.
@@ -504,7 +517,8 @@ def test_cpp_relaxation_times_match_plato(case, heavy):
     # Plato raises Th to -0.3333333333 rather than -1/3 in
     # Millikan-White, which moves p tau by up to ~1e-8.
     np.testing.assert_allclose(
-        case.cpp.get_pressure_relaxation_times(case.temperature((heavy, 1000.0, 1000.0))),
+        case.cpp.get_pressure_relaxation_times(
+            case.temperature((heavy, 1000.0, 1000.0))),
         plato_oracle(case).get_ptau_vt(heavy), rtol=2e-8
     )
 
@@ -522,7 +536,7 @@ def mutation_state(case, temperature, densities):
     return np.asarray(densities) / case.mech.molecular_weights
 
 
-@pytest.mark.parametrize("state", states[2:], ids=lambda s: "-".join(map(str, map(int, s))))
+@pytest.mark.parametrize("state", states[2:], ids=state_id)
 def test_cpp_forward_rate_coefficients_match_mutation(case, state):
     require(case, library="mutation")
     temperature = case.temperature(state)
@@ -554,9 +568,11 @@ def test_cpp_forward_rate_coefficients_match_mutation(case, state):
 def test_cpp_species_thermo_matches_mutation(case, temperature):
     require(case, library="mutation")
     mix = case.mech.namespace.mix
-    mutation_state(case, (temperature,) * case.num_temp, [1e-3] * case.mech.num_species)
+    mutation_state(case, (temperature,) * case.num_temp,
+                   [1e-3] * case.mech.num_species)
     np.testing.assert_allclose(
-        case.cpp.get_species_specific_heats_cp_r(case.temperature((temperature,) * 3)),
+        case.cpp.get_species_specific_heats_cp_r(
+            case.temperature((temperature,) * 3)),
         mix.speciesCpOverR(temperature), rtol=1e-10
     )
     np.testing.assert_allclose(

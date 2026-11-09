@@ -7,7 +7,6 @@ importable.
 """
 
 import pytest
-import numpy as np
 
 from plato_cassette import plato_available as _plato_available, plato_db_path
 
@@ -181,7 +180,6 @@ def test_make_species_nasa_thermo_returns_species_nasa_thermo(mech):
 
 
 def test_poly_params_shape(mech):
-    from pyrometheus.bandit.chem_expr.thermo import PolynomialParameters
     # Build PolynomialParameters directly to verify extraction
     sp = 1   # 1-based
     ns = mech.namespace

@@ -52,8 +52,8 @@ _reaction_dict = {
 _temp_map = {
     "translational": Variable("temperature"),
     "geometric_ttv": Variable("sqrt")(
-        Variable("temperature")[0] *
-        Variable("temperature")[1]
+        Variable("temperature")[0]
+        * Variable("temperature")[1]
     )
 }
 
@@ -596,7 +596,7 @@ class PlatoMechanism(BaseMechanism):
         t_var = (
             Variable("temperature") if self.num_temp == 1 else
             (
-                self.electron_temperature if sp_name == 'em' else
+                self.electron_temperature if sp_name == "em" else
                 Variable("temperature")[0]
             )
         )

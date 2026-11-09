@@ -167,8 +167,10 @@ struct ${name}
     using TemperaturesT = std::array<ScalarT, num_temperatures>;
     using TemperatureT = ${temperature_type(bandit_mech)};
 
-    static constexpr double one_atm = ${float_to_cpp(bandit_mech.namespace.one_atm)};
-    static constexpr double gas_constant = ${float_to_cpp(bandit_mech.namespace.gas_constant)};
+    static constexpr double one_atm =
+        ${float_to_cpp(bandit_mech.namespace.one_atm)};
+    static constexpr double gas_constant =
+        ${float_to_cpp(bandit_mech.namespace.gas_constant)};
     static constexpr std::array<double, num_species> molecular_weights = {
         ${str_np(bandit_mech.molecular_weights)}
     };
@@ -215,7 +217,8 @@ struct ${name}
         const ScalarT mix_mol_weight = get_mixture_molecular_weight(mass_fractions);
         SpeciesT mole_fractions;
         %for i in range(bandit_mech.num_species):
-        mole_fractions[${i}] = inv_molecular_weights[${i}] * mass_fractions[${i}] * mix_mol_weight;
+        mole_fractions[${i}] =
+            inv_molecular_weights[${i}] * mass_fractions[${i}] * mix_mol_weight;
         %endfor
         return mole_fractions;
     }
@@ -239,7 +242,8 @@ struct ${name}
     {
         SpeciesT concentrations;
         %for i in range(bandit_mech.num_species):
-        concentrations[${i}] = density * mass_fractions[${i}] * inv_molecular_weights[${i}];
+        concentrations[${i}] =
+            density * mass_fractions[${i}] * inv_molecular_weights[${i}];
         %endfor
         return concentrations;
     }
@@ -249,7 +253,8 @@ struct ${name}
     {
         return (
             %for i in range(bandit_mech.num_species):
-            + inv_molecular_weights[${i}] * mass_fractions[${i}] * spec_property[${i}]
+            + inv_molecular_weights[${i}] * mass_fractions[${i}]
+                * spec_property[${i}]
             %endfor
         );
     }
@@ -314,15 +319,17 @@ struct ${name}
     static ScalarT get_mixture_enthalpy_mass(
         TemperatureT const &temperature, SpeciesT const &mass_fractions)
     {
-        return gas_constant * ${temperature_leading_term(bandit_mech)} * get_mass_average_property(
-            mass_fractions, get_species_enthalpies_rt(temperature));
+        return gas_constant * ${temperature_leading_term(bandit_mech)}
+            * get_mass_average_property(
+                mass_fractions, get_species_enthalpies_rt(temperature));
     }
 
     static ScalarT get_mixture_internal_energy_mass(
         TemperatureT const &temperature, SpeciesT const &mass_fractions)
     {
-        return gas_constant * ${temperature_leading_term(bandit_mech)} * get_mass_average_property(
-            mass_fractions, get_species_internal_energies_rt(temperature));
+        return gas_constant * ${temperature_leading_term(bandit_mech)}
+            * get_mass_average_property(
+                mass_fractions, get_species_internal_energies_rt(temperature));
     }
 
     %if bandit_mech.num_temp == 1:
@@ -358,7 +365,8 @@ struct ${name}
         %if bandit_mech.is_reversible(i):
         log_k_eq[${i}] = ${cgm(expr)};
         %else:
-        log_k_eq[${i}] = -0.17364695002734 * ${temperature_leading_term(bandit_mech)};
+        log_k_eq[${i}] =
+            -0.17364695002734 * ${temperature_leading_term(bandit_mech)};
         %endif
         %endfor
         return log_k_eq;
@@ -373,7 +381,18 @@ struct ${name}
     {
         FalloffT k_high, k_low, falloff_center, reduced_pressure;
         FalloffT falloff_factor, falloff_function, falloff_rate_coefficients;
-        %for attribute, target in [("high_rate_expr", "k_high"), ("low_rate_expr", "k_low"), ("falloff_center", "falloff_center"), ("reduced_pressure", "reduced_pressure"), ("falloff_factor", "falloff_factor"), ("falloff_function", "falloff_function"), ("rate_coefficient", "falloff_rate_coefficients")]:
+        <%
+            falloff_stages = [
+                ("high_rate_expr", "k_high"),
+                ("low_rate_expr", "k_low"),
+                ("falloff_center", "falloff_center"),
+                ("reduced_pressure", "reduced_pressure"),
+                ("falloff_factor", "falloff_factor"),
+                ("falloff_function", "falloff_function"),
+                ("rate_coefficient", "falloff_rate_coefficients"),
+            ]
+        %>
+        %for attribute, target in falloff_stages:
         %for i, falloff in enumerate(bandit_mech.falloff_reactions):
         ${target}[${i}] = ${cgm(getattr(falloff, attribute))};
         %endfor
@@ -400,7 +419,8 @@ struct ${name}
     static ReactionsT get_net_rates_of_progress(
         TemperatureT const &temperature, SpeciesT const &concentrations)
     {
-        const ReactionsT k_fwd = get_fwd_rate_coefficients(temperature, concentrations);
+        const ReactionsT k_fwd =
+            get_fwd_rate_coefficients(temperature, concentrations);
         const ReactionsT log_k_eq = get_equilibrium_constants(temperature);
         ReactionsT r_net;
         %for i, expr in enumerate(bandit_mech.mass_action_rates):
@@ -414,7 +434,8 @@ struct ${name}
         SpeciesT const &mass_fractions)
     {
         const SpeciesT concentrations = get_concentrations(density, mass_fractions);
-        const ReactionsT r_net = get_net_rates_of_progress(temperature, concentrations);
+        const ReactionsT r_net =
+            get_net_rates_of_progress(temperature, concentrations);
         SpeciesT omega;
         %for i, expr in enumerate(bandit_mech.species_prod_rates):
         omega[${i}] = ${cgm(expr)};
@@ -453,7 +474,8 @@ struct ${name}
         return energies;
     }
 
-    static SpeciesT get_species_vibrational_specific_heats(TemperatureT const &temperature)
+    static SpeciesT get_species_vibrational_specific_heats(
+        TemperatureT const &temperature)
     {
         SpeciesT specific_heats;
         %for i, sp_thermo in enumerate(bandit_mech.species_vib_thermo_expressions):
@@ -485,7 +507,8 @@ struct ${name}
             ;
     }
 
-    static SpeciesT get_translational_rotational_energy(TemperatureT const &temperature)
+    static SpeciesT get_translational_rotational_energy(
+        TemperatureT const &temperature)
     {
         SpeciesT energies;
         %for i, expr in enumerate(bandit_mech.translational_rotational_energy_exprs):
@@ -494,10 +517,12 @@ struct ${name}
         return energies;
     }
 
-    static SpeciesT get_nasa_polynomial_vibrational_energy(TemperatureT const &temperature)
+    static SpeciesT get_nasa_polynomial_vibrational_energy(
+        TemperatureT const &temperature)
     {
         SpeciesT energies;
-        %for i, expr in enumerate(bandit_mech.nasa_polynomial_vibrational_energy_exprs):
+        <% vibronic_exprs = bandit_mech.nasa_polynomial_vibrational_energy_exprs %>
+        %for i, expr in enumerate(vibronic_exprs):
         energies[${i}] = ${cgm(expr)};
         %endfor
         return energies;
@@ -507,7 +532,11 @@ struct ${name}
         TemperatureT const &temperature)
     {
         SpeciesT specific_heats;
-        %for i, expr in enumerate(bandit_mech.nasa_polynomial_vibrational_specific_heat_exprs):
+        <%
+            vibronic_exprs = (
+                bandit_mech.nasa_polynomial_vibrational_specific_heat_exprs)
+        %>
+        %for i, expr in enumerate(vibronic_exprs):
         specific_heats[${i}] = ${cgm(expr)};
         %endfor
         return specific_heats;
@@ -569,7 +598,8 @@ struct ${name}
         SpeciesT const &mass_fractions)
     {
         const SpeciesT mole_fractions = get_transport_mole_fractions(mass_fractions);
-        const ScalarT number_density = pressure / (${float_to_cpp(boltzmann)} * ${cgm(heavy)});
+        const ScalarT number_density =
+            pressure / (${float_to_cpp(boltzmann)} * ${cgm(heavy)});
         SpeciesT diffusivities;
         %for i, expr in enumerate(transport.number_density_effective_diffusivities):
         diffusivities[${i}] = (${cgm(expr)}) / number_density;
