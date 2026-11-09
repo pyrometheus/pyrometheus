@@ -86,24 +86,11 @@ class KnownGap:
     reason: str
 
 
-def _vibrational_nonequilibrium(case, params):
-    if case.num_temp == 1:
-        return False
-    # Batched states draw independent temperatures.
-    state = params.get("state")
-    return state is None or state[0] != state[1]
-
-
 def _multi_temperature(case, params):
     return case.num_temp > 1
 
 
 known_gaps = [
-    KnownGap(_vibrational_nonequilibrium, "recombination", (
-        "bandit evaluates recombination at the dissociation temperature "
-        "sqrt(Th Tv) divided by an equilibrium constant at Th; Mutation++ "
-        "evaluates it at Th, which rate_temperature(r, 'rev') reports but "
-        "make_mass_action_rate ignores")),
     KnownGap(_multi_temperature, "energy_exchange", (
         "MutationMechanism does not build the vibrational energy or the "
         "VT energy transfer source, so nothing drives Tv")),
@@ -461,39 +448,59 @@ def test_forward_rate_coefficients_match_mutation(case, state, composition):
     )
 
 
-@block("kinetics", "recombination")
+def generated_reverse_rate_coefficients(case, temperature, concentrations):
+    """:returns: The reverse rate coefficient of every reaction, without
+    its third body, read off the generated rates of progress. With a
+    reaction's reactants removed only its reverse term remains, so
+    nothing cancels.
+    """
+    mech = case.mech
+    coefficients = []
+    for reaction_index in range(mech.num_reactions):
+        isolated = concentrations.copy()
+        isolated[mech.reactants(reaction_index)] = 0.0
+        _, product_coeffs = mech.stoichiometric_coefficients(reaction_index)
+        product_term = np.prod([
+            isolated[species_index] ** coefficient
+            for species_index, coefficient
+            in zip(mech.products(reaction_index), product_coeffs)
+        ])
+        rate = case.gas.get_net_rates_of_progress(temperature, isolated)
+        coefficients.append(
+            -rate[reaction_index] / product_term
+            / third_body_concentrations(case, isolated)[reaction_index]
+        )
+    return np.array(coefficients)
+
+
+@block("kinetics")
 @pytest.mark.parametrize("composition", composition_names)
 @pytest.mark.parametrize("state", states)
 def test_reverse_rate_coefficients_match_mutation(case, state, composition):
     _, concentrations = kinetics_state(case, state, composition)
-    gas = case.gas
-    temperature = case.temperature(state)
-    # bandit's net rate is k_fwd (r_fwd - exp(log_k_eq) r_rev), so the
-    # reverse coefficient is their product.
-    actual = gas.get_fwd_rate_coefficients(
-        temperature, concentrations
-    ) * np.exp(gas.get_equilibrium_constants(temperature))
     expected = (
         np.array(case.oracle.backwardRateCoefficients())
         * molar_unit_factors(case, "products")
-        * third_body_concentrations(case, concentrations)
     )
-    np.testing.assert_allclose(actual, expected, rtol=1e-10)
+    np.testing.assert_allclose(
+        generated_reverse_rate_coefficients(
+            case, case.temperature(state), concentrations
+        ),
+        expected, rtol=1e-12
+    )
 
 
-@block("kinetics", "recombination")
+@block("kinetics")
 def test_dissociation_reverses_at_the_heavy_temperature(case):
     # Mutation++'s recombination depends on Th alone, so changing Tv
-    # must leave every backward rate coefficient where it was.
+    # must leave every reverse rate coefficient where it was.
     require(case, multi_temperature=True)
     _, concentrations = kinetics_state(case, (9000.0, 9000.0), "dissociated")
-    gas = case.gas
 
     def reverse_coefficients(vibrational):
-        temperature = np.array([9000.0, vibrational])
-        return gas.get_fwd_rate_coefficients(
-            temperature, concentrations
-        ) * np.exp(gas.get_equilibrium_constants(temperature))
+        return generated_reverse_rate_coefficients(
+            case, np.array([9000.0, vibrational]), concentrations
+        )
 
     np.testing.assert_allclose(
         reverse_coefficients(3000.0), reverse_coefficients(9000.0),
@@ -505,7 +512,7 @@ def test_dissociation_reverses_at_the_heavy_temperature(case):
 
 # {{{ rates of progress and species production rates
 
-@block("kinetics", "recombination")
+@block("kinetics")
 @pytest.mark.parametrize("density", densities)
 @pytest.mark.parametrize("composition", composition_names)
 @pytest.mark.parametrize("state", states)
@@ -521,7 +528,7 @@ def test_net_rates_of_progress_match_mutation(
     )
 
 
-@block("kinetics", "recombination")
+@block("kinetics")
 @pytest.mark.parametrize("density", densities)
 @pytest.mark.parametrize("composition", composition_names)
 @pytest.mark.parametrize("state", states)
@@ -595,12 +602,12 @@ def assert_batched_production_rates(case, production):
     )
 
 
-@block("kinetics", "recombination")
+@block("kinetics")
 def test_batched_states_match_mutation_pointwise(case):
     assert_batched_production_rates(case, case.gas.get_net_production_rates)
 
 
-@block("kinetics", "recombination")
+@block("kinetics")
 @pytest.mark.skipif(jnp is None, reason="jax is not installed")
 def test_jax_generated_code_matches_mutation(case):
     gas = make_generated_gas(case.mech, jnp)

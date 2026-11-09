@@ -15,7 +15,11 @@ from pyrometheus.bandit.chem_expr.thermo import (
 )
 from pyrometheus.bandit.chem_expr.kinetics import (
     RateCoefficient,
+    exp,
+    k_fwd,
+    log_k_eq,
     make_arrhenius,
+    mass_action_rxn_progress_rate_expr,
     reaction_progress_rate_expr,
     species_production_rate_expr,
     third_body_concentration_expr,
@@ -227,7 +231,14 @@ class MutationMechanism(BaseMechanism):
 
     def make_rate_coefficient(self,
                               reaction_index,
-                              hardcode_params) -> RateCoefficient:
+                              hardcode_params,
+                              temperature=None) -> RateCoefficient:
+        """:returns: The forward rate coefficient, with its third body
+        folded in, and its parameters. It is evaluated at the reaction's
+        forward rate temperature unless *temperature* overrides it.
+        """
+        if temperature is None:
+            temperature = self.rate_temperature(reaction_index, "fwd")
         reaction = self.reaction(reaction_index)
         rate_law = reaction.rate_law()
         # Mutation++ reports ln(A) in mol-based SI units; a rate of
@@ -245,7 +256,7 @@ class MutationMechanism(BaseMechanism):
             rate_coeff = make_arrhenius(
                 reaction_index=reaction_index,
                 params=params,
-                temperature=self.rate_temperature(reaction_index, "fwd"),
+                temperature=temperature,
             )
         else:
             params = np.array([
@@ -255,7 +266,7 @@ class MutationMechanism(BaseMechanism):
             ])
             rate_coeff = make_arrhenius(
                 reaction_index=reaction_index,
-                temperature=self.rate_temperature(reaction_index, "fwd"),
+                temperature=temperature,
             )
 
         # Mutation++ keeps the third body out of the rate constant and
@@ -346,12 +357,43 @@ class MutationMechanism(BaseMechanism):
         return expr
 
     def make_mass_action_rate(self, reaction_index):
-        return reaction_progress_rate_expr(
-            reaction_index,
-            self.is_reversible(reaction_index),
-            (self.reactants(reaction_index), self.products(reaction_index)),
-            self.stoichiometric_coefficients(reaction_index),
+        indices = (self.reactants(reaction_index),
+                   self.products(reaction_index))
+        stoich_coeffs = self.stoichiometric_coefficients(reaction_index)
+        reverse_rate_coeff = self._reverse_base_rate(reaction_index)
+        if reverse_rate_coeff is None:
+            return reaction_progress_rate_expr(
+                reaction_index,
+                self.is_reversible(reaction_index),
+                indices,
+                stoich_coeffs,
+            )
+        return (
+            k_fwd[reaction_index]
+            * mass_action_rxn_progress_rate_expr(
+                reaction_index, indices[0], stoich_coeffs[0])
+            - exp(log_k_eq[reaction_index]) * reverse_rate_coeff
+            * mass_action_rxn_progress_rate_expr(
+                reaction_index, indices[1], stoich_coeffs[1])
         )
+
+    def _reverse_base_rate(self, reaction_index):
+        """:returns: The rate coefficient that the equilibrium constant
+        scales into the reverse rate coefficient, when it differs from
+        ``k_fwd``; otherwise *None*. Dissociation runs forward on
+        sqrt(Th Tv) but recombines on Th (ReactionType.h), so its
+        reverse rate needs the forward Arrhenius law evaluated at Th.
+        """
+        if not self.is_reversible(reaction_index):
+            return None
+        reverse_temperature = self.rate_temperature(reaction_index, "rev")
+        if reverse_temperature == self.rate_temperature(reaction_index, "fwd"):
+            return None
+        rate_coeff, _ = self.make_rate_coefficient(
+            reaction_index, self.hardcode_params,
+            temperature=reverse_temperature,
+        )
+        return rate_coeff.expr
 
     def make_species_production_rate(self, species_index):
         part_sets, stoich_coeffs = self.production_balance(species_index)
