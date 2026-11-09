@@ -6,6 +6,18 @@ was read from.
 import numpy as np
 
 
+def mutation_loads():
+    """:returns: Whether Mutation++ is importable and finds its data,
+    either packaged with it or through MPP_DATA_DIRECTORY.
+    """
+    try:
+        import mutationpp
+        mutationpp.Mixture("air_5")
+    except Exception:
+        return False
+    return True
+
+
 def make_generated_gas(mech, pyro_np=np):
     """:returns: An instance of the Python class generated for *mech*,
     able to evaluate batched states.

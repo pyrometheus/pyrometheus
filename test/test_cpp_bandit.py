@@ -9,8 +9,8 @@ Each case's header is compiled with pybind11 and checked two ways:
   (and their known gaps) over to C++;
 * against the library itself, where the Python is known to agree.
 
-Cases whose library is missing (Plato needs PLATO_DB, Mutation++ needs
-MPP_DATA_DIRECTORY) are skipped, as is everything without a C++
+Cases whose library is missing (Plato needs PLATO_DB, Mutation++ its
+data) are skipped, as is everything without a C++
 compiler and pybind11.
 """
 
@@ -24,6 +24,7 @@ import cantera as ct
 import numpy as np
 import pytest
 
+from bandit_parity import mutation_loads
 from cpp_build import compile_cpp_module, toolchain_available, toolchain_reason
 from pyrometheus.codegen import CodeGenerationOptions
 from pyrometheus.codegen.cpp_bandit import CppBanditCodeGenerator
@@ -36,12 +37,7 @@ except ImportError:
 else:
     plato_available = os.environ.get("PLATO_DB") is not None
 
-try:
-    import mutationpp  # noqa: F401
-except ImportError:
-    mutation_available = False
-else:
-    mutation_available = os.environ.get("MPP_DATA_DIRECTORY") is not None
+mutation_available = mutation_loads()
 
 pytestmark = pytest.mark.skipif(not toolchain_available, reason=toolchain_reason)
 

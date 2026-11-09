@@ -1,25 +1,23 @@
 """Tests for :class:`pyrometheus.bandit.impl.mutation.MutationMechanism`:
 mechanism metadata, stoichiometry and participation sets.
 
-Requires the MPP_DATA_DIRECTORY environment variable and an importable
-mutationpp. Skipped automatically when either is absent.
+Requires an importable mutationpp that finds its data, packaged with it
+or through MPP_DATA_DIRECTORY. Skipped automatically when either is absent.
 """
 
-import os
 
 import numpy as np
 import pytest
 
-try:
+from bandit_parity import mutation_loads
+
+mutation_available = mutation_loads()
+if mutation_available:
     import mutationpp as mpp
-except ImportError:
-    mutation_available = False
-else:
-    mutation_available = os.environ.get("MPP_DATA_DIRECTORY") is not None
 
 pytestmark = pytest.mark.skipif(
     not mutation_available,
-    reason="mutationpp not importable or MPP_DATA_DIRECTORY not set",
+    reason="mutationpp not importable or cannot find its data",
 )
 
 # Imported unconditionally: once mutationpp itself is available, a

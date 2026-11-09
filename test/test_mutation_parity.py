@@ -12,11 +12,10 @@ What a case lacks (a vibrational temperature) skips; what bandit gets
 wrong for it is listed in :data:`known_gaps` and runs as a strict
 xfail, so that fixing a gap fails the suite until its entry goes.
 
-Requires the MPP_DATA_DIRECTORY environment variable and an importable
-``mutationpp``.
+Requires an importable ``mutationpp`` that finds its data, packaged
+with it or through MPP_DATA_DIRECTORY.
 """
 
-import os
 from dataclasses import dataclass
 from typing import Callable
 
@@ -25,15 +24,10 @@ import pytest
 
 from bandit_parity import (
     language_available, languages, make_generated_gas, make_language_gas,
-    mechanism_expressions, temperature_subscripts,
+    mechanism_expressions, mutation_loads, temperature_subscripts,
 )
 
-try:
-    import mutationpp  # noqa: F401
-except ImportError:
-    mutation_available = False
-else:
-    mutation_available = os.environ.get("MPP_DATA_DIRECTORY") is not None
+mutation_available = mutation_loads()
 
 # Imported unconditionally once mutationpp is available: a failure to
 # import the adapter is then a defect, not a reason to skip.
@@ -50,7 +44,7 @@ else:
 
 pytestmark = pytest.mark.skipif(
     not mutation_available,
-    reason="mutationpp not importable or MPP_DATA_DIRECTORY not set",
+    reason="mutationpp not importable or cannot find its data",
 )
 
 _kmol_per_mol = 1e3
