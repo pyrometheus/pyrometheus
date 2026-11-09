@@ -1,0 +1,616 @@
+"""Parity of Pyrometheus-generated code against Mutation++'s own
+evaluations.
+
+Every expected value comes out of a :class:`mutationpp.Mixture`;
+nothing is recomputed from the parameters bandit reads. Mutation++
+works in mol and keeps the third body out of its rate coefficients,
+while bandit works in kmol and folds it in, so the oracles convert
+those two conventions and nothing else.
+
+The tests are written once and run for every case in :data:`cases`.
+What a case lacks (a vibrational temperature) skips; what bandit gets
+wrong for it is listed in :data:`known_gaps` and runs as a strict
+xfail, so that fixing a gap fails the suite until its entry goes.
+
+Requires the MPP_DATA_DIRECTORY environment variable and an importable
+``mutationpp``.
+"""
+
+import os
+from dataclasses import dataclass
+from typing import Callable
+
+import numpy as np
+import pytest
+
+from bandit_parity import (
+    make_generated_gas, mechanism_expressions, temperature_subscripts,
+)
+
+try:
+    import mutationpp  # noqa: F401
+except ImportError:
+    mutation_available = False
+else:
+    mutation_available = os.environ.get("MPP_DATA_DIRECTORY") is not None
+
+# Imported unconditionally once mutationpp is available: a failure to
+# import the adapter is then a defect, not a reason to skip.
+if mutation_available:
+    from pyrometheus.bandit.impl.mutation import MutationMechanism
+
+try:
+    import jax
+    import jax.numpy as jnp
+except ImportError:
+    jnp = None
+else:
+    jax.config.update("jax_enable_x64", True)
+
+pytestmark = pytest.mark.skipif(
+    not mutation_available,
+    reason="mutationpp not importable or MPP_DATA_DIRECTORY not set",
+)
+
+_kmol_per_mol = 1e3
+
+
+# {{{ cases and known gaps
+
+@dataclass(frozen=True)
+class MutationSpec:
+    mixture: str
+    state_model: str
+    thermo_database: str
+
+    @property
+    def label(self):
+        return f"{self.mixture}-{self.state_model}-{self.thermo_database}"
+
+
+# air_5 is the only mixture Mutation++ ships without electrons, which
+# MutationMechanism does not support yet.
+cases = [
+    MutationSpec("air_5", state_model, thermo_database)
+    for state_model in ["ChemNonEq1T", "ChemNonEqTTv"]
+    for thermo_database in ["NASA-9", "NASA-7"]
+]
+
+
+@dataclass(frozen=True)
+class KnownGap:
+    """A strict xfail for the tests of *block* whose case and parameters
+    satisfy *applies*(case, params)."""
+    applies: Callable[["MutationCase", dict], bool]
+    block: str
+    reason: str
+
+
+def _vibrational_nonequilibrium(case, params):
+    if case.num_temp == 1:
+        return False
+    # Batched states draw independent temperatures.
+    state = params.get("state")
+    return state is None or state[0] != state[1]
+
+
+def _multi_temperature(case, params):
+    return case.num_temp > 1
+
+
+known_gaps = [
+    KnownGap(_vibrational_nonequilibrium, "recombination", (
+        "bandit evaluates recombination at the dissociation temperature "
+        "sqrt(Th Tv) divided by an equilibrium constant at Th; Mutation++ "
+        "evaluates it at Th, which rate_temperature(r, 'rev') reports but "
+        "make_mass_action_rate ignores")),
+    KnownGap(_multi_temperature, "energy_exchange", (
+        "MutationMechanism does not build the vibrational energy or the "
+        "VT energy transfer source, so nothing drives Tv")),
+]
+
+
+def block(*names):
+    """Tag a test with the physics blocks :data:`known_gaps` refers to."""
+    def decorate(test):
+        test.physics_blocks = set(names)
+        return test
+    return decorate
+
+# }}}
+
+
+# {{{ fixtures and oracles
+
+@dataclass
+class MutationCase:
+    spec: MutationSpec
+    mech: "MutationMechanism"
+    gas: object
+
+    @property
+    def oracle(self):
+        return self.mech.namespace.mix
+
+    @property
+    def num_temp(self):
+        return self.mech.num_temp
+
+    @property
+    def num_species(self):
+        return self.mech.num_species
+
+    def temperature(self, state):
+        """Return the temperature argument for a (Th, Tv) *state*,
+        truncated to the temperatures this case carries.
+        """
+        if self.num_temp == 1:
+            return state[0]
+        return np.array(state[:self.num_temp])
+
+    def set_state(self, density, state, mass_fractions):
+        """Put the oracle at partial densities and temperatures."""
+        self.oracle.setState(
+            list(density * np.asarray(mass_fractions)),
+            list(state[:self.num_temp]), 1
+        )
+
+    @property
+    def specific_gas_constants(self):
+        return self.mech.namespace.gas_constant / self.mech.molecular_weights
+
+
+@pytest.fixture(scope="module", params=cases, ids=lambda spec: spec.label)
+def case(request):
+    spec = request.param
+    mech = MutationMechanism(
+        spec.mixture, state_model=spec.state_model,
+        thermo_database=spec.thermo_database,
+    )
+    return MutationCase(spec=spec, mech=mech, gas=make_generated_gas(mech))
+
+
+@pytest.fixture(autouse=True)
+def _mark_known_gaps(request, case):
+    blocks = getattr(request.function, "physics_blocks", set())
+    callspec = getattr(request.node, "callspec", None)
+    params = dict(callspec.params) if callspec else {}
+    for gap in known_gaps:
+        if gap.block in blocks and gap.applies(case, params):
+            request.node.add_marker(
+                pytest.mark.xfail(strict=True, reason=gap.reason)
+            )
+
+
+def require(case, multi_temperature=None):
+    if multi_temperature is True and case.num_temp == 1:
+        pytest.skip("needs a vibrational temperature")
+    if multi_temperature is False and case.num_temp > 1:
+        pytest.skip("single-temperature API")
+
+# }}}
+
+
+# {{{ states
+
+# (Th, Tv): thermal equilibrium, vibrationally frozen (Tv < Th,
+# post-shock) and vibrationally hot (Tv > Th, expansion).
+equilibrium_states = [(1500.0,) * 2, (6500.0,) * 2, (12000.0,) * 2]
+nonequilibrium_states = [
+    (9000.0, 3000.0), (15000.0, 7000.0), (4000.0, 8000.0),
+]
+states = equilibrium_states + nonequilibrium_states
+
+# Either side of the 1000 K and 6000 K breaks, never on one: there
+# Mutation++ takes the upper fit and bandit the lower, and the fits
+# only meet to ~1e-8.
+thermo_temperatures = [300.0, 999.0, 1001.0, 3000.0, 5999.0, 6001.0, 15000.0]
+densities = [1e-3, 5e-2]
+
+# Mole fractions of the molecules (N2, O2, NO) and atoms (N, O); the
+# 1e-12 floor keeps every species in every reaction.
+compositions = {
+    "molecular": 0.95,
+    "dissociated": 0.4,
+    "atomic": 0.05,
+}
+composition_names = list(compositions)
+
+
+def mass_fractions_for(case, composition):
+    molecular_share = compositions[composition]
+    molecules = ["N2", "O2", "NO"]
+    mole_fractions = np.full(case.num_species, 1e-12)
+    for species_index, name in enumerate(case.mech.species_names):
+        share = molecular_share if name in molecules else 1 - molecular_share
+        count = 3 if name in molecules else 2
+        mole_fractions[species_index] += share / count
+    weighted = mole_fractions * case.mech.molecular_weights
+    return weighted / weighted.sum()
+
+# }}}
+
+
+# {{{ species metadata and constants
+
+@block("constants")
+def test_molecular_weights_match_mutation(case):
+    np.testing.assert_allclose(
+        case.gas.molecular_weights,
+        _kmol_per_mol * np.array(case.oracle.speciesMw()), rtol=1e-15
+    )
+
+
+@block("constants")
+def test_gas_constant_matches_mutation(case):
+    assert case.gas.gas_constant == _kmol_per_mol * case.oracle.RU()
+
+
+@block("constants")
+def test_species_indices_follow_mutation_order(case):
+    names = [
+        case.oracle.speciesName(species_index)
+        for species_index in range(case.num_species)
+    ]
+    assert case.gas.species_names == names
+    for species_index, name in enumerate(names):
+        assert case.gas.get_species_index(name) == species_index
+
+
+@block("constants")
+@pytest.mark.parametrize("composition", composition_names)
+def test_equation_of_state_matches_mutation(case, composition):
+    mass_fractions = mass_fractions_for(case, composition)
+    density, state = 2e-2, (5000.0, 5000.0)
+    case.set_state(density, state, mass_fractions)
+    # The heavy-particle temperature sets the pressure of a neutral gas.
+    assert case.gas.get_pressure(
+        density, state[0], mass_fractions
+    ) == pytest.approx(case.oracle.P(), rel=1e-14)
+    assert case.gas.get_density(
+        case.oracle.P(), state[0], mass_fractions
+    ) == pytest.approx(density, rel=1e-14)
+
+
+@block("constants")
+def test_temperature_subscripts_are_valid_array_indices(case):
+    # C++ and Fortran index temperature as an array: Python's
+    # temperature[-1] reads out of bounds there.
+    assert temperature_subscripts(
+        mechanism_expressions(case.mech)
+    ) <= set(range(case.num_temp))
+
+# }}}
+
+
+# {{{ thermodynamics
+
+def uniform_temperature(case, temperature):
+    return case.temperature((temperature,) * 2)
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", thermo_temperatures)
+def test_species_specific_heats_match_mutation(case, temperature):
+    gas = case.gas
+    np.testing.assert_allclose(
+        gas.get_species_specific_heats_cp_r(
+            uniform_temperature(case, temperature)
+        ),
+        case.oracle.speciesCpOverR(temperature), rtol=1e-12
+    )
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", thermo_temperatures)
+def test_species_enthalpies_match_mutation(case, temperature):
+    case.set_state(1e-2, (temperature,) * 2, np.full(5, 0.2))
+    np.testing.assert_allclose(
+        case.gas.get_species_enthalpies_rt(
+            uniform_temperature(case, temperature)
+        ),
+        case.oracle.speciesHOverRT(), rtol=1e-12
+    )
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", thermo_temperatures)
+def test_species_internal_energies_match_mutation(case, temperature):
+    # Mutation++'s binding sizes getEnergiesMass for one temperature, but
+    # a two-temperature model writes one row per energy equation and
+    # overruns the heap.
+    require(case, multi_temperature=False)
+    case.set_state(1e-2, (temperature,), np.full(5, 0.2))
+    np.testing.assert_allclose(
+        case.gas.get_species_internal_energies_rt(
+            uniform_temperature(case, temperature)
+        ),
+        np.array(case.oracle.getEnergiesMass())
+        / case.specific_gas_constants / temperature,
+        rtol=1e-12
+    )
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", thermo_temperatures)
+def test_species_gibbs_energies_match_mutation(case, temperature):
+    np.testing.assert_allclose(
+        case.gas.get_species_gibbs_rt(uniform_temperature(case, temperature)),
+        np.array(case.oracle.getSTGibbsMass(temperature))
+        / case.specific_gas_constants / temperature,
+        rtol=1e-12, atol=1e-12
+    )
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", [800.0, 3000.0, 6500.0, 12000.0])
+@pytest.mark.parametrize("composition", composition_names)
+def test_mixture_energies_match_mutation(case, temperature, composition):
+    gas = case.gas
+    mass_fractions = mass_fractions_for(case, composition)
+    case.set_state(1e-2, (temperature,) * 2, mass_fractions)
+    temperature_arg = uniform_temperature(case, temperature)
+    assert gas.get_mixture_enthalpy_mass(
+        temperature_arg, mass_fractions
+    ) == pytest.approx(case.oracle.mixtureHMass(), rel=1e-12)
+    assert gas.get_mixture_internal_energy_mass(
+        temperature_arg, mass_fractions
+    ) == pytest.approx(case.oracle.mixtureEnergyMass(), rel=1e-12)
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", [800.0, 3000.0, 6500.0, 12000.0])
+@pytest.mark.parametrize("composition", composition_names)
+def test_mixture_specific_heats_match_mutation(case, temperature, composition):
+    # With two temperatures Mutation++'s frozen specific heats are the
+    # heavy-particle part alone, which bandit does not generate.
+    require(case, multi_temperature=False)
+    gas = case.gas
+    mass_fractions = mass_fractions_for(case, composition)
+    case.set_state(1e-2, (temperature,), mass_fractions)
+    assert gas.get_mixture_specific_heat_cp_mass(
+        temperature, mass_fractions
+    ) == pytest.approx(case.oracle.mixtureFrozenCpMass(), rel=1e-12)
+    assert gas.get_mixture_specific_heat_cv_mass(
+        temperature, mass_fractions
+    ) == pytest.approx(case.oracle.mixtureFrozenCvMass(), rel=1e-12)
+
+
+@block("thermo")
+@pytest.mark.parametrize("temperature", [800.0, 3000.0, 6500.0, 12000.0])
+@pytest.mark.parametrize("do_energy", [False, True])
+def test_temperature_inversion_recovers_mutation_state(
+        case, temperature, do_energy):
+    require(case, multi_temperature=False)
+    # NASA-7 fits stop at 6000 K; past it their enthalpy turns over
+    # (cp < 0 by 12000 K) and Newton settles on the stationary point.
+    fitted_range = min(
+        case.mech.species_thermo_params(species_index).t_bounds[-1]
+        for species_index in range(case.num_species)
+    )
+    if temperature > fitted_range:
+        pytest.skip("enthalpy is not invertible past the fitted range")
+    mass_fractions = mass_fractions_for(case, "dissociated")
+    case.set_state(1e-2, (temperature,), mass_fractions)
+    target = (
+        case.oracle.mixtureEnergyMass() if do_energy
+        else case.oracle.mixtureHMass()
+    )
+    assert case.gas.get_temperature(
+        target, 1000.0, mass_fractions, do_energy
+    ) == pytest.approx(temperature, rel=1e-9)
+
+# }}}
+
+
+# {{{ rate coefficients
+
+def third_body_concentrations(case, concentrations):
+    """:returns: The third-body concentration of every reaction, in
+    kmol/m^3, or one for reactions without a third body.
+    """
+    mech = case.mech
+    return np.array([
+        sum(
+            mech.third_body_efficiencies(reaction_index).get(
+                species_index, 1.0
+            ) * concentrations[species_index]
+            for species_index in range(case.num_species)
+        ) if mech.is_third_body(reaction_index) else 1.0
+        for reaction_index in range(mech.num_reactions)
+    ])
+
+
+def molar_unit_factors(case, side):
+    """:returns: The factor converting each reaction's *side* ("reactants"
+    or "products") rate coefficient from mol to kmol. Mutation++ leaves
+    the third body out of both species lists but not out of the order.
+    """
+    mech = case.mech
+    return np.array([
+        _kmol_per_mol ** (
+            len(getattr(mech.reaction(reaction_index), side))
+            + mech.is_third_body(reaction_index) - 1
+        )
+        for reaction_index in range(mech.num_reactions)
+    ])
+
+
+def kinetics_state(case, state, composition, density=5e-2):
+    mass_fractions = mass_fractions_for(case, composition)
+    case.set_state(density, state, mass_fractions)
+    concentrations = case.gas.get_concentrations(density, mass_fractions)
+    return mass_fractions, concentrations
+
+
+@block("kinetics")
+@pytest.mark.parametrize("composition", composition_names)
+@pytest.mark.parametrize("state", states)
+def test_forward_rate_coefficients_match_mutation(case, state, composition):
+    _, concentrations = kinetics_state(case, state, composition)
+    expected = (
+        np.array(case.oracle.forwardRateCoefficients())
+        * molar_unit_factors(case, "reactants")
+        * third_body_concentrations(case, concentrations)
+    )
+    np.testing.assert_allclose(
+        case.gas.get_fwd_rate_coefficients(
+            case.temperature(state), concentrations
+        ),
+        expected, rtol=1e-12
+    )
+
+
+@block("kinetics", "recombination")
+@pytest.mark.parametrize("composition", composition_names)
+@pytest.mark.parametrize("state", states)
+def test_reverse_rate_coefficients_match_mutation(case, state, composition):
+    _, concentrations = kinetics_state(case, state, composition)
+    gas = case.gas
+    temperature = case.temperature(state)
+    # bandit's net rate is k_fwd (r_fwd - exp(log_k_eq) r_rev), so the
+    # reverse coefficient is their product.
+    actual = gas.get_fwd_rate_coefficients(
+        temperature, concentrations
+    ) * np.exp(gas.get_equilibrium_constants(temperature))
+    expected = (
+        np.array(case.oracle.backwardRateCoefficients())
+        * molar_unit_factors(case, "products")
+        * third_body_concentrations(case, concentrations)
+    )
+    np.testing.assert_allclose(actual, expected, rtol=1e-10)
+
+
+@block("kinetics", "recombination")
+def test_dissociation_reverses_at_the_heavy_temperature(case):
+    # Mutation++'s recombination depends on Th alone, so changing Tv
+    # must leave every backward rate coefficient where it was.
+    require(case, multi_temperature=True)
+    _, concentrations = kinetics_state(case, (9000.0, 9000.0), "dissociated")
+    gas = case.gas
+
+    def reverse_coefficients(vibrational):
+        temperature = np.array([9000.0, vibrational])
+        return gas.get_fwd_rate_coefficients(
+            temperature, concentrations
+        ) * np.exp(gas.get_equilibrium_constants(temperature))
+
+    np.testing.assert_allclose(
+        reverse_coefficients(3000.0), reverse_coefficients(9000.0),
+        rtol=1e-13
+    )
+
+# }}}
+
+
+# {{{ rates of progress and species production rates
+
+@block("kinetics", "recombination")
+@pytest.mark.parametrize("density", densities)
+@pytest.mark.parametrize("composition", composition_names)
+@pytest.mark.parametrize("state", states)
+def test_net_rates_of_progress_match_mutation(
+        case, state, composition, density):
+    _, concentrations = kinetics_state(case, state, composition, density)
+    expected = np.array(case.oracle.netRatesOfProgress()) / _kmol_per_mol
+    actual = case.gas.get_net_rates_of_progress(
+        case.temperature(state), concentrations
+    )
+    np.testing.assert_allclose(
+        actual, expected, rtol=1e-10, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+@block("kinetics", "recombination")
+@pytest.mark.parametrize("density", densities)
+@pytest.mark.parametrize("composition", composition_names)
+@pytest.mark.parametrize("state", states)
+def test_net_production_rates_match_mutation(
+        case, state, composition, density):
+    mass_fractions, _ = kinetics_state(case, state, composition, density)
+    expected = np.array(case.oracle.netProductionRates())
+    actual = case.gas.get_net_production_rates(
+        density, case.temperature(state), mass_fractions
+    ) * case.gas.molecular_weights
+    np.testing.assert_allclose(
+        actual, expected, rtol=1e-10, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+@block("kinetics")
+@pytest.mark.parametrize("state", states)
+def test_net_production_rates_conserve_mass(case, state):
+    mass_fractions = mass_fractions_for(case, "dissociated")
+    rates = case.gas.get_net_production_rates(
+        5e-2, case.temperature(state), mass_fractions
+    ) * case.gas.molecular_weights
+    assert abs(rates.sum()) < 1e-12 * np.abs(rates).max()
+
+# }}}
+
+
+# {{{ energy exchange
+
+@block("energy_exchange")
+def test_two_temperature_cases_generate_the_vibrational_source(case):
+    require(case, multi_temperature=True)
+    for function in [
+        "get_nasa_polynomial_vibrational_energy",
+        "get_vt_energy_transfer_source",
+    ]:
+        assert hasattr(case.gas, function), function
+
+# }}}
+
+
+# {{{ array semantics
+
+def batched_states(case):
+    rng = np.random.default_rng(seed=0)
+    num_states = 16
+    temperature = rng.uniform(1000.0, 15000.0, (case.num_temp, num_states))
+    if case.num_temp == 1:
+        temperature = temperature[0]
+    mass_fractions = rng.dirichlet(np.ones(case.num_species), num_states).T
+    density = rng.uniform(1e-3, 1e-1, num_states)
+    return density, temperature, mass_fractions
+
+
+def mutation_pointwise(case, density, temperature, mass_fractions):
+    temperature = np.atleast_2d(temperature)
+    rates = []
+    for i in range(density.size):
+        case.set_state(density[i], temperature[:, i], mass_fractions[:, i])
+        rates.append(np.array(case.oracle.netProductionRates()))
+    return np.stack(rates, axis=-1)
+
+
+def assert_batched_production_rates(case, production):
+    density, temperature, mass_fractions = batched_states(case)
+    expected = mutation_pointwise(case, density, temperature, mass_fractions)
+    np.testing.assert_allclose(
+        np.asarray(production(density, temperature, mass_fractions))
+        * case.gas.molecular_weights[:, None],
+        expected, rtol=1e-10, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+@block("kinetics", "recombination")
+def test_batched_states_match_mutation_pointwise(case):
+    assert_batched_production_rates(case, case.gas.get_net_production_rates)
+
+
+@block("kinetics", "recombination")
+@pytest.mark.skipif(jnp is None, reason="jax is not installed")
+def test_jax_generated_code_matches_mutation(case):
+    gas = make_generated_gas(case.mech, jnp)
+    production = jax.jit(gas.get_net_production_rates)
+    assert_batched_production_rates(
+        case,
+        lambda density, temperature, mass_fractions: production(
+            jnp.asarray(density), jnp.asarray(temperature),
+            jnp.asarray(mass_fractions)
+        )
+    )
+
+# }}}
