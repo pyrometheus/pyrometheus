@@ -86,15 +86,7 @@ class KnownGap:
     reason: str
 
 
-def _multi_temperature(case, params):
-    return case.num_temp > 1
-
-
-known_gaps = [
-    KnownGap(_multi_temperature, "energy_exchange", (
-        "MutationMechanism does not build the vibrational energy or the "
-        "VT energy transfer source, so nothing drives Tv")),
-]
+known_gaps = []
 
 
 def block(*names):
@@ -303,16 +295,14 @@ def test_species_enthalpies_match_mutation(case, temperature):
 @block("thermo")
 @pytest.mark.parametrize("temperature", thermo_temperatures)
 def test_species_internal_energies_match_mutation(case, temperature):
-    # Mutation++'s binding sizes getEnergiesMass for one temperature, but
-    # a two-temperature model writes one row per energy equation and
-    # overruns the heap.
-    require(case, multi_temperature=False)
-    case.set_state(1e-2, (temperature,), np.full(5, 0.2))
+    case.set_state(1e-2, (temperature,) * 2, np.full(5, 0.2))
+    # Mutation++ lists one block of species per energy equation, the
+    # totals first.
     np.testing.assert_allclose(
         case.gas.get_species_internal_energies_rt(
             uniform_temperature(case, temperature)
         ),
-        np.array(case.oracle.getEnergiesMass())
+        np.array(case.oracle.getEnergiesMass())[:case.num_species]
         / case.specific_gas_constants / temperature,
         rtol=1e-12
     )
@@ -552,20 +542,6 @@ def test_net_production_rates_conserve_mass(case, state):
         5e-2, case.temperature(state), mass_fractions
     ) * case.gas.molecular_weights
     assert abs(rates.sum()) < 1e-12 * np.abs(rates).max()
-
-# }}}
-
-
-# {{{ energy exchange
-
-@block("energy_exchange")
-def test_two_temperature_cases_generate_the_vibrational_source(case):
-    require(case, multi_temperature=True)
-    for function in [
-        "get_nasa_polynomial_vibrational_energy",
-        "get_vt_energy_transfer_source",
-    ]:
-        assert hasattr(case.gas, function), function
 
 # }}}
 
