@@ -281,6 +281,16 @@ class MutationMechanism(BaseMechanism):
             )
         return rate_coeff, params
 
+    def species_translational_temperature(self, species_index: int):
+        """:returns: The electron temperature for the electron, which
+        Mutation++ also gives the electron's partial pressure; the
+        heavy-particle temperature for every other species.
+        """
+        if (self.num_temp > 1
+                and self.species_name(species_index) == "e-"):
+            return _temp_map["electron"]
+        return super().species_translational_temperature(species_index)
+
     def species_rrho(self, species_index: int):
         """:returns: The rigid-rotor harmonic-oscillator parameters of
         the species with index *species_index*.

@@ -581,6 +581,15 @@ class PlatoMechanism(BaseMechanism):
             stoich_coeffs[1],
         )
 
+    def species_translational_temperature(self, species_index: int):
+        """:returns: The electron temperature for the electron, the
+        heavy-particle temperature for every other species.
+        """
+        if (self.num_temp > 1
+                and self.species_names[species_index] == "em"):
+            return self.electron_temperature
+        return super().species_translational_temperature(species_index)
+
     def make_species_nasa_thermo(self, species_index) -> SpeciesNASAThermo:
         sp_name = self.species_names[species_index]
         poly_params = self.species_thermo_params(species_index)

@@ -136,13 +136,10 @@ class Thermochemistry:
         ])
 
     def get_density(self, pressure, temperature, mass_fractions):
-        w_mix = self.get_mixture_molecular_weight(mass_fractions)
-        return pressure * w_mix / (self.gas_constant * temperature)
+        return pressure / (${cgm(bandit_mech.pressure_over_density_expr)})
 
     def get_pressure(self, density, temperature, mass_fractions):
-        w_mix = self.get_mixture_molecular_weight(mass_fractions)
-        rt = self.gas_constant * temperature / w_mix
-        return density * rt
+        return density * (${cgm(bandit_mech.pressure_over_density_expr)})
 
     def get_concentrations(self, density, mass_fractions):
         return self._pyro_make_array([
@@ -342,7 +339,7 @@ class Thermochemistry:
 
     def get_vt_energy_transfer_source(self, density, temperature, mass_fractions):
         ones = self._pyro_ones_like(temperature[0])
-        pressure = self.get_pressure(density, temperature[0], mass_fractions)
+        pressure = self.get_pressure(density, temperature, mass_fractions)
         return (
             %for expr in bandit_mech.vt_energy_transfer_exprs:
             + ${cgm(expr)}

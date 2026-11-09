@@ -115,6 +115,38 @@ class BaseMechanism:
     def has_nonequilibrium_energy_modes(self) -> bool:
         return self.nonequil_thermo
 
+    def species_translational_temperature(self, species_index: int):
+        """:returns: The temperature that sets the translational energy,
+            and so the partial pressure, of the species with index
+            *species_index*: the heavy-particle temperature, unless an
+            adapter gives the electron its own.
+        """
+        if self.num_temp == 1:
+            return p.Variable("temperature")
+        return p.Variable("temperature")[0]
+
+    @property
+    def pressure_over_density_expr(self):
+        """:returns: :math:`R \\sum_k Y_k T_k / W_k`, which the equation
+            of state multiplies by density to give pressure. Species are
+            grouped by translational temperature, so a gas with one
+            reduces to :math:`R T / W`.
+        """
+        mass_fractions = p.Variable("mass_fractions")
+        groups = {}
+        for species_index in range(self.num_species):
+            groups.setdefault(
+                self.species_translational_temperature(species_index), []
+            ).append(species_index)
+        return self.namespace.gas_constant * sum(
+            temperature * sum(
+                mass_fractions[species_index]
+                * (1 / self.molecular_weights[species_index])
+                for species_index in members
+            )
+            for temperature, members in groups.items()
+        )
+
     @property
     def num_vt_molecules(self):
         """

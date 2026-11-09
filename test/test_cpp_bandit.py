@@ -259,9 +259,6 @@ def call_arguments(case, function, state, mass_fractions):
         "pressure": 1e5,
         "concentrations": case.gas.get_concentrations(density, mass_fractions),
     }
-    # Equation-of-state conversions take the heavy temperature alone.
-    if function in ("get_density", "get_pressure"):
-        values["temperature"] = state[0]
     names = inspect.signature(getattr(case.gas, function)).parameters
     return [values[name] for name in names]
 

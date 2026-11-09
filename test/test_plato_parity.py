@@ -341,10 +341,10 @@ def test_equation_of_state_matches_plato_gas_constants(case):
         mass_fractions @ case.oracle.gas_constants
     )
     assert case.gas.get_pressure(
-        density, temperature, mass_fractions
+        density, uniform_temperature(case, temperature), mass_fractions
     ) == pytest.approx(pressure, rel=1e-14)
     assert case.gas.get_density(
-        pressure, temperature, mass_fractions
+        pressure, uniform_temperature(case, temperature), mass_fractions
     ) == pytest.approx(density, rel=1e-14)
 
 

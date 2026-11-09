@@ -329,15 +329,12 @@ contains
         GPU_ROUTINE(get_density)
 
         ${real_type}, intent(in) :: pressure
-        ${real_type}, intent(in) :: temperature
+        ${temperature_decl(real_type, bandit_mech)}
         ${real_type}, intent(in), dimension(${bandit_mech.num_species}) :: &
             mass_fractions
         ${real_type}, intent(out) :: density
 
-        ${real_type} :: mix_mol_weight
-
-        call get_mixture_molecular_weight(mass_fractions, mix_mol_weight)
-        density = pressure * mix_mol_weight / (gas_constant * temperature)
+        density = pressure / (${cgm(bandit_mech.pressure_over_density_expr)})
 
     end subroutine get_density
 
@@ -346,15 +343,12 @@ contains
         GPU_ROUTINE(get_pressure)
 
         ${real_type}, intent(in) :: density
-        ${real_type}, intent(in) :: temperature
+        ${temperature_decl(real_type, bandit_mech)}
         ${real_type}, intent(in), dimension(${bandit_mech.num_species}) :: &
             mass_fractions
         ${real_type}, intent(out) :: pressure
 
-        ${real_type} :: mix_mol_weight
-
-        call get_mixture_molecular_weight(mass_fractions, mix_mol_weight)
-        pressure = density * gas_constant * temperature / mix_mol_weight
+        pressure = density * (${cgm(bandit_mech.pressure_over_density_expr)})
 
     end subroutine get_pressure
 

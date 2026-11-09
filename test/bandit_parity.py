@@ -77,10 +77,11 @@ class NativeGas:
     cannot reach Fortran ``parameter`` arrays.
     """
 
-    def __init__(self, module, num_species, renames=None):
+    def __init__(self, module, num_species, num_temp, renames=None):
         self._module = module
         self._renames = renames or {}
         self._num_species = num_species
+        self._num_temp = num_temp
 
     def _function(self, name):
         return getattr(self._module, self._renames.get(name, name))
@@ -114,8 +115,9 @@ class NativeGas:
         # p = rho R T / W for a pure species at unit density and
         # temperature.
         mass_fractions = np.eye(self._num_species)[0]
+        temperature = 1.0 if self._num_temp == 1 else np.ones(self._num_temp)
         return float(
-            self.get_pressure(1.0, 1.0, mass_fractions)
+            self.get_pressure(1.0, temperature, mass_fractions)
             * self.molecular_weights[0]
         )
 
@@ -150,7 +152,7 @@ def make_language_gas(mech, language, tmp_path, module_name):
         header = CppBanditCodeGenerator.generate(module_name, mech)
         module = compile_cpp_module(tmp_path, header, module_name,
                                     f"{module_name}_cpp")
-        return NativeGas(module, mech.num_species)
+        return NativeGas(module, mech.num_species, mech.num_temp)
     if language == "fortran":
         from fortran_build import compile_fortran_module
         from pyrometheus.codegen.fortran_bandit import (
@@ -162,7 +164,7 @@ def make_language_gas(mech, language, tmp_path, module_name):
         source = FortranBanditCodeGenerator.generate(fortran_name, mech)
         module = compile_fortran_module(tmp_path, source, fortran_name)
         return FortranGas(getattr(module, fortran_name),
-                          mech.num_species, _fortran_names)
+                          mech.num_species, mech.num_temp, _fortran_names)
     raise ValueError(f"unknown language '{language}'")
 
 

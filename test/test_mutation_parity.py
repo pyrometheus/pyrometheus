@@ -88,17 +88,7 @@ class KnownGap:
     reason: str
 
 
-def _electrons_out_of_equilibrium(case, params):
-    state = params.get("state")
-    return (case.is_ionized and case.num_temp > 1
-            and state is not None and state[0] != state[1])
-
-
-known_gaps = [
-    KnownGap(_electrons_out_of_equilibrium, "electron_pressure", (
-        "get_pressure takes the heavy temperature alone; Mutation++ puts "
-        "the electrons' partial pressure at the electron temperature")),
-]
+known_gaps = []
 
 
 def block(*names):
@@ -299,25 +289,29 @@ def test_equation_of_state_matches_mutation(case, composition):
     mass_fractions = mass_fractions_for(case, composition)
     density, state = 2e-2, (5000.0, 5000.0)
     case.set_state(density, state, mass_fractions)
-    # The heavy-particle temperature sets the pressure of a neutral gas.
     assert case.gas.get_pressure(
-        density, state[0], mass_fractions
+        density, case.temperature(state), mass_fractions
     ) == pytest.approx(case.oracle.P(), rel=1e-14)
     assert case.gas.get_density(
-        case.oracle.P(), state[0], mass_fractions
+        case.oracle.P(), case.temperature(state), mass_fractions
     ) == pytest.approx(density, rel=1e-14)
 
 
-@block("electron_pressure")
+@block("constants")
 @pytest.mark.parametrize("state", nonequilibrium_states)
-def test_pressure_out_of_equilibrium_matches_mutation(case, state):
+def test_equation_of_state_out_of_equilibrium_matches_mutation(case, state):
+    # Electrons carry their partial pressure at the electron temperature.
     require(case, multi_temperature=True)
     composition = "ionized" if case.is_ionized else "dissociated"
     mass_fractions = mass_fractions_for(case, composition)
     case.set_state(2e-2, state, mass_fractions)
+    temperature = case.temperature(state)
     assert case.gas.get_pressure(
-        2e-2, state[0], mass_fractions
+        2e-2, temperature, mass_fractions
     ) == pytest.approx(case.oracle.P(), rel=1e-14)
+    assert case.gas.get_density(
+        case.oracle.P(), temperature, mass_fractions
+    ) == pytest.approx(2e-2, rel=1e-14)
 
 
 @block("constants")

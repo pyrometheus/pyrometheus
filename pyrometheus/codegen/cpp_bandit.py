@@ -221,17 +221,17 @@ struct ${name}
     }
 
     static ScalarT get_density(
-        ScalarT pressure, ScalarT temperature, SpeciesT const &mass_fractions)
+        ScalarT pressure, TemperatureT const &temperature,
+        SpeciesT const &mass_fractions)
     {
-        const ScalarT mix_mol_weight = get_mixture_molecular_weight(mass_fractions);
-        return pressure * mix_mol_weight / (gas_constant * temperature);
+        return pressure / (${cgm(bandit_mech.pressure_over_density_expr)});
     }
 
     static ScalarT get_pressure(
-        ScalarT density, ScalarT temperature, SpeciesT const &mass_fractions)
+        ScalarT density, TemperatureT const &temperature,
+        SpeciesT const &mass_fractions)
     {
-        const ScalarT mix_mol_weight = get_mixture_molecular_weight(mass_fractions);
-        return density * gas_constant * temperature / mix_mol_weight;
+        return density * (${cgm(bandit_mech.pressure_over_density_expr)});
     }
 
     static SpeciesT get_concentrations(
@@ -477,7 +477,7 @@ struct ${name}
         SpeciesT const &mass_fractions)
     {
         [[maybe_unused]] const ScalarT pressure = get_pressure(
-            density, temperature[0], mass_fractions);
+            density, temperature, mass_fractions);
         return 0.0
             %for expr in bandit_mech.vt_energy_transfer_exprs:
             + ${cgm(expr)}
