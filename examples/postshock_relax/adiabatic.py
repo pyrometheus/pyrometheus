@@ -1,3 +1,14 @@
+"""Adiabatic two-temperature post-shock relaxation of air at constant
+volume, integrated with code Pyrometheus generates from Mutation++ (the
+default) or Plato. The heavy-temperature equation carries chemistry and
+VT transfer, the vibrational one VT transfer alone, so total energy is
+conserved; the run reports how well. Plato's own solution is overlaid
+when running on Plato.
+
+    python adiabatic.py [--library mutation|plato] [--num-steps N]
+"""
+
+import argparse
 import os
 import time
 import jax
@@ -5,7 +16,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax.flatten_util import ravel_pytree
 
-from pyrometheus.bandit.impl.plato import PlatoMechanism
 from pyrometheus.codegen.python_bandit import PythonBanditCodeGenerator as pyro
 
 from dataclasses import dataclass
@@ -81,14 +91,37 @@ class State:
 
 
 def make_mechanism(lib_name, pyro_np, hardcode_params=True):
-    return PlatoMechanism(
-        mixture='air5',
-        reaction_set='air5',
-        transfer='TTv',
-        plato_db_path=os.environ.get('PLATO_DB'),
-        pyro_np=pyro_np,
-        hardcode_params=hardcode_params
-    )
+    if lib_name == 'mutation':
+        from pyrometheus.bandit.impl.mutation import MutationMechanism
+        return MutationMechanism(
+            'air_5',
+            state_model='ChemNonEqTTv',
+            thermo_database='NASA-9',
+            pyro_np=pyro_np,
+            hardcode_params=hardcode_params
+        )
+    elif lib_name == 'plato':
+        from pyrometheus.bandit.impl.plato import PlatoMechanism
+        return PlatoMechanism(
+            mixture='air5',
+            reaction_set='air5',
+            transfer='TTv',
+            plato_db_path=os.environ.get('PLATO_DB'),
+            pyro_np=pyro_np,
+            hardcode_params=hardcode_params
+        )
+    raise ValueError(f'unknown library {lib_name}')
+
+
+def total_energy(densities, temperatures):
+    """:returns: The mixture's internal energy per unit volume [J/m^3],
+    split between the heavy and vibrational temperatures as the energy
+    equations split it.
+    """
+    return jnp.sum(densities * (
+        pyro_gas.get_translational_rotational_energy(temperatures)
+        + pyro_gas.get_nasa_polynomial_vibrational_energy(temperatures)
+    ))
 
 
 def make_pyro_object(pyro_cls, pyro_np):
@@ -258,7 +291,8 @@ def one_step(state, state_prev, step_size):
 
 def time_march(num_steps: int,
                step_size: jnp.float64,
-               initial_state: jnp.ndarray,):
+               initial_state: jnp.ndarray,
+               verbose: bool = True):
 
     sol = np.empty((num_steps + 1, initial_state.num_vars))
     sol[0] = jnp.concatenate((
@@ -275,7 +309,8 @@ def time_march(num_steps: int,
         )
         state.densities.block_until_ready()
         _t_step = time.time() - _t_step
-        print(f'Step {step}: cost {_t_step:.4e} s')
+        if verbose:
+            print(f'Step {step}: cost {_t_step:.4e} s')
         sol[step + 1] = jnp.concatenate((
             state.densities,
             state.temperatures
@@ -285,7 +320,15 @@ def time_march(num_steps: int,
 
 if __name__ == "__main__":
 
-    lib_name = 'plato'
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--library', choices=['mutation', 'plato'],
+                        default='mutation')
+    parser.add_argument('--num-steps', type=int, default=100000)
+    parser.add_argument('--step-size', type=float, default=1e-8)
+    parser.add_argument('--quiet', action='store_true')
+    args = parser.parse_args()
+
+    lib_name = args.library
     mech = make_mechanism(lib_name, np, hardcode_params=True)
     pyro_cls = pyro.get_thermochem_class(mech)
     pyro_gas = make_pyro_object(pyro_cls, jnp)
@@ -319,11 +362,22 @@ if __name__ == "__main__":
 
     # {{{ Solve
 
-    num_steps = 100000
-    step_size = 1e-8
+    num_steps = args.num_steps
+    step_size = args.step_size
     sol_s = time_march(
-        num_steps, step_size, initial_state,
+        num_steps, step_size, initial_state, verbose=not args.quiet
     )
+
+    num_species = pyro_gas.num_species
+    energies = [
+        total_energy(sol_s[i, :num_species], sol_s[i, num_species:])
+        for i in (0, -1)
+    ]
+    masses = [np.sum(sol_s[i, :num_species]) for i in (0, -1)]
+    print(f'{lib_name}: after {num_steps * step_size:.3e} s, Th = '
+          f'{sol_s[-1, -2]:.1f} K, Tv = {sol_s[-1, -1]:.1f} K; relative '
+          f'change in total energy {(energies[1] - energies[0]) / energies[0]:.3e}, '
+          f'in mass {(masses[1] - masses[0]) / masses[0]:.3e}')
 
     # }}}
 
@@ -332,7 +386,7 @@ if __name__ == "__main__":
     # Persist the raw integrated state (what time_march actually advances),
     # with time as the leading column so the file is self-describing.
     np.savetxt(
-        'examples_postshock_relax_adiabatic.dat',
+        f'examples_postshock_relax_adiabatic_{lib_name}.dat',
         np.column_stack((
             step_size * np.arange(0, num_steps + 1, 1),
             sol_s
@@ -355,9 +409,12 @@ if __name__ == "__main__":
               'royalblue',
               'mediumpurple',]
 
-    ref_sol = np.loadtxt(
-        'plato_solution_adiabatic.dat',
-        skiprows=7
+    # Plato's own solution, for the model this example integrates; no
+    # Mutation++ one exists, since Mutation++'s NASA-9 vibronic energy is
+    # zero.
+    ref_sol = (
+        np.loadtxt('plato_solution_adiabatic.dat', skiprows=7)
+        if lib_name == 'plato' else np.empty((0, num_species + 3))
     )
 
     sol_t = step_size * np.arange(0, num_steps + 1, 1)
@@ -430,7 +487,7 @@ if __name__ == "__main__":
                  bbox_to_anchor=(0.5, 1.15), loc="upper center",
                  ncol=pyro_gas.num_temperatures, fontsize=12)
 
-    plt.savefig('./output_adiabatic.png', bbox_inches='tight',)
+    plt.savefig(f'./output_adiabatic_{lib_name}.png', bbox_inches='tight',)
     plt.close()
 
     # }}}
