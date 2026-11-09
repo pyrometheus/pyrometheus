@@ -11,9 +11,9 @@ library_options = {
 
 
 def load_mechanism(library: str, mechanism: str, **options):
-    """:returns: The :class:`~pyrometheus.bandit.general_thermochem.BaseMechanism`
-        that *library* reads for *mechanism*: a mechanism file for Cantera,
-        a mixture name for Mutation++ and Plato.
+    """:returns: The ``BaseMechanism`` that *library* reads for
+        *mechanism*: a mechanism file for Cantera, a mixture name for
+        Mutation++ and Plato.
 
     :arg options: ``phase`` for Cantera; ``state_model`` and
         ``thermo_database`` for Mutation++; ``reaction_set``,

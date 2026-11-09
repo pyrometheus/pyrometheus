@@ -1,5 +1,5 @@
-Pyrometheus: Code Generation for Combustion Mechanisms
-======================================================
+Pyrometheus: Code Generation for Reacting-Flow Thermochemistry
+==============================================================
 
 .. image:: doc/pyro.png
 	   :width: 640
@@ -27,29 +27,48 @@ Pyrometheus: Code Generation for Combustion Mechanisms
 
 .. When you update this description, consider also updating the one in doc/index.rst.
 
-Pyrometheus is a code generator for chemical mechanisms based on `Cantera
-<https://cantera.org>`__. Install it from PyPI (``pip install pyrometheus``)
-or via `Spack <https://spack.io>`__ (``spack install py-pyrometheus``)::
+Pyrometheus generates Python, C++ and Fortran code for the thermochemistry
+of reacting flows, from mechanisms read by `Cantera <https://cantera.org>`__,
+`Mutation++ <https://github.com/mutationpp/Mutationpp>`__ or Plato
+(experimental, not public). The generated code is tested against each of
+these libraries in every language. Install it from PyPI (``pip install
+pyrometheus``) or via `Spack <https://spack.io>`__ (``spack install
+py-pyrometheus``)::
 
     $ python3 -m pip install pyrometheus
     $ python3 -m pyrometheus --help
-    usage: pyrometheus [-h] [--version] -l {python,cpp,fortran} -m MECH -o OUTPUT -n NAME [-p PHASE]
-    
-    Code generation for combustion thermochemistrybased on Cantera.
-    
+    usage: pyrometheus [-h] [--version]
+                       -l {python,cpp,fortran,python-legacy,cpp-legacy,fortran-legacy}
+                       [--library {cantera,mutation,plato}] -m MECH -o OUTPUT -n NAME [-p PHASE]
+                       [--state-model STATE_MODEL] [--thermo-database THERMO_DATABASE]
+                       [--reaction-set REACTION_SET] [--transfer TRANSFER]
+                       [--plato-db-path PLATO_DB_PATH]
+
+    Code generation for thermochemistry, from mechanisms read by Cantera, Mutation++ or Plato.
+
     options:
       -h, --help            show this help message and exit
       --version             show program's version number and exit
-      -l {python,cpp,fortran}, --lang {python,cpp,fortran}, --language {python,cpp,fortran}
-                            Language to generate code for.
-      -m MECH, --mech MECH, --mechanism MECH
-                            Path to the mechanism file.
-      -o OUTPUT, --output OUTPUT
-                            Path to the output file.
-      -n NAME, --name NAME, --namespace NAME
+      -l, --lang, --language {python,cpp,fortran,python-legacy,cpp-legacy,fortran-legacy}
+                            Language to generate code for. The '-legacy' generators are the deprecated
+                            1.x ones, which read Cantera mechanisms only.
+      --library {cantera,mutation,plato}
+                            Library that reads the mechanism.
+      -m, --mech, --mechanism MECH
+                            Cantera mechanism file, or the Mutation++ or Plato mixture name.
+      -o, --output OUTPUT   Path to the output file.
+      -n, --name, --namespace NAME
                             Namespace to use for the generated code.
-      -p PHASE, --phase PHASE
-                            Phase name to use for the generated code.
+      -p, --phase PHASE     Cantera: phase to read from the mechanism file.
+      --state-model STATE_MODEL
+                            Mutation++: state model, such as ChemNonEq1T or ChemNonEqTTv.
+      --thermo-database THERMO_DATABASE
+                            Mutation++: thermodynamic database, such as NASA-9 or NASA-7.
+      --reaction-set REACTION_SET
+                            Plato: reaction set.
+      --transfer TRANSFER   Plato: energy transfer model, such as TTv.
+      --plato-db-path PLATO_DB_PATH
+                            Plato: database path (default: $PLATO_DB).
 
 Cite me:
 
