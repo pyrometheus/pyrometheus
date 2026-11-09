@@ -648,6 +648,22 @@ def test_vt_energy_transfer_matches_mutation(case, state, composition):
 
 
 @block("energy_exchange")
+@pytest.mark.skipif(jnp is None, reason="jax is not installed")
+def test_vt_energy_transfer_is_differentiable_without_a_molecule(case):
+    # Post-shock air starts with no NO: Park's relaxation time for it is
+    # infinite, and an implicit integrator's Jacobian must stay finite.
+    require(case, multi_temperature=True, language="python")
+    gas = make_generated_gas(case.mech, jnp)
+    mass_fractions = np.zeros(case.num_species)
+    mass_fractions[case.mech.species_index("N2")] = 0.77
+    mass_fractions[case.mech.species_index("O2")] = 0.23
+    gradient = jax.grad(gas.get_vt_energy_transfer_source, argnums=2)(
+        5e-2, jnp.array([10000.0, 500.0]), jnp.asarray(mass_fractions)
+    )
+    assert np.all(np.isfinite(np.asarray(gradient)))
+
+
+@block("energy_exchange")
 @pytest.mark.parametrize("temperature", thermo_temperatures)
 def test_energy_split_adds_up_to_mutation_species_energies(case, temperature):
     # At one temperature the translational-rotational and vibronic parts

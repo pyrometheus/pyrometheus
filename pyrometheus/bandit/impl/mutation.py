@@ -512,9 +512,10 @@ class MutationMechanism(BaseMechanism):
         cross_section = (
             data.reference_cross_section * 50000.0 ** 2 / temperature ** 2
         )
-        relaxation_time = millikan_white_time + 1 / (
-            number_density * mean_speed * cross_section
-        )
+        # Park's time is 1 / (n c sigma), infinite for an absent molecule;
+        # multiplying through by that collision frequency keeps the source
+        # and its derivatives finite there.
+        collision_frequency = number_density * mean_speed * cross_section
 
         vibrational_energy = (
             self.species_vib_thermo_expressions[species_index].energy_expr
@@ -526,7 +527,8 @@ class MutationMechanism(BaseMechanism):
         return (
             density * mass_fractions[species_index]
             * (vibrational_energy_at_heavy_temperature - vibrational_energy)
-            / relaxation_time
+            * collision_frequency
+            / (millikan_white_time * collision_frequency + 1)
         )
 
     @property
