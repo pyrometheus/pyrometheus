@@ -629,6 +629,66 @@ def test_net_production_rates_conserve_mass(case, state):
 # }}}
 
 
+# {{{ two-temperature energy exchange
+
+@block("energy_exchange")
+@pytest.mark.parametrize("composition", composition_names)
+@pytest.mark.parametrize("state", states)
+def test_vt_energy_transfer_matches_mutation(case, state, composition):
+    # Mutation++'s OmegaVT: Landau-Teller with Millikan-White and Park's
+    # high-temperature correction, harmonic-oscillator energies.
+    require(case, multi_temperature=True)
+    mass_fractions = mass_fractions_for(case, composition)
+    case.set_state(5e-2, state, mass_fractions)
+    expected = case.oracle.omega_vt()
+    actual = case.gas.get_vt_energy_transfer_source(
+        5e-2, case.temperature(state), mass_fractions
+    )
+    assert actual == pytest.approx(expected, rel=1e-12, abs=1e-12)
+
+
+@block("energy_exchange")
+@pytest.mark.parametrize("temperature", thermo_temperatures)
+def test_energy_split_adds_up_to_mutation_species_energies(case, temperature):
+    # At one temperature the translational-rotational and vibronic parts
+    # must rebuild Mutation++'s full species energy.
+    require(case, multi_temperature=True)
+    case.set_state(1e-2, (temperature,) * 2, uniform_mass_fractions(case))
+    temperature_arg = uniform_temperature(case, temperature)
+    actual = (
+        case.gas.get_translational_rotational_energy(temperature_arg)
+        + case.gas.get_nasa_polynomial_vibrational_energy(temperature_arg)
+    )
+    expected = np.array(case.oracle.getEnergiesMass())[:case.num_species]
+    np.testing.assert_allclose(
+        actual, expected, rtol=1e-12, atol=1e-12 * np.abs(expected).max()
+    )
+
+
+@block("energy_exchange")
+@pytest.mark.parametrize("vibrational", [800.0, 3000.0, 7000.0, 15000.0])
+def test_vibronic_specific_heat_is_the_energy_slope(case, vibrational):
+    require(case, multi_temperature=True)
+    step = 1e-4 * vibrational
+
+    def energy(tv):
+        return np.asarray(case.gas.get_nasa_polynomial_vibrational_energy(
+            np.array([9000.0, tv])
+        ))
+
+    slope = (energy(vibrational + step) - energy(vibrational - step)) / (
+        2 * step
+    )
+    np.testing.assert_allclose(
+        case.gas.get_nasa_polynomial_vibrational_specific_heat(
+            np.array([9000.0, vibrational])
+        ),
+        slope, rtol=1e-6, atol=1e-6 * np.abs(slope).max()
+    )
+
+# }}}
+
+
 # {{{ array semantics
 
 def batched_states(case):
