@@ -10,8 +10,9 @@ friendly) arrays.  In particular it provides:
 - a Newton-iteration-based ``get_temperature`` that solves the implicit
   temperature equation from a mixture energy or enthalpy;
 - a JAX-only ``get_temperature_from_enthalpy`` written with
-  ``jax.lax.while_loop`` so that it remains differentiable and JIT
-  compilable.
+  ``jax.lax.while_loop`` so that it remains JIT compilable; derivatives
+  are attached by implicit differentiation (see
+  ``_implicit_newton_step``), not by differentiating through the loop.
 """
 
 import numpy as np
@@ -110,6 +111,26 @@ def _clamp_temperature(temperature, temp_init, with_diagnostics):
     if not with_diagnostics:
         return safe_temperature
     return safe_temperature, jnp.logical_not(jnp.all(ok))
+
+
+def _implicit_newton_step(temperature, target, mass_fractions,
+                          state_fun, deriv_fun):
+    """Attach the implicit-function derivative to a converged Newton root.
+
+    The ``lax.while_loop`` Newton solves are run on gradient-stopped
+    inputs and their result is then passed through one Newton step taken
+    *outside* the loop. At a converged root this step changes the value by
+    at most the solver tolerance, while its tangent is exactly the
+    implicit-function derivative ``dT = (d target - de/dY dY) / c``.
+
+    Differentiating through the loop itself is wrong: when ``temp_init``
+    is already converged the loop runs zero iterations and AD returns
+    ``dT/d(target) = dT/dY = 0`` and ``dT/d(temp_init) = 1``. This happens
+    e.g. whenever a solver warm-starts from the previous temperature.
+    """
+    temperature = jax.lax.stop_gradient(temperature)
+    residual = target - state_fun(temperature, mass_fractions)
+    return temperature + residual / deriv_fun(temperature, mass_fractions)
 
 
 def make_pyro_object(pyro_cls,
@@ -311,7 +332,13 @@ def make_pyro_object(pyro_cls,
 
                 temperature, _ = jax.lax.while_loop(
                     cond_fun, body_fun,
-                    (temp_init, self.pyro_np.array(0, dtype=self.pyro_np.int32))
+                    (jax.lax.stop_gradient(temp_init),
+                     self.pyro_np.array(0, dtype=self.pyro_np.int32))
+                )
+                temperature = _implicit_newton_step(
+                    temperature, energy, mass_fractions,
+                    self.get_mixture_internal_energy_mass,
+                    self.get_mixture_specific_heat_cv_mass,
                 )
                 return _clamp_temperature(
                     temperature, temp_init, _with_diagnostics
@@ -376,7 +403,13 @@ def make_pyro_object(pyro_cls,
 
                 temperature, _ = jax.lax.while_loop(
                     cond_fun, body_fun,
-                    (temp_init, self.pyro_np.array(0, dtype=self.pyro_np.int32))
+                    (jax.lax.stop_gradient(temp_init),
+                     self.pyro_np.array(0, dtype=self.pyro_np.int32))
+                )
+                temperature = _implicit_newton_step(
+                    temperature, enthalpy, mass_fractions,
+                    self.get_mixture_enthalpy_mass,
+                    self.get_mixture_specific_heat_cp_mass,
                 )
                 return _clamp_temperature(
                     temperature, temp_init, _with_diagnostics

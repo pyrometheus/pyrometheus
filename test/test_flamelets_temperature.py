@@ -211,3 +211,44 @@ def test_default_signature_unchanged(pyro_gas, num_species):
     e = pyro_gas.get_mixture_internal_energy_mass(jnp.array(800.0), y)
     result = pyro_gas.get_temperature(e, jnp.array(750.0), y)
     assert isinstance(result, jax.Array)
+
+
+# -- Derivatives: implicit differentiation, also from a converged guess ---
+# Differentiating through the while_loop gave dT/dh = dT/dY = 0 (and
+# dT/dT_init = 1) whenever temp_init was already converged, because the
+# loop then runs zero iterations. The exact derivatives follow from the
+# implicit function theorem: dT = (dh - sum_k h_k dY_k) / cp (cv/e_k for
+# the energy form), independent of temp_init.
+
+@pytest.mark.parametrize("init_scale", [1.0, 0.8])
+@pytest.mark.parametrize("do_energy", [False, True])
+def test_implicit_derivatives(pyro_gas, num_species, init_scale, do_energy):
+    t0 = 1500.0
+    y = jnp.array(np.random.default_rng(0).dirichlet(np.ones(num_species)))
+    if do_energy:
+        target_fun = pyro_gas.get_mixture_internal_energy_mass
+        deriv_fun = pyro_gas.get_mixture_specific_heat_cv_mass
+
+        def solve(target, y, t_init):
+            return pyro_gas.get_temperature(target, t_init, y)
+    else:
+        target_fun = pyro_gas.get_mixture_enthalpy_mass
+        deriv_fun = pyro_gas.get_mixture_specific_heat_cp_mass
+
+        def solve(target, y, t_init):
+            return pyro_gas.get_temperature_from_enthalpy(target, y, t_init)
+
+    target = target_fun(jnp.array(t0), y)
+    t_init = jnp.array(t0 * init_scale)
+    d_target, d_y, d_init = jax.jit(jax.grad(solve, argnums=(0, 1, 2)))(
+        target, y, t_init
+    )
+
+    # dT/dY_k = -(de/dY_k)/c at fixed T, i.e. -(species e_k or h_k)/c
+    de_dy = jax.grad(target_fun, argnums=1)(jnp.array(t0), y)
+    c = deriv_fun(jnp.array(t0), y)
+    np.testing.assert_allclose(float(d_target), 1.0 / float(c), rtol=1e-10)
+    np.testing.assert_allclose(
+        np.asarray(d_y), -np.asarray(de_dy) / float(c), rtol=1e-8, atol=1e-14
+    )
+    assert float(d_init) == 0.0
