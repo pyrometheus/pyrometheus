@@ -28,19 +28,6 @@ from pyrometheus.flamelets.state import (
 from pyrometheus.flamelets.linear_solver import block_thomas
 
 
-def trapezoidal_rule(integrand):
-    """Composite trapezoidal-rule sum on a unit-spacing grid.
-
-    The integrand is assumed to be sampled at the endpoints and at
-    every interior node; the spacing is implicit and absorbed into
-    the calling convention of the gradient routines.
-    """
-    return (
-        0.5 * (integrand[0] + integrand[-1])
-        + jnp.sum(integrand[1:-1])
-    )
-
-
 class CompressibleEOS:
     """Driver that enforces compressible-EOS consistency on a flamelet table.
 
@@ -102,6 +89,44 @@ class CompressibleEOS:
 
         current[keys[-1]] = option_val
 
+    def _solve_adjoint(self, adj_ops, adj_rhs):
+        """Solve the discrete adjoint and return the boundary-enthalpy traces.
+
+        ``adj_rhs`` is ``-dJ/dphi`` (shape ``(num_v, num_x)``) for a
+        PDF-weighted functional ``J``. The flamelet residual has identity
+        Dirichlet rows ``phi_0 - phi_bc`` while the interior rows couple to
+        ``phi_0`` through the Laplacian stencil ``1/dZ**2``; the adjoint
+        operator from :meth:`FlameletEquations.adjoint_operator` reuses the
+        Laplacian's (non-transposed) boundary rows, which equals the exact
+        transpose only for a right-hand side vanishing on the Dirichlet
+        rows. We therefore solve with those rows zeroed, which yields the
+        exact interior adjoint ``lambda``, and the exact discrete
+        sensitivities are
+
+        .. math::
+
+            dJ/dh_{ox} = \\lambda_{h,1} / \\Delta Z^2 + \\partial J/\\partial h_0,
+            \\qquad
+            dJ/dh_{fu} = \\lambda_{h,N-2} / \\Delta Z^2
+            + \\partial J/\\partial h_{N-1},
+
+        the second terms being the direct dependence of the boundary
+        nodes (``-adj_rhs`` there; zero for interior-only PDF weights).
+
+        Returns
+        -------
+        tuple
+            ``(adjoint_as_array, h_gradient_ox, h_gradient_fu)``.
+        """
+        dx = self.fwd_solver.gov_eqns.laplacian.domain.dx
+        direct_ox = -adj_rhs[0, 0]
+        direct_fu = -adj_rhs[0, -1]
+        adj_rhs = adj_rhs.at[:, 0].set(0.0).at[:, -1].set(0.0)
+        adjoint_as_array = block_thomas(*adj_ops, adj_rhs.T).T
+        h_gradient_ox = adjoint_as_array[0, 1] / dx**2 + direct_ox
+        h_gradient_fu = adjoint_as_array[0, -2] / dx**2 + direct_fu
+        return adjoint_as_array, h_gradient_ox, h_gradient_fu
+
     @partial(jax.jit, static_argnums=0)
     def enthalpy_gradient(self,
                           state: FlameletState,
@@ -149,24 +174,12 @@ class CompressibleEOS:
 
         # Adjoint solve for enthalpy
         adj_rhs = -self.unit_h * mixture_fraction_pdf
-        adjoint_h_as_array = block_thomas(
-            adj_op_lower,
-            adj_op_central,
-            adj_op_upper,
-            adj_rhs.T
-        ).T
+        adjoint_h_as_array, h_gradient_ox, h_gradient_fu = (
+            self._solve_adjoint(
+                (adj_op_lower, adj_op_central, adj_op_upper), adj_rhs
+            )
+        )
         adjoint_state_h = _array_to_state(adjoint_h_as_array)
-
-        h_gradient_ox = (
-            1.5 * adjoint_state_h.enthalpy[0]
-            + 2 * adjoint_state_h.enthalpy[1]
-            - 0.5 * adjoint_state_h.enthalpy[2]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
-        h_gradient_fu = (
-            1.5 * adjoint_state_h.enthalpy[-1]
-            + 2 * adjoint_state_h.enthalpy[-2]
-            - 0.5 * adjoint_state_h.enthalpy[-3]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
         h_gradient = h_gradient_ox + h_gradient_fu
         return rt, adjoint_state_h, h_gradient
 
@@ -189,9 +202,10 @@ class CompressibleEOS:
         combined with the source-term sensitivity with respect to
         pressure (also vmap/jacfwd'd in
         :class:`FlameletEquations`) and integrated over the
-        mixture-fraction PDF with :func:`trapezoidal_rule` to produce
-        the final ``(p, h)`` gradients of the filtered density and
-        energy.
+        mixture-fraction PDF quadrature weights (the same plain weighted
+        sum used for the filtered values in :meth:`evaluate_flamelet`)
+        to produce the final ``(p, h)`` gradients of the filtered
+        density and energy.
 
         Returns
         -------
@@ -232,15 +246,17 @@ class CompressibleEOS:
             temp_guess,
             pressure
         ) / (0.5 * diss_rate[:, None])
+        # The flamelet residual masks the source term on the Dirichlet
+        # rows (see FlameletEquations.rhs), so dR/dp vanishes there.
+        ds_dp = ds_dp.at[0].set(0.0).at[-1].set(0.0)
 
         # Density
         adj_rhs = (pressure / rt**2) * rt_jacobian.T * mixture_fraction_pdf
-        adjoint_d_as_array = block_thomas(
-            adj_op_lower,
-            adj_op_central,
-            adj_op_upper,
-            adj_rhs.T
-        ).T
+        adjoint_d_as_array, density_gradient_ox, density_gradient_fu = (
+            self._solve_adjoint(
+                (adj_op_lower, adj_op_central, adj_op_upper), adj_rhs
+            )
+        )
         adjoint_state_d = _array_to_state(adjoint_d_as_array)
         integrand = (1/rt) * mixture_fraction_pdf + jnp.einsum(
             "ij,ji->i",
@@ -251,18 +267,11 @@ class CompressibleEOS:
         # Notes on the following:
         # Adjoint state already includes a dZ factor implicitly
         # So it is not included in the quadrature, and has to be
-        # divided out _twice_ in the derivative
-        density_gradient_p = trapezoidal_rule(integrand)
-        density_gradient_ox = (
-            1.5 * adjoint_state_d.enthalpy[0]
-            + 2 * adjoint_state_d.enthalpy[1]
-            - 0.5 * adjoint_state_d.enthalpy[2]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
-        density_gradient_fu = (
-            1.5 * adjoint_state_d.enthalpy[-1]
-            + 2 * adjoint_state_d.enthalpy[-2]
-            - 0.5 * adjoint_state_d.enthalpy[-3]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
+        # divided out _twice_ in the derivative.
+        # ``mixture_fraction_pdf`` holds quadrature weights (PDF * dZ),
+        # and the reconstructed density/energy are plain weighted sums
+        # (see evaluate_flamelet), so the gradient uses the same sum.
+        density_gradient_p = jnp.sum(integrand)
         density_gradient = jnp.stack((
             density_gradient_p,
             density_gradient_ox + density_gradient_fu
@@ -273,12 +282,11 @@ class CompressibleEOS:
             self.unit_h
             - rt_jacobian.T
         ) * mixture_fraction_pdf
-        adjoint_e_as_array = block_thomas(
-            adj_op_lower,
-            adj_op_central,
-            adj_op_upper,
-            adj_rhs.T
-        ).T
+        adjoint_e_as_array, energy_gradient_ox, energy_gradient_fu = (
+            self._solve_adjoint(
+                (adj_op_lower, adj_op_central, adj_op_upper), adj_rhs
+            )
+        )
         adjoint_state_e = _array_to_state(adjoint_e_as_array)
 
         integrand = jnp.einsum(
@@ -286,17 +294,7 @@ class CompressibleEOS:
             ds_dp,
             adjoint_e_as_array
         )
-        energy_gradient_p = trapezoidal_rule(integrand)
-        energy_gradient_ox = (
-            1.5 * adjoint_state_e.enthalpy[0]
-            + 2 * adjoint_state_e.enthalpy[1]
-            - 0.5 * adjoint_state_e.enthalpy[2]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
-        energy_gradient_fu = (
-            1.5 * adjoint_state_e.enthalpy[-1]
-            + 2 * adjoint_state_e.enthalpy[-2]
-            - 0.5 * adjoint_state_e.enthalpy[-3]
-        ) / self.fwd_solver.gov_eqns.laplacian.domain.dx ** 2
+        energy_gradient_p = jnp.sum(integrand)
         energy_gradient = jnp.stack((
             energy_gradient_p,
             energy_gradient_ox + energy_gradient_fu
@@ -621,6 +619,45 @@ class CompressibleEOS:
         update = jnp.array([v[0], v[1], v[1]])
         return state, temp, update, residual, newton_success
 
+    def _picard_sensitivity(self,
+                            state: FlameletState,
+                            mixture_fraction_pdf: jnp.ndarray,
+                            diss_rate: jnp.ndarray,
+                            viscous_diss: jnp.ndarray,
+                            temp_guess: jnp.ndarray,
+                            pressure: jnp.float64):
+        """Point-wise ``R T`` and the enthalpy sensitivity of a Picard update.
+
+        Gradient-free by default: the sensitivity of the PDF-averaged
+        internal energy to the boundary enthalpies is taken as one
+        (``Delta k = -R``).  If ``config["eos"]["picard_gradient"]`` is
+        ``True``, it is the adjoint gradient of ``<h>`` from
+        :meth:`enthalpy_gradient` instead (one extra adjoint solve per
+        iteration).
+
+        Returns
+        -------
+        tuple
+            ``(rt, dh_dk)``.
+        """
+        if self.config["eos"].get("picard_gradient", False):
+            rt, _, dh_dk = self.enthalpy_gradient(
+                state,
+                mixture_fraction_pdf,
+                diss_rate,
+                viscous_diss,
+                temp_guess,
+                pressure
+            )
+            return rt, dh_dk
+
+        rt = self.fwd_solver.gov_eqns.compressible_eos_rt(
+            _state_to_array(state),
+            temp_guess,
+            pressure
+        )
+        return rt, 1.0
+
     def _picard_update(self,
                        density_sim: jnp.float64,
                        energy_sim: jnp.float64,
@@ -633,11 +670,15 @@ class CompressibleEOS:
         """Single Picard-style update for ``(pressure, h_boundary)``.
 
         Decouples the two updates: ``pressure`` is updated by the
-        ideal-gas relation ``rho * <R T> = p`` evaluated under the
-        PDF, and the boundary enthalpy is updated using only the
-        cheaper enthalpy-only adjoint gradient from
-        :meth:`enthalpy_gradient`.  Cheaper than
-        :meth:`_gauss_newton_update` but converges more slowly.
+        ideal-gas relation ``p = rho / <1/(R T)>`` evaluated under the
+        PDF (consistent with the reconstructed ``rho_hat = p <1/(R T)>``),
+        and the boundary enthalpy is shifted by the internal-energy
+        residual.  By default the update is gradient-free (unit
+        sensitivity, no adjoint solve); with
+        ``config["eos"]["picard_gradient"] = True`` the residual is
+        scaled by the enthalpy-only adjoint gradient (see
+        :meth:`_picard_sensitivity`).  Cheaper per iteration than
+        :meth:`_gauss_newton_update`, but converges more slowly.
 
         Returns
         -------
@@ -669,7 +710,7 @@ class CompressibleEOS:
         if self.config["verbosity"]:
             print(f"solve time: {(time.time() - t_solve):.4e} s")
 
-        rt, _, dh_ox = self.enthalpy_gradient(
+        rt, dh_dk = self._picard_sensitivity(
             state,
             mixture_fraction_pdf,
             diss_rate,
@@ -683,10 +724,14 @@ class CompressibleEOS:
         energy = jnp.sum(
             (state.enthalpy - rt) * mixture_fraction_pdf
         )
-        dp = density_sim * jnp.sum(
-            rt * mixture_fraction_pdf
+        # Ideal-gas p-update consistent with the reconstructed density
+        # rho_hat = p <1/(R T)>: its fixed point is rho_hat = density_sim.
+        # (rho_sim <R T> would converge to the wrong p for non-delta PDFs,
+        # since <R T><1/(R T)> >= 1 with equality only for constant R T.)
+        dp = density_sim / jnp.sum(
+            mixture_fraction_pdf / rt
         ) - pressure
-        dh = (energy_sim - energy) / dh_ox
+        dh = (energy_sim - energy) / dh_dk
 
         update = jnp.array([
             dp,
@@ -698,6 +743,80 @@ class CompressibleEOS:
             energy_sim - energy
         ])
         return state, temp, update, residual
+
+    def _picard_update_traceable(self,
+                                 density_sim: jnp.float64,
+                                 energy_sim: jnp.float64,
+                                 params: jnp.ndarray,
+                                 mixture_fraction_pdf: jnp.ndarray,
+                                 diss_rate: jnp.ndarray,
+                                 viscous_diss: jnp.ndarray,
+                                 temp_guess: jnp.ndarray,
+                                 state_guess: FlameletState):
+        """Traceable twin of :meth:`_picard_update`.
+
+        Same update as :meth:`_picard_update`, but the forward solve is
+        the bounded :meth:`FlameletSolver._newton_loop_lax_steady` (no
+        BDF fallback), as in :meth:`evaluate_flamelet_traceable`.
+
+        Returns
+        -------
+        tuple
+            ``(state, temperature, update, residual, newton_success)``.
+        """
+        pressure, h_ox, h_fu = params
+        state, _, _, newton_success = (
+            self.fwd_solver._newton_loop_lax_steady(
+                self._steady_newton_fn,
+                self._steady_newton_jac,
+                state_guess,
+                self.config["newton"]["maxiter"],
+                self.config["newton"]["tol"],
+                diss_rate,
+                viscous_diss,
+                temp_guess,
+                pressure,
+                h_ox,
+                h_fu,
+            )
+        )
+        temp = self.fwd_solver.gov_eqns.pyro_gas.get_temperature_from_enthalpy(
+            state.enthalpy, state.mass_fractions, temp_guess
+        )
+
+        rt, dh_dk = self._picard_sensitivity(
+            state,
+            mixture_fraction_pdf,
+            diss_rate,
+            viscous_diss,
+            temp_guess,
+            pressure
+        )
+        density = jnp.sum(
+            (pressure / rt) * mixture_fraction_pdf
+        )
+        energy = jnp.sum(
+            (state.enthalpy - rt) * mixture_fraction_pdf
+        )
+        # Ideal-gas p-update consistent with the reconstructed density
+        # rho_hat = p <1/(R T)>: its fixed point is rho_hat = density_sim.
+        # (rho_sim <R T> would converge to the wrong p for non-delta PDFs,
+        # since <R T><1/(R T)> >= 1 with equality only for constant R T.)
+        dp = density_sim / jnp.sum(
+            mixture_fraction_pdf / rt
+        ) - pressure
+        dh = (energy_sim - energy) / dh_dk
+
+        update = jnp.array([
+            dp,
+            dh,
+            dh  # Assumes fixed \Delta h = h_ox - h_fu
+        ])
+        residual = jnp.array([
+            density_sim - density,
+            energy_sim - energy
+        ])
+        return state, temp, update, residual, newton_success
 
     def warmup(self,
                params: jnp.ndarray,
@@ -910,11 +1029,11 @@ class CompressibleEOS:
         ``body_fn`` while not yet converged, every call's update is
         unconditionally the right one to apply.
 
-        Only ``update_method == "gauss_newton"`` is supported (uses
+        ``update_method`` may be ``"gauss_newton"`` (uses
         :meth:`_gauss_newton_update_traceable`, built on
-        :meth:`evaluate_flamelet_traceable` -- no BDF fallback, see that
-        method's docstring). ``picard`` is not yet ported to this
-        traceable path.
+        :meth:`evaluate_flamelet_traceable`) or ``"picard"`` (uses
+        :meth:`_picard_update_traceable`). Neither has a BDF fallback;
+        see :meth:`evaluate_flamelet_traceable`'s docstring.
 
         Returns
         -------
@@ -933,24 +1052,76 @@ class CompressibleEOS:
             empty -- no caller currently reads these histories, but the
             new values are the more honest ones).
         """
-        if self.config["eos"]["update_method"] != "gauss_newton":
-            raise ValueError(
-                "ensure_consistency_traceable only supports "
-                "update_method='gauss_newton'"
-            )
+        return self._consistency_loop_traceable(
+            density_sim, energy_sim, params, mixture_fraction_pdf,
+            diss_rate, viscous_diss, temp_guess, state_guess,
+        )[:8]
+
+    def ensure_consistency_traceable_history(self,
+                                             density_sim: jnp.float64,
+                                             energy_sim: jnp.float64,
+                                             params: jnp.ndarray,
+                                             mixture_fraction_pdf: jnp.ndarray,
+                                             diss_rate: jnp.ndarray,
+                                             viscous_diss: jnp.ndarray,
+                                             temp_guess: jnp.ndarray,
+                                             state_guess: FlameletState):
+        """:meth:`ensure_consistency_traceable` plus per-iteration
+        histories.
+
+        Returns
+        -------
+        tuple
+            The 8 fields of :meth:`ensure_consistency_traceable`,
+            followed by a dict of length-``maxiter`` histories
+            (``nan``-filled past the last iteration). Entry ``k`` is
+            evaluated at the parameters *entering* iteration ``k``, so
+            entry 0 corresponds to the initial ``params``:
+
+            - ``"params"``: ``(maxiter, 3)`` ``(p, h_ox, h_fu)``
+            - ``"density"``, ``"energy"``: reconstructed (PDF-weighted)
+              density and internal energy
+            - ``"enthalpy"``, ``"temperature"``: PDF-weighted ``h``, ``T``
+        """
+        return self._consistency_loop_traceable(
+            density_sim, energy_sim, params, mixture_fraction_pdf,
+            diss_rate, viscous_diss, temp_guess, state_guess,
+        )
+
+    def _consistency_loop_traceable(self,
+                                    density_sim: jnp.float64,
+                                    energy_sim: jnp.float64,
+                                    params: jnp.ndarray,
+                                    mixture_fraction_pdf: jnp.ndarray,
+                                    diss_rate: jnp.ndarray,
+                                    viscous_diss: jnp.ndarray,
+                                    temp_guess: jnp.ndarray,
+                                    state_guess: FlameletState):
+        """Shared ``lax.while_loop`` behind
+        :meth:`ensure_consistency_traceable` and
+        :meth:`ensure_consistency_traceable_history`."""
+        update_method = self.config["eos"]["update_method"]
+        if update_method == "gauss_newton":
+            update_fn = self._gauss_newton_update_traceable
+        elif update_method == "picard":
+            update_fn = self._picard_update_traceable
+        else:
+            raise ValueError(f"Available {update_method} not implemented")
 
         a = self.config["eos"]["update_size"]
         tol = self.config["eos"]["tol"]
         maxiter = self.config["eos"]["maxiter"]
+        gov_eqns = self.fwd_solver.gov_eqns
 
         def cond_fn(carry):
-            _, _, _, it, _, converged, _, _ = carry
+            _, _, _, it, _, converged, _, _, _ = carry
             return jnp.logical_and(jnp.logical_not(converged), it < maxiter)
 
         def body_fn(carry):
-            state, temp, params, it, _, _, residual_hist, newton_success_hist = carry
+            (state, temp, params, it, _, _, residual_hist,
+             newton_success_hist, history) = carry
             (state_new, temp_new, update, residual,
-             newton_success) = self._gauss_newton_update_traceable(
+             newton_success) = update_fn(
                 density_sim, energy_sim, params, mixture_fraction_pdf,
                 diss_rate, viscous_diss, temp, state
             )
@@ -959,28 +1130,56 @@ class CompressibleEOS:
             new_params = params + a * update
             cost_val = jnp.linalg.norm(residual) ** 2
 
+            rt = gov_eqns.compressible_eos_rt(
+                _state_to_array(state_new), temp_new, params[0]
+            )
+            history = {
+                "params": history["params"].at[it].set(params),
+                "density": history["density"].at[it].set(
+                    jnp.sum(params[0] / rt * mixture_fraction_pdf)
+                ),
+                "energy": history["energy"].at[it].set(
+                    jnp.sum((state_new.enthalpy - rt) * mixture_fraction_pdf)
+                ),
+                "enthalpy": history["enthalpy"].at[it].set(
+                    jnp.sum(state_new.enthalpy * mixture_fraction_pdf)
+                ),
+                "temperature": history["temperature"].at[it].set(
+                    jnp.sum(temp_new * mixture_fraction_pdf)
+                ),
+            }
+
             return (
                 state_new, temp_new, new_params, it + 1, new_delta,
                 new_converged,
                 residual_hist.at[it].set(cost_val),
                 newton_success_hist.at[it].set(newton_success),
+                history,
             )
 
+        history_init = {
+            "params": jnp.full((maxiter, 3), jnp.nan),
+            "density": jnp.full(maxiter, jnp.nan),
+            "energy": jnp.full(maxiter, jnp.nan),
+            "enthalpy": jnp.full(maxiter, jnp.nan),
+            "temperature": jnp.full(maxiter, jnp.nan),
+        }
         carry_init = (
             state_guess, temp_guess, params,
             jnp.array(0, dtype=jnp.int32), jnp.array(jnp.inf),
             jnp.array(False),
             jnp.full(maxiter, jnp.nan),
             jnp.zeros(maxiter, dtype=bool),
+            history_init,
         )
         (state, temp, params, it, delta, converged, residual_hist,
-         newton_success_hist) = jax.lax.while_loop(
+         newton_success_hist, history) = jax.lax.while_loop(
             cond_fn, body_fn, carry_init
         )
 
         return (
             state, temp, params, it - 1, delta,
-            residual_hist, newton_success_hist, converged,
+            residual_hist, newton_success_hist, converged, history,
         )
 
     @partial(jax.jit, static_argnums=0)
@@ -1013,6 +1212,32 @@ class CompressibleEOS:
         """
         return jax.vmap(
             self.ensure_consistency_traceable,
+            in_axes=(0, 0, None, 0, 0, 0, 0, 0),
+        )(
+            density_sim, energy_sim, params, mixture_fraction_pdf,
+            diss_rate, viscous_diss, temp_guess, state_guess,
+        )
+
+    @partial(jax.jit, static_argnums=0)
+    def ensure_consistency_batch_history(self,
+                                         density_sim: jnp.ndarray,
+                                         energy_sim: jnp.ndarray,
+                                         params: jnp.ndarray,
+                                         mixture_fraction_pdf: jnp.ndarray,
+                                         diss_rate: jnp.ndarray,
+                                         viscous_diss: jnp.ndarray,
+                                         temp_guess: jnp.ndarray,
+                                         state_guess: FlameletState):
+        """Batched twin of :meth:`ensure_consistency_traceable_history`;
+        same batching convention as :meth:`ensure_consistency_batch`.
+
+        Note: ``self`` is a static argument, so the update method, step
+        size, and iteration limits are baked in at trace time. After
+        changing ``self.config``, clear this method's cache (or build a
+        new :class:`CompressibleEOS`) before calling it again.
+        """
+        return jax.vmap(
+            self.ensure_consistency_traceable_history,
             in_axes=(0, 0, None, 0, 0, 0, 0, 0),
         )(
             density_sim, energy_sim, params, mixture_fraction_pdf,
