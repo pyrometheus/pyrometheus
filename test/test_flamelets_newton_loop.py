@@ -12,6 +12,7 @@ classification before any batching work is built on top of it.
 
 Run with: pytest test_flamelets_newton_loop.py --backend python
 """
+from pathlib import Path
 import cantera as ct
 import jax.numpy as jnp
 import numpy as np
@@ -23,7 +24,7 @@ from pyrometheus.flamelets.solver import FlameletSolver
 from pyrometheus.flamelets.state import FlameletState, _state_to_array
 from pyrometheus.flamelets.utils import bell_profile, stoichiometric_mixture_fraction
 
-MECH = "/u/csnrsgr2/packages/pyrometheus/test/mechs/sandiego.yaml"
+MECH = str(Path(__file__).parent / "mechs" / "sandiego.yaml")
 FUEL = "H2"
 TEMP_OX, TEMP_FU, PRESSURE = 500.0, 300.0, ct.one_atm
 NUM_X = 101

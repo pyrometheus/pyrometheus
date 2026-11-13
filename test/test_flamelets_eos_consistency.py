@@ -13,6 +13,7 @@ any vmap batching is built on top of it.
 
 Run with: pytest test_flamelets_eos_consistency.py --backend python
 """
+from pathlib import Path
 import cantera as ct
 import jax.numpy as jnp
 import numpy as np
@@ -25,7 +26,7 @@ from pyrometheus.flamelets.state import FlameletState
 from pyrometheus.flamelets.thermodynamic_consistency import CompressibleEOS
 from pyrometheus.flamelets.utils import bell_profile, stoichiometric_mixture_fraction
 
-MECH = "/u/csnrsgr2/packages/pyrometheus/test/mechs/sandiego.yaml"
+MECH = str(Path(__file__).parent / "mechs" / "sandiego.yaml")
 FUEL = "H2"
 TEMP_OX, TEMP_FU, PRESSURE = 500.0, 300.0, ct.one_atm
 NUM_X = 101
@@ -237,3 +238,158 @@ def test_batch_matches_sequential(rig):
             np.asarray(state_v.enthalpy[i]), np.asarray(state_seq.enthalpy),
             rtol=1e-8, atol=1e-6,
         )
+
+
+@pytest.mark.parametrize("chi,z_index", [(100.0, 30), (2000.0, 50)])
+def test_picard_traceable_matches_python(rig, chi, z_index):
+    """The traceable Picard path must reproduce ensure_consistency's
+    Python-loop Picard iterates, and its history must start at the
+    initial params."""
+    config = _config()
+    config["eos"]["update_method"] = "picard"
+    ceos = CompressibleEOS(config, rig["solver"])
+    density_sim, energy_sim, diss = _target_density_energy(rig, chi, z_index)
+    mix_frac_pdf = jnp.zeros(NUM_X).at[z_index].set(1)
+    zero_visc = jnp.zeros(NUM_X)
+    thermo_params = jnp.array([rig["pressure"], rig["h_ox"], rig["h_fu"]])
+
+    (_, _, params_py, it_py, _, res_py, hist_py, _) = ceos.ensure_consistency(
+        density_sim, energy_sim, thermo_params, mix_frac_pdf,
+        diss, zero_visc, rig["temp_base"], rig["state_base"],
+    )
+    (_, _, params_lax, it_lax, _, res_lax, _, _,
+     history) = ceos.ensure_consistency_traceable_history(
+        density_sim, energy_sim, thermo_params, mix_frac_pdf,
+        diss, zero_visc, rig["temp_base"], rig["state_base"],
+    )
+
+    assert int(it_py) == int(it_lax)
+    np.testing.assert_allclose(
+        np.asarray(params_py), np.asarray(params_lax), rtol=1e-8, atol=1e-6,
+    )
+    n = int(it_lax) + 1
+    np.testing.assert_allclose(
+        np.asarray(res_py[:n]), np.asarray(res_lax[:n]), rtol=1e-6, atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(hist_py[:n]),
+        np.column_stack((history["enthalpy"], history["temperature"]))[:n],
+        rtol=1e-8,
+    )
+    np.testing.assert_allclose(
+        np.asarray(history["params"][0]), np.asarray(thermo_params),
+    )
+
+
+# -- Adjoint gradients vs. central finite differences ---------------------
+# eos_gradient is evaluated at the converged baseline with the converged
+# temperature as the guess (the Gauss--Newton loop's iteration-0 call),
+# which used to drop all R*T sensitivities (zero-iteration while_loop in
+# the temperature inversion). The PDFs exercise the boundary trace: a
+# delta next to each wall (the old one-sided trace was 50% off there), an
+# interior delta, a broad interior PDF, and weights *on* the Dirichlet
+# nodes (direct boundary dependence).
+
+def _pdf_cases(z):
+    z = np.asarray(z)
+    broad = (z * (1.0 - z)) ** 2
+    broad[[0, -1]] = 0.0
+    trapezoid = np.full(z.size, 1.0 / (z.size - 1))
+    trapezoid[[0, -1]] *= 0.5
+    return {
+        "delta_ox_wall": np.eye(z.size)[1],
+        "delta_fu_wall": np.eye(z.size)[-2],
+        "delta_interior": np.eye(z.size)[40],
+        "broad_interior": broad / broad.sum(),
+        "with_boundary_weights": trapezoid,
+    }
+
+
+@pytest.fixture(scope="module")
+def filtered_fd(rig):
+    solver = rig["solver"]
+    pyro_gas = solver.gov_eqns.pyro_gas
+    diss = rig["diss_profile"](1000.0)
+    zero_visc = jnp.zeros(NUM_X)
+
+    def fields(params):
+        pressure, h_ox, h_fu = params
+        state, temp = solver.solve(
+            False, 30, 1e-9, 20, 1e-9, 1e-5, 10, False, 10,
+            diss, zero_visc, rig["temp_base"], pressure, h_ox, h_fu,
+            rig["state_base"],
+        )
+        y = state.mass_fractions
+        return (np.asarray(pyro_gas.get_density(pressure, temp, y)),
+                np.asarray(pyro_gas.get_mixture_internal_energy_mass(temp, y)))
+
+    p, h_ox, h_fu = rig["pressure"], rig["h_ox"], rig["h_fu"]
+    dp, dh = 1e-4 * p, 1e-4 * abs(h_ox)
+    perturbed = {
+        "p": [fields((p + s * dp, h_ox, h_fu)) for s in (1, -1)],
+        "h": [fields((p, h_ox + s * dh, h_fu + s * dh)) for s in (1, -1)],
+    }
+    return perturbed, dict(p=dp, h=dh), diss
+
+
+@pytest.mark.parametrize("pdf_name", [
+    "delta_ox_wall", "delta_fu_wall", "delta_interior", "broad_interior",
+    "with_boundary_weights",
+])
+def test_eos_gradient_matches_finite_differences(rig, filtered_fd, pdf_name):
+    perturbed, steps, diss = filtered_fd
+    w = _pdf_cases(rig["z"])[pdf_name]
+    (g_rho, g_e), _ = rig["compressible_eos"].eos_gradient(
+        rig["state_base"], jnp.array(w), diss, jnp.zeros(NUM_X),
+        rig["temp_base"], rig["pressure"],
+    )
+    g_adj = np.array([np.asarray(g_rho), np.asarray(g_e)])  # [qoi, param]
+    g_fd = np.empty((2, 2))
+    for j, key in enumerate(("p", "h")):
+        (rho_p, e_p), (rho_m, e_m) = perturbed[key]
+        g_fd[0, j] = w @ (rho_p - rho_m) / (2 * steps[key])
+        g_fd[1, j] = w @ (e_p - e_m) / (2 * steps[key])
+    rel = np.linalg.norm(g_adj - g_fd, axis=1) / np.linalg.norm(g_fd, axis=1)
+    assert np.all(rel < 1e-6), (pdf_name, rel, g_adj, g_fd)
+
+
+# -- Picard fixed point for a non-delta PDF -------------------------------
+# The Picard pressure update must share its fixed point with the
+# reconstructed density rho_hat = p <1/(R T)>. The former update
+# p <- rho_sim <R T> converged to p * <R T><1/(R T)> > p for a PDF spanning
+# the flame, stalling the residual at a variance-dependent plateau.
+
+@pytest.mark.parametrize(("method", "picard_gradient"), [
+    ("picard", False), ("picard", True), ("gauss_newton", False)])
+def test_recovers_target_parameters_broad_pdf(rig, method, picard_gradient):
+    import copy
+    solver = rig["solver"]
+    pyro_gas = solver.gov_eqns.pyro_gas
+    diss = rig["diss_profile"](1000.0)
+    zero_visc = jnp.zeros(NUM_X)
+    w = jnp.array(_pdf_cases(rig["z"])["broad_interior"])
+
+    p_t = 1.5 * rig["pressure"]
+    dh = 0.05 * abs(rig["h_ox"])
+    params_t = np.array([p_t, rig["h_ox"] + dh, rig["h_fu"] + dh])
+    state_t, temp_t = solver.solve(
+        False, 30, 1e-9, 20, 1e-9, 1e-5, 10, False, 10,
+        diss, zero_visc, rig["temp_base"], *params_t, rig["state_base"],
+    )
+    y = state_t.mass_fractions
+    density_sim = jnp.sum(w * pyro_gas.get_density(p_t, temp_t, y))
+    energy_sim = jnp.sum(
+        w * pyro_gas.get_mixture_internal_energy_mass(temp_t, y)
+    )
+
+    config = copy.deepcopy(_config())
+    config["eos"].update(update_method=method, update_size=1.0,
+                         maxiter=40, tol=1e-12,
+                         picard_gradient=picard_gradient)
+    ceos = CompressibleEOS(config, solver)
+    params0 = jnp.array([rig["pressure"], rig["h_ox"], rig["h_fu"]])
+    (_, _, params, it, _, res, _, _) = ceos.ensure_consistency_traceable(
+        density_sim, energy_sim, params0, w, diss, zero_visc,
+        rig["temp_base"], rig["state_base"],
+    )
+    np.testing.assert_allclose(np.asarray(params), params_t, rtol=1e-6)
