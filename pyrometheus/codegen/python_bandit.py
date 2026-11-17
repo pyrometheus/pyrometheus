@@ -1,0 +1,533 @@
+from numbers import Number
+
+import pymbolic.primitives as p
+from pymbolic.mapper.stringifier import StringifyMapper, PREC_NONE, PREC_CALL
+import numpy as np  # noqa: F401
+
+from mako.template import Template
+from pyrometheus.bandit.general_thermochem import BaseMechanism
+from pyrometheus.bandit.chem_expr.transport import (
+    _boltzmann as transport_boltzmann
+)
+
+from . import CodeGenerator, CodeGenerationOptions
+
+
+file_extension = "py"
+
+
+# {{{ code generation helpers
+
+
+class CodeGenerationMapper(StringifyMapper):
+    def map_constant(self, expr, enclosing_prec):
+        return repr(expr)
+
+    OP_NAMES = {
+            ">=": "greater_equal",
+            ">": "greater",
+            "==": "equal",
+            "!=": "not_equal",
+            "<=": "less_equal",
+            "<": "less",
+            }
+
+    def map_comparison(self, expr, enclosing_prec, *args, **kwargs):
+        return (f"self.pyro_np.{self.OP_NAMES[expr.operator]}"
+                f"({self.rec(expr.left, PREC_NONE, *args, **kwargs)}, "
+                f"{self.rec(expr.right, PREC_NONE, *args, **kwargs)})")
+
+    def map_if(self, expr, enclosing_prec, *args, **kwargs):
+        return "self.pyro_np.where(%s, %s, %s)" % (
+            self.rec(expr.condition, PREC_NONE, *args, **kwargs),
+            self.rec(expr.then, PREC_NONE, *args, **kwargs),
+            self.rec(expr.else_, PREC_NONE, *args, **kwargs),
+        )
+
+    def map_call(self, expr, enclosing_prec, *args, **kwargs):
+        return self.format(
+            "self.pyro_np.%s(%s)",
+            self.rec(expr.function, PREC_CALL, *args, **kwargs),
+            self.join_rec(", ", expr.parameters, PREC_NONE, *args, **kwargs),
+        )
+
+
+def str_np_inner(ary):
+    if isinstance(ary, Number):
+        return repr(ary)
+    elif ary.shape:
+        return "[%s]" % (", ".join(str_np_inner(ary_i) for ary_i in ary))
+    raise TypeError("invalid argument to str_np_inner")
+
+
+def str_np(ary):
+    return "np.array(%s)" % str_np_inner(ary)
+
+
+def temperature_leading_term(bandit_mech):
+    """Return the temperature that scales mixture-averaged enthalpy and
+    energy: the translational temperature for multi-temperature
+    mechanisms, or the single temperature otherwise.
+    """
+    return "temperature[0]" if bandit_mech.num_temp > 1 else "temperature"
+
+
+# }}}
+
+# {{{ Template
+
+code_tpl = Template(
+    """
+import numpy as np
+
+
+class Thermochemistry:
+
+    def __init__(self, pyro_np):
+        self.pyro_np = pyro_np
+        self.num_temperatures = ${bandit_mech.num_temp}
+        self.num_species = ${bandit_mech.num_species}
+        self.num_reactions = ${bandit_mech.num_reactions}
+        self.one_atm = ${bandit_mech.namespace.one_atm}
+        self.gas_constant = ${bandit_mech.namespace.gas_constant}
+        self.molecular_weights = ${str_np(bandit_mech.molecular_weights)}
+        self.inv_molecular_weights = 1/self.molecular_weights
+        self.species_names = ${bandit_mech.species_names}
+        self.species_indices = ${dict([[bandit_mech.species_name(i), i]
+                                       for i in range(bandit_mech.num_species)])}
+
+    def _pyro_zeros_like(self, argument):
+        return 0 * argument
+
+    def _pyro_ones_like(self, argument):
+        return 0 * argument + 1.0
+
+    def _pyro_make_array(self, res_list):
+        # Object arrays would break pyro_np.exp, so stay with a float
+        # array whenever every entry is a scalar. Assigning the list
+        # wholesale trips https://github.com/numpy/numpy/issues/16564
+        from numbers import Number
+        all_numbers = all(isinstance(entry, Number) for entry in res_list)
+        result = np.empty(
+            (len(res_list),), dtype=np.float64 if all_numbers else object
+        )
+        for index in range(len(res_list)):
+            result[index] = res_list[index]
+
+        return result
+
+    def get_species_index(self, species_name):
+        return self.species_indices[species_name]
+
+    def get_mixture_molecular_weight(self, mass_fractions):
+        return 1 / (
+            %for i in range(bandit_mech.num_species):
+            + self.inv_molecular_weights[${i}] * mass_fractions[${i}]
+            %endfor
+        )
+
+    def get_mole_fractions(self, mass_fractions):
+        mix_mol_weight = self.get_mixture_molecular_weight(mass_fractions)
+        return self._pyro_make_array([
+            %for i in range(bandit_mech.num_species):
+            self.inv_molecular_weights[${i}] * mass_fractions[${i}]
+            * mix_mol_weight,
+            %endfor
+        ])
+
+    def get_density(self, pressure, temperature, mass_fractions):
+        return pressure / (${cgm(bandit_mech.pressure_over_density_expr)})
+
+    def get_pressure(self, density, temperature, mass_fractions):
+        return density * (${cgm(bandit_mech.pressure_over_density_expr)})
+
+    def get_concentrations(self, density, mass_fractions):
+        return self._pyro_make_array([
+            %for i in range(bandit_mech.num_species):
+            density * mass_fractions[${i}] / self.molecular_weights[${i}],
+            %endfor
+        ])
+
+    def get_species_specific_heats_cp_r(self, temperature):
+        return self._pyro_make_array([
+            %for sp_thermo in bandit_mech.species_nasa_thermo_polynomials:
+            ${cgm(sp_thermo.cp_poly.expr)},
+            %endfor
+        ])
+
+    def get_species_enthalpies_rt(self, temperature):
+        return self._pyro_make_array([
+            %for sp_thermo in bandit_mech.species_nasa_thermo_polynomials:
+            ${cgm(sp_thermo.enthalpy_poly.expr)},
+            %endfor
+        ])
+
+    def get_species_specific_heats_cv_r(self, temperature):
+        cp_r = self.get_species_specific_heats_cp_r(temperature)
+        return cp_r - self._pyro_ones_like(cp_r)
+
+    def get_species_internal_energies_rt(self, temperature):
+        h_rt = self.get_species_enthalpies_rt(temperature)
+        return h_rt - self._pyro_ones_like(h_rt)
+
+    def get_mass_average_property(self, mass_fractions, spec_property):
+        return (
+            %for i in range(bandit_mech.num_species):
+            + self.inv_molecular_weights[${i}] * mass_fractions[${i}]
+            * spec_property[${i}]
+            %endfor
+        )
+
+    def get_mixture_specific_heat_cp_mass(self, temperature, mass_fractions):
+        cp_r = self.get_species_specific_heats_cp_r(temperature)
+        return self.gas_constant * self.get_mass_average_property(
+            mass_fractions, cp_r)
+
+    def get_mixture_specific_heat_cv_mass(self, temperature, mass_fractions):
+        cv_r = self.get_species_specific_heats_cv_r(temperature)
+        return self.gas_constant * self.get_mass_average_property(
+            mass_fractions, cv_r)
+
+    def get_mixture_enthalpy_mass(self, temperature, mass_fractions):
+        h_rt = self.get_species_enthalpies_rt(temperature)
+        return self.gas_constant * ${temperature_leading_term(bandit_mech)} <%
+            %>* self.get_mass_average_property(mass_fractions, h_rt)
+
+    def get_mixture_internal_energy_mass(self, temperature, mass_fractions):
+        e_rt = self.get_species_internal_energies_rt(temperature)
+        return self.gas_constant * ${temperature_leading_term(bandit_mech)} <%
+            %>* self.get_mass_average_property(mass_fractions, e_rt)
+
+    %if bandit_mech.num_temp == 1:
+    def get_temperature(self, enthalpy_or_energy, t_guess, mass_fractions,
+                        do_energy=False):
+        if do_energy is False:
+            pv_fun = self.get_mixture_specific_heat_cp_mass
+            he_fun = self.get_mixture_enthalpy_mass
+        else:
+            pv_fun = self.get_mixture_specific_heat_cv_mass
+            he_fun = self.get_mixture_internal_energy_mass
+
+        num_iter = 500
+        tol = 1.0e-6
+        iter_temp = t_guess * self._pyro_ones_like(enthalpy_or_energy)
+
+        for _ in range(num_iter):
+            iter_rhs = enthalpy_or_energy - he_fun(iter_temp, mass_fractions)
+            iter_deriv = -pv_fun(iter_temp, mass_fractions)
+            dt = -iter_rhs / iter_deriv
+            iter_temp = iter_temp + dt
+            if self.pyro_np.all(self.pyro_np.abs(dt) < tol):
+                return iter_temp
+
+        raise RuntimeError("Temperature iteration failed to converge")
+
+    %endif
+    def get_species_gibbs_rt(self, temperature):
+        return self._pyro_make_array([
+            %for sp_thermo in bandit_mech.species_nasa_thermo_polynomials:
+            ${cgm(sp_thermo.gibbs_poly.expr)},
+            %endfor
+        ])
+
+    def get_equilibrium_constants(self, temperature):
+        %if bandit_mech.num_reactions:
+        gibbs_rt = self.get_species_gibbs_rt(temperature)
+        %endif
+        return self._pyro_make_array([
+            %for i, expr in enumerate(bandit_mech.equil_constants):
+            %if bandit_mech.is_reversible(i):
+            ${cgm(expr)},
+            %else:
+            -0.17364695002734*temperature,
+            %endif
+            %endfor
+        ])
+
+    %if bandit_mech.has_falloff_reactions():
+    def get_falloff_rates(self, temperature, concentrations):
+        ones = self._pyro_ones_like(temperature)
+        k_high = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.high_rate_expr)},
+            %endfor
+        ])
+        k_low = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.low_rate_expr)},
+            %endfor
+        ])
+        falloff_center = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.falloff_center)} * ones,
+            %endfor
+        ])
+        reduced_pressure = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.reduced_pressure)},
+            %endfor
+        ])
+        falloff_factor = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.falloff_factor)} * ones,
+            %endfor
+        ])
+        falloff_function = self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.falloff_function)} * ones,
+            %endfor
+        ])
+        return self._pyro_make_array([
+            %for falloff in bandit_mech.falloff_reactions:
+            ${cgm(falloff.rate_coefficient)},
+            %endfor
+        ])
+
+    %endif
+    def get_fwd_rate_coefficients(self, temperature, concentrations):
+        %if bandit_mech.has_falloff_reactions():
+        falloff_rate_coefficients = self.get_falloff_rates(
+            temperature, concentrations)
+        %endif
+        return self._pyro_make_array([
+            %for rate_coeff in bandit_mech.rate_coeffs:
+            ${cgm(rate_coeff.expr)},
+            %endfor
+        ])
+
+    def get_net_rates_of_progress(self, temperature, concentrations):
+        %if bandit_mech.num_reactions:
+        k_fwd = self.get_fwd_rate_coefficients(temperature, concentrations)
+        log_k_eq = self.get_equilibrium_constants(temperature)
+        %endif
+        return self._pyro_make_array([
+            %for expr in bandit_mech.mass_action_rates:
+            ${cgm(expr)},
+            %endfor
+        ])
+
+    def get_net_production_rates(self, density, temperature, mass_fractions):
+        %if bandit_mech.num_reactions:
+        concentrations = self.get_concentrations(density, mass_fractions)
+        r_net = self.get_net_rates_of_progress(temperature, concentrations)
+        ones = self._pyro_ones_like(r_net[0])
+        %else:
+        ones = self._pyro_ones_like(density * mass_fractions[0])
+        %endif
+        return self._pyro_make_array([
+            %for expr in bandit_mech.species_prod_rates:
+            ${cgm(expr)} * ones,
+            %endfor
+        ])
+
+    %if bandit_mech.has_nonequilibrium_energy_modes():
+    def get_species_vibrational_energies(self, temperature):
+        ones = self._pyro_ones_like(temperature[1])
+        return self._pyro_make_array([
+            %for sp_thermo in bandit_mech.species_vib_thermo_expressions:
+            ${cgm(sp_thermo.energy_expr)} * ones,
+            %endfor
+        ])
+
+    def get_species_vibrational_specific_heats(self, temperature):
+        ones = self._pyro_ones_like(temperature[1])
+        return self._pyro_make_array([
+            %for sp_thermo in bandit_mech.species_vib_thermo_expressions:
+            ${cgm(sp_thermo.specific_heat_expr)} * ones,
+            %endfor
+        ])
+
+    def get_pressure_relaxation_times(self, temperature):
+        ones = self._pyro_ones_like(temperature[0])
+        return self._pyro_make_array([
+            %for expr in bandit_mech.pressure_relaxation_time_exprs:
+            ${cgm(expr)} * ones,
+            %endfor
+        ])
+
+    def get_vt_energy_transfer_source(self, density, temperature, mass_fractions):
+        ones = self._pyro_ones_like(temperature[0])
+        pressure = self.get_pressure(density, temperature, mass_fractions)
+        return (
+            %for expr in bandit_mech.vt_energy_transfer_exprs:
+            + ${cgm(expr)}
+            %endfor
+        ) * ones
+
+    def get_translational_rotational_energy(self, temperature):
+        ones = self._pyro_ones_like(temperature[0])
+        return self._pyro_make_array([
+            %for expr in bandit_mech.translational_rotational_energy_exprs:
+            ${cgm(expr)} * ones,
+            %endfor
+        ])
+
+    def get_nasa_polynomial_vibrational_energy(self, temperature):
+        ones = self._pyro_ones_like(temperature[1])
+        return self._pyro_make_array([
+            %for expr in bandit_mech.nasa_polynomial_vibrational_energy_exprs:
+            ${cgm(expr)} * ones,
+            %endfor
+        ])
+
+    def get_nasa_polynomial_vibrational_specific_heat(self, temperature):
+        ones = self._pyro_ones_like(temperature[1])
+        return self._pyro_make_array([
+            %for expr in bandit_mech.nasa_polynomial_vibrational_specific_heat_exprs:
+            ${cgm(expr)} * ones,
+            %endfor
+        ])
+    %endif
+    %if bandit_mech.has_transport():
+<% transport = bandit_mech.mixture_transport %>
+    def _pyro_linear_solve(self, matrix, rhs):
+        lhs = self._pyro_make_array([
+            self._pyro_make_array(row) for row in matrix
+        ])
+        lhs = self.pyro_np.moveaxis(lhs, (0, 1), (-2, -1))
+        rhs = self.pyro_np.moveaxis(self._pyro_make_array(rhs), 0, -1)
+        solution = self.pyro_np.linalg.solve(lhs, rhs[..., None])[..., 0]
+        return self.pyro_np.moveaxis(solution, -1, 0)
+
+    def _get_transport_mole_fractions(self, mass_fractions):
+        shifted = (
+            self.get_mole_fractions(mass_fractions)
+            + ${repr(bandit_mech.mole_fraction_tolerance)}
+        )
+        return shifted / self.pyro_np.sum(shifted, axis=0)
+
+    def get_species_binary_mass_diffusivities(self, temperature):
+        return self._pyro_make_array([
+            %for row in transport.inverse_number_density_diffusivities:
+            self._pyro_make_array([
+                %for expr in row:
+                ${cgm(boltzmann * bandit_mech.heavy_temperature / expr)},
+                %endfor
+            ]),
+            %endfor
+        ])
+
+    def get_species_effective_diffusivities(
+            self, pressure, temperature, mass_fractions):
+        mole_fractions = self._get_transport_mole_fractions(mass_fractions)
+        number_density = pressure / (
+            ${repr(boltzmann)} * ${cgm(bandit_mech.heavy_temperature)})
+        return self._pyro_make_array([
+            %for expr in transport.number_density_effective_diffusivities:
+            ${cgm(expr)} / number_density,
+            %endfor
+        ])
+
+    def get_species_viscosities(self, temperature):
+        return self._pyro_make_array([
+            %for expr in transport.species_viscosities:
+            ${cgm(expr)},
+            %endfor
+        ])
+
+    def get_mixture_viscosity(self, temperature, mass_fractions):
+        mole_fractions = self._get_transport_mole_fractions(mass_fractions)
+        solution = self._pyro_linear_solve([
+            %for row in transport.viscosity_matrix:
+            [
+                %for expr in row:
+                ${cgm(expr)},
+                %endfor
+            ],
+            %endfor
+        ], mole_fractions)
+        return (
+            %for i in range(bandit_mech.num_species):
+            + mole_fractions[${i}] * solution[${i}]
+            %endfor
+        )
+
+    def get_mixture_thermal_conductivities(self, temperature, mass_fractions):
+        mole_fractions = self._get_transport_mole_fractions(mass_fractions)
+        solution = self._pyro_linear_solve([
+            %for row in transport.conductivity_matrix:
+            [
+                %for expr in row:
+                ${cgm(expr)},
+                %endfor
+            ],
+            %endfor
+        ], mole_fractions)
+        translational = (
+            %for i in range(bandit_mech.num_species):
+            + mole_fractions[${i}] * solution[${i}]
+            %endfor
+        )
+        return self._pyro_make_array([
+            %for k, expr in enumerate(transport.internal_conductivities):
+            ${cgm(expr)}${" + translational" if k == 0 else ""},
+            %endfor
+        ])
+    %endif
+""", strict_undefined=True)
+
+# }}}
+
+
+# {{{
+
+class PythonBanditCodeGenerator(CodeGenerator):
+    @staticmethod
+    def get_name() -> str:
+        return "python"
+
+    @staticmethod
+    def load_mechanism(mech_path: str, phase: str = None) -> BaseMechanism:
+        from pyrometheus.bandit.impl.cantera import CanteraMechanism
+        return CanteraMechanism(mech_path, phase=phase)
+
+    @staticmethod
+    def supports_overloading() -> bool:
+        return True
+
+    @staticmethod
+    def generate(name: str,
+                 bandit_mech: BaseMechanism,
+                 opts: CodeGenerationOptions = None) -> str:
+        if opts is None:
+            opts = CodeGenerationOptions()
+
+        if opts.directive_offload is not None:
+            raise TypeError(
+                "OpenMP/ACC directive based offloading is not supported for "
+                "Python code generation"
+            )
+
+        return code_tpl.render(
+            bandit_mech=bandit_mech,
+            str_np=str_np,
+            temperature_leading_term=temperature_leading_term,
+            boltzmann=transport_boltzmann,
+            cgm=CodeGenerationMapper(),
+            Variable=p.Variable,
+        ).strip() + "\n"
+
+    @staticmethod
+    def compile_class(name: str, source: str):
+        """Compile the generated Python source code into a class definition"""
+        exec_dict = {}
+        exec(compile(source, "<generated code>", "exec"), exec_dict)
+        exec_dict["_MODULE_SOURCE_CODE"] = source
+
+        return exec_dict[name]
+
+    @staticmethod
+    def get_thermochem_class(bandit_mech: BaseMechanism):
+        """For the mechanism given by *bandit_mech*, return an instance of
+        Pyrometheus' generated Python class for thermochemistry.
+        """
+        name = "Thermochemistry"
+        return PythonBanditCodeGenerator.compile_class(
+            name=name,
+            source=PythonBanditCodeGenerator.generate(
+                name,
+                bandit_mech
+            )
+        )
+
+# }}}

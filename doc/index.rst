@@ -3,7 +3,10 @@ Welcome to pyrometheus's documentation!
 
 .. When you update this description, consider also updating the one in the README.
 
-Pyrometheus is a code generator for chemical mechanisms, based on `cantera <https://cantera.org/3.1/index.html>`_.
+Pyrometheus generates Python, C++ and Fortran code for the
+thermochemistry of reacting flows, from mechanisms read by `Cantera
+<https://cantera.org>`__, `Mutation++
+<https://github.com/mutationpp/Mutationpp>`__ or Plato.
 
 Here’s an example to give you an impression:
 
@@ -11,9 +14,10 @@ Here’s an example to give you an impression:
 
    import numpy as np
    import pyrometheus as pyro
+   from pyrometheus.bandit.impl.cantera import CanteraMechanism
 
-   sol = ct.Solution("mech.yaml")
-   ptk = pyro.get_thermochem_class(sol)()
+   mech = CanteraMechanism("mech.yaml")
+   gas = pyro.get_thermochem_class(mech)(np)
 
 Table of Contents
 -----------------
@@ -23,6 +27,7 @@ Table of Contents
 
     start
     model
+    bandit
     codegen
     misc
     🚀 Github <https://github.com/pyrometheus/pyrometheus>

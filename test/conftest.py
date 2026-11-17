@@ -1,6 +1,10 @@
 # This file is a Pytest configuration file.
 
+import plato_cassette
 from backends import BACKENDS
+
+# Before any test imports plato: record it, or stand in for it.
+plato_cassette.install()
 
 
 def pytest_addoption(parser):

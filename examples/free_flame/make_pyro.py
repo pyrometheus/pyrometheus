@@ -11,31 +11,31 @@ _array_types = {
 }
 
 
-def all_numbers(res_list, usr_np):
+def all_numbers(res_list, pyro_np):
     from numbers import Number
     # from itertools import product
     return all(isinstance(e, Number)
-               or (e.shape == () and isinstance(type(e), _array_types[usr_np]))
+               or (e.shape == () and isinstance(type(e), _array_types[pyro_np]))
                for e in res_list)
 
 
-def _np_stack(res_list, usr_np):
-    return usr_np.stack(res_list)
+def _np_stack(res_list, pyro_np):
+    return pyro_np.stack(res_list)
 
 
-def _pt_stack(res_list, usr_np):
+def _pt_stack(res_list, pyro_np):
     array = np.empty(len(res_list), dtype=object)
     for idx in range(len(res_list)):
         array[idx] = res_list[idx]
     return array
 
 
-def _jax_stack(res_list, usr_np):
-    if all_numbers(res_list, usr_np):
-        return usr_np.stack(res_list)
+def _jax_stack(res_list, pyro_np):
+    if all_numbers(res_list, pyro_np):
+        return pyro_np.stack(res_list)
 
-    array = usr_np.empty_like(
-        usr_np.array(res_list),
+    array = pyro_np.empty_like(
+        pyro_np.array(res_list),
     )
     for idx in range(len(res_list)):
         array = array.at[idx].set(res_list[idx])
@@ -43,15 +43,15 @@ def _jax_stack(res_list, usr_np):
     return array
 
 
-def make_pyro_object(pyro_cls, usr_np):
-    if usr_np == np:
-        return pyro_cls(usr_np)
+def make_pyro_object(pyro_cls, pyro_np):
+    if pyro_np == np:
+        return pyro_cls(pyro_np)
 
-    elif usr_np == pt:
+    elif pyro_np == pt:
 
         class PyroPytato(pyro_cls):
-            def __init__(self, usr_np):
-                self.usr_np = usr_np
+            def __init__(self, pyro_np):
+                self.pyro_np = pyro_np
                 self.num_species = pyro_cls().num_species
                 self.num_reactions = pyro_cls().num_reactions
                 self.one_atm = pyro_cls().one_atm
@@ -65,7 +65,7 @@ def make_pyro_object(pyro_cls, usr_np):
                 self.species_indices = pyro_cls().species_indices
 
             def _pyro_make_array(self, res_list):
-                return _pt_stack(res_list, usr_np)
+                return _pt_stack(res_list, pyro_np)
 
             def get_temperature(self, energy, temp_guess, mass_fractions):
                 num_iter = 2
@@ -83,25 +83,25 @@ def make_pyro_object(pyro_cls, usr_np):
 
                 return iter_temp
 
-        return PyroPytato(usr_np)
+        return PyroPytato(pyro_np)
 
-    elif usr_np == jnp:
+    elif pyro_np == jnp:
 
         class PyroJaxNumpy(pyro_cls):
 
             def _pyro_make_array(self, res_list):
-                return _jax_stack(res_list, usr_np)
+                return _jax_stack(res_list, pyro_np)
 
             def _pyro_norm(self, argument, normord):
                 # Wrap norm for scalars
                 from numbers import Number
                 if isinstance(argument, Number):
-                    return self.usr_np.abs(argument)
+                    return self.pyro_np.abs(argument)
                 if isinstance(
-                        argument, self.usr_np.ndarray
+                        argument, self.pyro_np.ndarray
                 ) and argument.shape == ():
-                    return self.usr_np.abs(argument)
-                return self.usr_np.linalg.norm(argument, normord)
+                    return self.pyro_np.abs(argument)
+                return self.pyro_np.linalg.norm(argument, normord)
 
             def get_temperature(self, energy, temp_init, mass_fractions,
                                 do_energy=True):
@@ -113,7 +113,7 @@ def make_pyro_object(pyro_cls, usr_np):
                     j = -self.get_mixture_specific_heat_cv_mass(
                         temperature, mass_fractions
                     )
-                    return self.usr_np.linalg.norm(f/j) > 1e-10
+                    return self.pyro_np.linalg.norm(f/j) > 1e-10
 
                 def body_fun(temperature):
                     f = energy - self.get_mixture_internal_energy_mass(
@@ -126,4 +126,4 @@ def make_pyro_object(pyro_cls, usr_np):
 
                 return jax.lax.while_loop(cond_fun, body_fun, temp_init)
 
-        return PyroJaxNumpy(usr_np=usr_np)
+        return PyroJaxNumpy(pyro_np=pyro_np)

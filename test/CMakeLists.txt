@@ -30,7 +30,7 @@ function (pyro_generate_backend_impl)
                 "${PYRO_DIR}/codegen/__init__.py"
                 "${PYRO_DIR}/codegen/${ARGS_BACKEND}.py"
         COMMAND "${Python3_EXECUTABLE}" -m pyrometheus
-            --mech "${ARGS_MECHANISM}" --lang   "${ARGS_BACKEND}"
+            --mech "${ARGS_MECHANISM}" --lang   "${ARGS_BACKEND}-legacy"
             --name "${ARGS_NAME}"      --output "${ARGS_OUTPUT}"
             --phase "gas"
     )

@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name    = "pyrometheus"
-version = "1.1.1"
+version = "2.0.0"
 readme  = "README.rst"
 authors = [
   { name="Esteban Cisneros",  email="ecisnerosg88@gmail.com" },
   { name="Andreas Kloeckner", email="inform@tiker.net"     },
   { name="Henry Le Berre",    email="hberre3@gatech.edu"   },
 ]
-description = "Code generation for combustion thermochemistry, based on Cantera."
-requires-python = ">=3.9"
+description = "Code generation for reacting-flow thermochemistry, from Cantera, Mutation++ or Plato mechanisms."
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
@@ -28,7 +28,7 @@ classifiers = [
 ]
 dependencies = [
     "cantera >= 3.1.0",
-    "pymbolic",
+    "pymbolic >= 2024.2",
     "mako",
     "jax",
     "jaxlib",
@@ -62,10 +62,15 @@ dev  = [
     "flake8-quotes",
     "flake8-bugbear",
     "Flake8-pyproject",
+    "setuptools"
 ]
 test = [
     "pytest",
     "pybind11",
+    "setuptools",
+    "meson",
+    "ninja",
+    "meson-python",
 ]
 docs = [
     "furo",
