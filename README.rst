@@ -33,7 +33,8 @@ or via `Spack <https://spack.io>`__ (``spack install py-pyrometheus``)::
 
     $ python3 -m pip install pyrometheus
     $ python3 -m pyrometheus --help
-    usage: pyrometheus [-h] [--version] -l {python,cpp,fortran} -m MECH -o OUTPUT -n NAME [-p PHASE]
+    usage: pyrometheus [-h] [--version] -l {python,cpp,fortran} -m MECH -o OUTPUT
+                       -n NAME [-p PHASE] [-s] [--gas-name GAS_NAME]
     
     Code generation for combustion thermochemistrybased on Cantera.
     
@@ -50,6 +51,21 @@ or via `Spack <https://spack.io>`__ (``spack install py-pyrometheus``)::
                             Namespace to use for the generated code.
       -p PHASE, --phase PHASE
                             Phase name to use for the generated code.
+      -s, --surface         Generate heterogeneous (surface) kinetics for an
+                            interface phase, instead of gas-phase
+                            thermochemistry. The adjacent phases are read from the
+                            mechanism.
+      --gas-name GAS_NAME   With --surface: name of the separately generated gas-
+                            phase module or header the surface code refers to
+                            (default: thermochem).
+
+A surface mechanism takes two passes. Generate the gas phase, then generate the
+interface against it::
+
+    $ python3 -m pyrometheus -l fortran -m ptcombust.yaml -p gas \
+          -n thermochem -o thermochem.f90
+    $ python3 -m pyrometheus -l fortran -m ptcombust.yaml -p Pt_surf --surface \
+          -n surface_thermochem --gas-name thermochem -o surface_thermochem.f90
 
 Cite me:
 
